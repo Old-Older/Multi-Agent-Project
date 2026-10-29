@@ -1,0 +1,21 @@
+# secrets
+.env
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# agent runtime data (sandboxes, memory, eval outputs)
+workspaces/*
+!workspaces/.gitkeep
+data/
+*.log
+eval_results/
+
+# editors
+.vscode/
+.idea/
