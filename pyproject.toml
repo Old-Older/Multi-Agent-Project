@@ -1,0 +1,19 @@
+[project]
+name = "mas"
+version = "0.1.0"
+description = "Evolutionary multi-agent collaboration system (MAIE5221 final project)"
+requires-python = ">=3.10"
+dependencies = [
+    "openai>=1.0",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["mas*"]
