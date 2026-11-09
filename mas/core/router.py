@@ -6,17 +6,37 @@ Pure code, never calls an LLM. Every call_<agent> tool call, from the
 Orchestrator or from a worker re-delegating, in a group or a DM session, goes
 through Router.dispatch(). This keeps one code path for limits, state,
 file hand-off, HITL routing and statistics.
+
+The Router is also the only writer of the StateTable and the owner of the
+per-session boards: as a bus observer it sees every message, updates the task
+state from STATUS / TASK_RESULT, wakes up whoever waits for a result or a human
+answer, and feeds each message to the board of its session.
 """
 from __future__ import annotations
+
+import asyncio
+import logging
+import re
+import uuid
+from pathlib import Path
 
 from mas.config import Settings
 from mas.core.board import SessionBoard
 from mas.core.bus import MessageBus
 from mas.core.human import HitlKind
-from mas.core.message import Message
+from mas.core.message import (GROUP_MAIN, HUMAN, ORCHESTRATOR, Message, MsgType,
+                              dm_channel, is_group)
 from mas.core.state import StateTable
-from mas.core.task import Task, TaskResult
+from mas.core.task import FailureMode, Task, TaskResult, TaskStatus
 from mas.sandbox.base import Sandbox
+
+log = logging.getLogger(__name__)
+
+_LEADING_MENTION = re.compile(r"^\s*@\S+\s*")
+
+
+def _norm(goal: str) -> str:
+    return " ".join(goal.lower().split())
 
 
 class Router:
@@ -28,6 +48,18 @@ class Router:
         self.state = state
         self.sandboxes = sandboxes
         self.settings = settings
+        self._boards: dict[str, SessionBoard] = {}
+        self._task_waiters: dict[str, asyncio.Future[TaskResult]] = {}
+        self._hitl_waiters: dict[tuple[str, str], asyncio.Future[str]] = {}
+        self._hitl_task: dict[tuple[str, str], str] = {}      # request -> task id
+        self._hitl_counter: dict[str, int] = {}
+        self._root_counter: dict[str, int] = {}
+        self._delegations: dict[str, int] = {}                # parent task id -> count
+        self._attempts: dict[tuple[str, str, str], list[str]] = {}
+        self._cancelled_roots: set[str] = set()
+        bus.add_observer(self._on_message)
+
+    # ---- dispatch --------------------------------------------------------
 
     async def dispatch(self, *, requester: str, target: str, goal: str,
                        context: str = "", files: list[str] | None = None,
@@ -39,36 +71,229 @@ class Router:
            the same goal). On violation return TaskResult(success=False, error=...)
            without contacting the target.
         2. Register in the StateTable; copy `files` from the requester's sandbox
-           into the target's inbox/.
+           (or from the agent that produced them in this root) into the target's inbox/.
         3. Publish TASK_ASSIGN: in GROUP_MAIN if origin_channel is a group,
            otherwise in dm_channel(requester, target).
-        4. Await the TASK_RESULT whose reply_to is that message, with
-           settings.subtask_timeout_s; on timeout return a TIMEOUT failure.
+        4. Await the TASK_RESULT of that task, with settings.subtask_timeout_s;
+           on timeout return a TIMEOUT failure.
         Never raises for task failures.
         """
-        raise NotImplementedError
+        files = list(files or [])
+        chain = (list(parent.chain) if parent else []) + [requester]
+
+        denied = self._check_limits(requester, target, goal, parent, root_id, chain)
+        sources: dict[str, Path] = {}
+        if denied is None:
+            for name in files:
+                src = self._locate(name, requester, root_id)
+                if src is None:
+                    denied = f"file not found: {name}"
+                    break
+                sources[name] = src
+        if denied is not None:
+            return self._denied(denied)
+
+        task = Task(goal=goal, assignee=target, requester=requester,
+                    session_id=session_id, root_id=root_id,
+                    origin_channel=origin_channel, context=context, files=files,
+                    chain=chain, parent_id=parent.id if parent else None)
+        self.state.register(task)
+        if parent:
+            self._delegations[parent.id] = self._delegations.get(parent.id, 0) + 1
+        self._attempts.setdefault((root_id, target, _norm(goal)), []).append(task.id)
+
+        try:
+            for name, src in sources.items():
+                self.sandboxes[target].import_file(src, Path(name).name)
+        except Exception as exc:                      # sandbox I/O problem, not a bug here
+            result = TaskResult(task.id, False, "", error=f"cannot hand over files: {exc}",
+                                failure_mode=FailureMode.TOOL_ERROR)
+            self.state.finish(result)
+            return result
+
+        fut: asyncio.Future[TaskResult] = asyncio.get_running_loop().create_future()
+        self._task_waiters[task.id] = fut
+        channel = GROUP_MAIN if is_group(origin_channel) else dm_channel(requester, target)
+        await self.bus.publish(Message(
+            MsgType.TASK_ASSIGN, sender=requester, channel=channel,
+            content=f"@{target} {goal}", payload={"task": task.to_dict()},
+            receiver=target, mentions=[target]))
+        try:
+            return await asyncio.wait_for(fut, self.settings.subtask_timeout_s)
+        except asyncio.TimeoutError:
+            result = TaskResult(
+                task.id, False, "", error=f"no result within {self.settings.subtask_timeout_s}s",
+                failure_mode=FailureMode.TIMEOUT)
+            self.state.finish(result)
+            return result
+        finally:
+            self._task_waiters.pop(task.id, None)
+
+    def _check_limits(self, requester: str, target: str, goal: str, parent: Task | None,
+                      root_id: str, chain: list[str]) -> str | None:
+        """Return the reason a call must be refused, or None if it may proceed."""
+        s = self.settings
+        if root_id in self._cancelled_roots:
+            return "the request was cancelled"
+        if target in (HUMAN, ORCHESTRATOR) or target not in self.bus.members(GROUP_MAIN):
+            return f"unknown agent: {target}"
+        if target in chain:
+            return f"delegation cycle: {' -> '.join(chain + [target])}"
+        if len(chain) - 1 > s.max_delegation_depth:
+            return f"delegation depth would exceed {s.max_delegation_depth}"
+        if parent and self._delegations.get(parent.id, 0) >= s.max_delegations_per_task:
+            return f"task {parent.id} already delegated {s.max_delegations_per_task} times"
+        tries = self._attempts.get((root_id, target, _norm(goal)), [])
+        attempts = sum(1 for tid in tries if self.state.get(tid).status != TaskStatus.DECLINED)
+        if attempts > s.max_retries_same_goal:       # first try + max_retries retries
+            return f"same goal already tried {attempts} times on {target}"
+        return None
+
+    def _locate(self, name: str, requester: str, root_id: str) -> Path | None:
+        """Where `name` lives: the requester's own sandbox, else the workspace of the
+        agent whose result in this root listed it as an artifact (newest first)."""
+        owners = [requester] + [
+            t.assignee for t in reversed(self.state.by_root(root_id))
+            if (r := self.state.result(t.id)) and name in r.artifacts]
+        for owner in owners:
+            sb = self.sandboxes.get(owner)
+            try:
+                if sb and sb.exists(name):
+                    return sb.resolve(name)
+            except PermissionError:
+                return None
+        return None
+
+    @staticmethod
+    def _denied(reason: str) -> TaskResult:
+        """Result for a call refused before any task was created."""
+        return TaskResult("t" + uuid.uuid4().hex[:6], False, "", error=f"refused: {reason}",
+                          failure_mode=FailureMode.TOOL_ERROR)
+
+    # ---- direct tasks ------------------------------------------------------
 
     def open_direct_task(self, msg: Message, assignee: str) -> Task:
         """Register a task a human gave directly to an agent (DM, or @agent in
         the group). The returned task's origin_channel is msg.channel."""
-        raise NotImplementedError
+        session_id = self.session_of(msg.channel)
+        task = Task(goal=_LEADING_MENTION.sub("", msg.content, count=1).strip() or msg.content,
+                    assignee=assignee, requester=HUMAN, session_id=session_id,
+                    root_id=self.new_root_id(session_id), origin_channel=msg.channel,
+                    chain=[HUMAN])
+        self.state.register(task)
+        self._attempts.setdefault((task.root_id, assignee, _norm(task.goal)), []).append(task.id)
+        board = self.board(session_id)
+        board.start_root(task.root_id, msg.content)
+        board.add_task(task)                 # no TASK_ASSIGN is published for these
+        return task
+
+    def new_root_id(self, session_id: str) -> str:
+        """Next root id of the session: R1, R2, ..."""
+        n = self._root_counter.get(session_id, 0) + 1
+        self._root_counter[session_id] = n
+        return f"R{n}"
+
+    # ---- human in the loop -----------------------------------------------
 
     async def request_human(self, task: Task, kind: HitlKind, question: str,
                             options: list[str] | None = None) -> str:
         """Publish HITL_REQUEST (@human, numbered h1, h2, ... per session) in
         task.origin_channel and wait for the matching HITL_RESPONSE. Sets the
         task to WAITING_HUMAN meanwhile. Works for delegated tasks too, because
-        origin_channel is inherited down the delegation chain."""
-        raise NotImplementedError
+        origin_channel is inherited down the delegation chain.
+        Returns "cancelled" if the request is cancelled with /cancel."""
+        options = list(options or [])
+        n = self._hitl_counter.get(task.session_id, 0) + 1
+        self._hitl_counter[task.session_id] = n
+        request_id = f"h{n}"
+        key = (task.session_id, request_id)
+        fut: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+        self._hitl_waiters[key] = fut
+        self._hitl_task[key] = task.id
+        self._set_state(task.id, TaskStatus.WAITING_HUMAN, question)
+        text = f"@human {question}" + (f" [{' / '.join(options)}]" if options else "")
+        try:
+            await self.bus.publish(Message(
+                MsgType.HITL_REQUEST, sender=task.assignee, channel=task.origin_channel,
+                content=text, receiver=HUMAN, mentions=[HUMAN],
+                payload={"request_id": request_id, "task_id": task.id, "kind": kind.value,
+                         "question": question, "options": options}))
+            answer = await fut
+        finally:
+            self._hitl_waiters.pop(key, None)
+            self._hitl_task.pop(key, None)
+        self._set_state(task.id, TaskStatus.RUNNING)
+        return answer
+
+    # ---- sessions and boards -----------------------------------------------
 
     def board(self, session_id: str) -> SessionBoard:
         """The session's board (created on first use)."""
-        raise NotImplementedError
+        if session_id not in self._boards:
+            self._boards[session_id] = SessionBoard(session_id, self.settings.board_max_chars)
+        return self._boards[session_id]
 
     def session_of(self, channel: str) -> str:
-        """Session id for a channel: the group chat, or one DM conversation."""
-        raise NotImplementedError
+        """Session id for a channel: the group chat, or one DM conversation.
+        Each channel is its own session, so the channel name is the id."""
+        return channel
+
+    # ---- cancel ------------------------------------------------------------
 
     def cancel_root(self, root_id: str) -> None:
-        """/cancel: mark all unfinished tasks of the root CANCELLED and release waiters."""
-        raise NotImplementedError
+        """/cancel: mark all unfinished tasks of the root CANCELLED and release waiters.
+        Later calls in the same root are refused. Agents still running keep going in the
+        background, their late results are stored but do not change the status."""
+        self._cancelled_roots.add(root_id)
+        for task in self.state.by_root(root_id):
+            if task.status.finished:
+                continue
+            self.state.update(task.id, TaskStatus.CANCELLED, "cancelled by human")
+            fut = self._task_waiters.pop(task.id, None)
+            if fut and not fut.done():
+                fut.set_result(TaskResult(task.id, False, "", error="cancelled"))
+            for key, tid in list(self._hitl_task.items()):
+                waiter = self._hitl_waiters.get(key)
+                if tid == task.id and waiter and not waiter.done():
+                    waiter.set_result("cancelled")
+
+    # ---- bus observer ------------------------------------------------------
+
+    def _on_message(self, msg: Message) -> None:
+        try:
+            if msg.type == MsgType.STATUS:
+                p = msg.payload
+                self._set_state(p["task_id"], TaskStatus(p["status"]), p.get("note", ""))
+            elif msg.type == MsgType.TASK_RESULT:
+                self._on_result(TaskResult.from_dict(msg.payload["result"]))
+            elif msg.type == MsgType.HITL_RESPONSE:
+                key = (self.session_of(msg.channel), msg.payload["request_id"])
+                fut = self._hitl_waiters.get(key)
+                if fut and not fut.done():
+                    fut.set_result(msg.payload["answer"])
+        except Exception:
+            log.exception("router failed on message %s", msg.id)
+        try:
+            self.board(self.session_of(msg.channel)).on_message(msg)
+        except Exception:
+            log.exception("board failed on message %s", msg.id)
+
+    def _on_result(self, result: TaskResult) -> None:
+        try:
+            task = self.state.get(result.task_id)
+        except KeyError:
+            return
+        if task.status.finished and task.status != TaskStatus.CANCELLED:
+            return                      # late result of a task that already timed out
+        self.state.finish(result)
+        fut = self._task_waiters.get(result.task_id)
+        if fut and not fut.done():
+            fut.set_result(result)
+
+    def _set_state(self, task_id: str, status: TaskStatus, note: str = "") -> None:
+        """Update a task unless it is unknown or already finished."""
+        try:
+            if not self.state.get(task_id).status.finished:
+                self.state.update(task_id, status, note)
+        except KeyError:
+            pass

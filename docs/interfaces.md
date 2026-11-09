@@ -148,6 +148,18 @@ payload 格式：
 
 其他方法：`open_direct_task`（人类私聊或 @ 某个 agent 时登记任务）、`request_human`（HITL，编号 h1、h2……，弹在 `origin_channel`）、`board(session_id)`、`session_of(channel)`、`cancel_root`。
 
+补充约定（第 2 步实现时定下的）：
+
+- `Task.chain` 是**委派者**的链，不含执行者：Orchestrator 派出的任务 `chain == ["orchestrator"]`、`depth == 0`；coder 再委派给 researcher 的任务 `chain == ["orchestrator", "coder"]`、`depth == 1`。深度超过 `max_delegation_depth` 时拒绝；目标已在 `chain` 里（含请求者自己）时判为循环。
+- 同一目标的重试：同一 root 下，同一 agent、同一目标（忽略大小写和多余空格）最多尝试 `1 + max_retries_same_goal` 次；被拒绝（declined）的不占次数。
+- 被拒绝的调用（超限、未知 agent、文件找不到、root 已取消）返回 `success=False, failure_mode=TOOL_ERROR`，`error` 以 `refused:` 开头，不登记任务、不联系目标。
+- `files` 先在请求者自己的 sandbox 里找；找不到时，到本 root 内产出过该文件（出现在某个结果的 `artifacts`）的 agent 的 sandbox 里找。Orchestrator 没有 sandbox，所以走第二条路。
+- 新增 `Router.new_root_id(session_id)`：返回 R1、R2……（每个会话各自计数），Orchestrator 开 root 时调用。
+- 新增 `SessionBoard.add_task(task)`：`open_direct_task` 登记的直接任务不发 `TASK_ASSIGN`，由 Router 直接告诉看板。
+- `session_of(channel)` 直接返回频道名，每个频道一个会话。
+- `cancel_root` 之后，该 root 的新调用会被拒绝；等待中的 `dispatch` 返回 `error="cancelled"`，等待中的 `request_human` 返回 `"cancelled"`。
+- Router 同时负责：根据 `STATUS` 更新状态表、把每条消息交给对应会话的看板。
+
 ### 3.5 状态表与看板
 
 - `StateTable`：唯一的任务状态来源，只由 Router 写入；`/status`、看板、评测都从这里读。

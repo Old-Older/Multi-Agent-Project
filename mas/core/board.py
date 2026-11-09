@@ -14,7 +14,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from mas.core.message import HUMAN, Message, MsgType
-from mas.core.task import TaskResult
+from mas.core.task import Task, TaskResult
 
 
 @dataclass
@@ -88,10 +88,7 @@ class SessionBoard:
         if msg.type == MsgType.CHAT and msg.sender == HUMAN:
             self._on_human(msg.content)
         elif msg.type == MsgType.TASK_ASSIGN:
-            t = msg.payload["task"]
-            self._ensure_root(t["root_id"])
-            self.tasks[t["id"]] = TaskEntry(
-                id=t["id"], root_id=t["root_id"], assignee=t["assignee"], goal=t["goal"])
+            self.add_task(Task.from_dict(msg.payload["task"]))
         elif msg.type == MsgType.TASK_RESULT:
             self._on_result(TaskResult.from_dict(msg.payload["result"]))
         elif msg.type == MsgType.HITL_REQUEST:
@@ -103,6 +100,13 @@ class SessionBoard:
             entry = self.hitl.get(msg.payload["request_id"])
             if entry:
                 entry.answer = msg.payload["answer"]
+
+    def add_task(self, task: Task) -> None:
+        """Record a running task. Called for TASK_ASSIGN messages, and directly by the
+        Router for tasks a human gave straight to an agent (no TASK_ASSIGN is published)."""
+        self._ensure_root(task.root_id)
+        self.tasks[task.id] = TaskEntry(
+            id=task.id, root_id=task.root_id, assignee=task.assignee, goal=task.goal)
 
     def _on_human(self, text: str) -> None:
         text = text.strip()
