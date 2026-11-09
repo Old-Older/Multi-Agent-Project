@@ -19,6 +19,22 @@ decompose and delegate tasks, run tools inside isolated sandboxes, and learn fro
 > | 8 | **私聊里的 `/cancel` 由 `Agent.handle_chat` 处理**（取消这个私聊里未结束的任务，并发一条带 `cancelled_roots` 的"Cancelled R1" 通知）。**root id 现在全局唯一**（R1、R2……跨会话递增）。新增依赖 `prompt_toolkit`（命令行用，`pip install -e .` 会装）。 | 如果你重写 `WorkerAgent.handle_chat`，对不认识的消息请调用 `super().handle_chat(msg)`，否则私聊里的 `/cancel` 会失效。不要自己假设 root id 在每个会话里从 R1 开始。 |
 > | 9 | **评测框架读什么**：Orchestrator 的最终回复是一条 `CHAT`（`receiver` 是 human），`payload` 是 `{"final": True, "root_id", "success", "rounds", "failure_mode", "deliverables", "output_dir"}`；也可以直接读 `Orchestrator.outcomes[root_id]`。交付物在 `data/output/<root_id>-<启动时间>/`，完整路径就在 `payload["output_dir"]` 里（检查器读这个，不要自己拼路径）。`success` 只表示"LLM 调用了 finish"，对不对由 checker 判断。 | 写 `run_case` 时等这条消息即可，轮数、失败模式、输出目录都在里面。 |
 > | 10 | **记忆已经能用了**：`JsonlMemory.for_agent(settings.memory_dir, agent_id)` 得到每个 agent 自己的记忆；`add(exp)`、`recall(query, k)`、`profile(max_chars)` 都已实现。还有一个现成的 `tags_for_tools(tool_names, artifacts)` 帮你打标签。同一个 `task_id` 可以 `add` 两次，后写的算数。`JsonlMemory.clear()` 清空一个 agent 的记忆（评测要从空记忆开始时用）。 | `WorkerAgent`：开始任务时 `recall(goal, settings.memory_recall_k)` 注入 prompt；每个子任务结束 `add` 一次（失败时等异步反思出教训后再 `add` 一次带 `lesson` 的）。**建议不要记录被 `decline` 的和被 `/cancel` 的任务**：它们不是"尝试后失败"，记进去会拉低成功率、污染能力档案。 |
+> | 11 | **系统可以跑起来了**：`python -m mas --demo`（不需要你的部分）。组装在 `mas/app.py`，**你要接的地方**：`build_tools(role, settings)`（返回真实工具，现在返回空列表）；`default_worker_factory` 建 `WorkerAgent`；`default_sandbox_factory` 用 `LocalSandbox`/`DockerSandbox`；`make_llm` 建 `DeepSeekClient`。`mas/demo.py` 里的 `DemoWorker` 是个完整的例子，演示了一个 Worker 该做的事：拒绝做不了的、危险步骤前 `ask_human`、每步检查 `is_cancelled`、开始前 `recall`、结束时 `add`。 | 写好 `WorkerAgent`、工具、`LocalSandbox`、`DeepSeekClient` 后，`python -m mas` 就是真系统；评测框架用 `build_system(..., human=AutoResponder())` + `System.start()`。 |
+
+## 怎么运行
+
+```bash
+# 演示：不需要 API key，也不需要 LI 的部分（stand-in LLM 和 worker，其余都是真的）
+~/.virtualenvs/agents/bin/python -m mas --demo            # 想从头开始加 --fresh
+
+# 真实系统：需要 .env 里的 DEEPSEEK_API_KEY，以及 WorkerAgent、工具、DeepSeekClient（LI 的部分）写好
+~/.virtualenvs/agents/bin/python -m mas
+
+# 全部测试
+~/.virtualenvs/agents/bin/python -m unittest
+```
+
+演示里可以试：`write a python script and a document`、`run the tests`（writer 拒绝，改派给 coder）、`write a script and push it`（要你批准，`/reply yes`）、`/status`、`/cancel`、`/dm researcher find out about decorators`。命令行里输入 `/help` 看全部命令。组装代码在 `mas/app.py`，LI 要接的地方见 `docs/interfaces.md` §3.17。
 
 ## Hard constraints (from the spec)
 

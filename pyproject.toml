@@ -9,6 +9,9 @@ dependencies = [
     "prompt_toolkit>=3.0",
 ]
 
+[project.scripts]
+mas = "mas.__main__:main"
+
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
 

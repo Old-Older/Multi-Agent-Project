@@ -300,6 +300,19 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 
 `Settings.from_env(**overrides)` 读取 `.env` 中的变量（见 `.env.example`），遇到未知字段直接报错。运行时数据统一放在 `data/` 下（已在 `.gitignore` 中）。
 
+### 3.17 组装与入口 `mas/app.py`、`mas/demo.py`、`mas/__main__.py`（已实现）
+
+- `build_system(settings, llm, human, *, roles=None, worker_factory=..., sandbox_factory=...) -> System`：唯一知道各个零件怎么接在一起的地方。创建 `InMemoryBus`、`StateTable`，每个角色一个 workspace（`settings.workspaces_dir/<agent_id>`）和一份记忆（`JsonlMemory.for_agent`），然后是 `Router`、`Orchestrator` 和各个 Worker，最后让 human、orchestrator 和所有 Worker 加入 `group:main`（`Router` 要求被派活的 agent 在群里）。
+- `System`：`start()`（启动 Orchestrator 和各 Worker 的循环）、`stop()`、`run()`（启动全部，跑 human 一侧，直到 `/quit`，然后停掉 agent）；字段 `bus / state / router / orchestrator / workers / memories / sandboxes / human`。评测框架可以自己 `build_system(..., human=AutoResponder())` 再 `start()`。
+- **接口点（LI Heyang 要接的地方）**，每个都有默认值：
+  - `build_tools(role, settings) -> list[Tool]`：返回 `role.tool_names` 对应的真实工具。**现在返回空列表**，写好工具后在这里接上。
+  - `default_worker_factory`：`WorkerAgent(role, bus, router, settings, llm, build_tools(...), sandbox, memory)`；想换实现就传 `worker_factory=`（参数是 `RoleConfig` 和 `WorkerParts(bus, router, settings, llm, sandbox, memory)`）。
+  - `default_sandbox_factory`：按 `settings.sandbox_backend` 用 `LocalSandbox` 或 `DockerSandbox`。
+  - `make_llm(settings)`：按 `llm_provider` 建 `DeepSeekClient`；没有 `DEEPSEEK_API_KEY` 时直接退出并告诉你怎么办。`make_human(settings)`：`auto_hitl` 为真用 `AutoResponder`，否则用 `CliHumanIO`。
+- `python -m mas`：真实系统（需要 LI 的 `WorkerAgent`、工具、`DeepSeekClient`）。选项：`--data-dir`、`-v`。会读取 `.env`（装了 python-dotenv 的话）。
+- `python -m mas --demo`：**不需要 API key，也不需要 LI 的部分**。用真实的 bus / Router / 状态表 / 记忆 / Orchestrator / 命令行，换上三个替身：`demo_brain`（用规则决策的"LLM"，交给 `MockLLM(responder=...)`）、`DemoWorker`（假装工作三步，写一个文件，会拒绝自己做不了的事、做危险的事前问人类、被取消就停下、开始前召回教训、结束时记一条经验）、`DemoSandbox`（只能读写文件）。数据放在 `<data-dir>/demo/`；`--delay` 调每一步的耗时，`--fresh` 清掉上次的数据。试试：`write a python script and a document`、`run the tests`（writer 拒绝，改派给 coder）、`write a script and push it`（要你批准，`/reply yes`），拒绝一次之后再做同样的事，会看到它记得上次的教训。
+- 命令行输出会立即 flush，所以通过管道（`| tee`、子进程）也是实时的。
+
 ---
 
 ## 4. 全局约定

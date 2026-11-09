@@ -177,7 +177,7 @@ class CliHumanIO(HumanIO):
         else:
             self._patch_stdout = nullcontext
         self._read_line = read_line
-        self._write = write or print
+        self._write = write or (lambda text: print(text, flush=True))     # flush: output through a pipe appears at once
         self._bus: MessageBus | None = None
         # open HITL requests: (channel, request id) -> (future holding the answer, request)
         self._pending: dict[tuple[str, str], tuple[asyncio.Future[str], HitlRequest]] = {}
