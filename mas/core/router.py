@@ -23,8 +23,7 @@ from mas.config import Settings
 from mas.core.board import SessionBoard
 from mas.core.bus import MessageBus
 from mas.core.human import CANCELLED_ANSWER, HitlKind
-from mas.core.message import (GROUP_MAIN, HUMAN, ORCHESTRATOR, Message, MsgType,
-                              dm_channel, is_group)
+from mas.core.message import GROUP_MAIN, HUMAN, ORCHESTRATOR, Message, MsgType
 from mas.core.state import StateTable
 from mas.core.task import FailureMode, Task, TaskResult, TaskStatus
 from mas.sandbox.base import Sandbox
@@ -52,7 +51,7 @@ class Router:
         self._hitl_waiters: dict[tuple[str, str], asyncio.Future[str]] = {}
         self._hitl_root: dict[tuple[str, str], str] = {}      # open request -> its root id
         self._hitl_counter: dict[str, int] = {}
-        self._root_counter: dict[str, int] = {}
+        self._root_counter = 0
         self._delegations: dict[str, int] = {}                # parent task id -> count
         self._attempts: dict[tuple[str, str, str], list[str]] = {}
         self._cancelled_roots: set[str] = set()
@@ -73,8 +72,7 @@ class Router:
            refusal does not count towards the retry or delegation limits.
         2. Register in the StateTable; copy `files` from the requester's sandbox
            (or from the agent that produced them in this root) into the target's inbox/.
-        3. Publish TASK_ASSIGN: in GROUP_MAIN if origin_channel is a group,
-           otherwise in dm_channel(requester, target).
+        3. Publish TASK_ASSIGN in task.channel (the group, or the DM of requester and target).
         4. Await the TASK_RESULT of that task, with settings.subtask_timeout_s;
            on timeout return a TIMEOUT failure. The clock does not run while the task
            is WAITING_HUMAN (a human may take as long as they like; /cancel ends it).
@@ -91,7 +89,7 @@ class Router:
         sources: dict[str, Path] = {}
         if denied is None:
             for name in files:
-                src = self._locate(name, requester, root_id)
+                src = self.locate_file(name, requester, root_id)
                 if src is None:
                     denied = f"file not found: {name}"
                     break
@@ -115,9 +113,8 @@ class Router:
 
         fut: asyncio.Future[TaskResult] = asyncio.get_running_loop().create_future()
         self._task_waiters[task.id] = fut
-        channel = GROUP_MAIN if is_group(origin_channel) else dm_channel(requester, target)
         await self.bus.publish(Message(
-            MsgType.TASK_ASSIGN, sender=requester, channel=channel,
+            MsgType.TASK_ASSIGN, sender=requester, channel=task.channel,
             content=f"@{target} {goal}", payload={"task": task.to_dict()},
             receiver=target, mentions=[target]))
         try:
@@ -155,9 +152,10 @@ class Router:
             return f"same goal already tried {attempts} times on {target}"
         return None
 
-    def _locate(self, name: str, requester: str, root_id: str) -> Path | None:
+    def locate_file(self, name: str, requester: str, root_id: str) -> Path | None:
         """Where `name` lives: the requester's own sandbox, else the workspace of the
-        agent whose result in this root listed it as an artifact (newest first)."""
+        agent whose result in this root listed it as an artifact (newest first). The
+        Orchestrator uses it to collect the deliverables."""
         owners = [requester] + [
             t.assignee for t in reversed(self.state.by_root(root_id))
             if (r := self.state.result(t.id)) and name in r.artifacts]
@@ -196,11 +194,12 @@ class Router:
         board.add_task(task)                 # no TASK_ASSIGN is published for these
         return task
 
-    def new_root_id(self, session_id: str) -> str:
-        """Next root id of the session: R1, R2, ..."""
-        n = self._root_counter.get(session_id, 0) + 1
-        self._root_counter[session_id] = n
-        return f"R{n}"
+    def new_root_id(self, session_id: str = "") -> str:
+        """Next root id: R1, R2, ... Unique across all sessions, because the state table,
+        cancel_root and the retry counters identify a root by its id alone. (`session_id`
+        is accepted for compatibility and not used.)"""
+        self._root_counter += 1
+        return f"R{self._root_counter}"
 
     # ---- human in the loop -----------------------------------------------
 
@@ -273,6 +272,14 @@ class Router:
             waiter = self._hitl_waiters.get(key)
             if root == root_id and waiter and not waiter.done():
                 waiter.set_result(CANCELLED_ANSWER)
+
+    def cancel_session(self, session_id: str) -> list[str]:
+        """Cancel every root that still has unfinished tasks in the session (for /cancel in
+        a DM, where the Orchestrator is not involved). Returns the roots it cancelled."""
+        roots = list(dict.fromkeys(t.root_id for t in self.state.active(session_id)))
+        for root_id in roots:
+            self.cancel_root(root_id)
+        return roots
 
     # ---- bus observer ------------------------------------------------------
 

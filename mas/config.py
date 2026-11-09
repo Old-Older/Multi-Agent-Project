@@ -23,7 +23,7 @@ class Settings:
     # loop limits (D10, D11, §5)
     max_orchestrator_rounds: int = 8
     max_worker_steps: int = 12
-    subtask_timeout_s: float = 180.0          # 待确认
+    subtask_timeout_s: float = 180.0          # to be confirmed
     max_delegation_depth: int = 2
     max_delegations_per_task: int = 2
     max_retries_same_goal: int = 2
@@ -36,7 +36,7 @@ class Settings:
     profile_max_chars: int = 300
 
     # sandbox and paths (§9)
-    sandbox_backend: str = "local"            # "local" | "docker"   待确认
+    sandbox_backend: str = "local"            # "local" | "docker"   to be confirmed
     docker_image: str = "python:3.11-slim"
     workspaces_dir: Path = Path("workspaces")
     data_dir: Path = Path("data")             # memory/, sessions/, output/ live under here

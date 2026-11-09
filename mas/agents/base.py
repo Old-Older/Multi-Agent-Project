@@ -7,14 +7,23 @@ routing, status and HITL is done here so the ReAct loop never touches the bus.
 """
 from __future__ import annotations
 
+import asyncio
+import logging
+import time
 from abc import ABC, abstractmethod
 
 from mas.config import Settings
 from mas.core.bus import MessageBus
 from mas.core.human import HitlKind
-from mas.core.message import Message
+from mas.core.message import HUMAN, Message, MsgType
 from mas.core.router import Router
-from mas.core.task import Task, TaskResult, TaskStatus
+from mas.core.task import FailureMode, Task, TaskResult, TaskStatus
+
+log = logging.getLogger(__name__)
+
+
+def _clip(text: str, limit: int) -> str:
+    return text if len(text) <= limit else text[:max(limit - 1, 0)] + "…"
 
 
 class Agent(ABC):
@@ -27,8 +36,21 @@ class Agent(ABC):
 
     async def run(self) -> None:
         """Subscribe and dispatch forever. Each accepted message is handled in
-        its own asyncio task so one agent can serve several tasks in parallel."""
-        raise NotImplementedError
+        its own asyncio task so one agent can serve several tasks in parallel.
+        If run() is cancelled, the handlers still in flight are cancelled too."""
+        inbox = self.bus.subscribe(self.agent_id)
+        running: set[asyncio.Task] = set()
+        try:
+            while True:
+                msg = await inbox.get()
+                if self.should_handle(msg):
+                    handler = asyncio.create_task(self.on_message(msg))
+                    running.add(handler)
+                    handler.add_done_callback(running.discard)
+        finally:
+            for handler in list(running):
+                handler.cancel()
+            await asyncio.gather(*running, return_exceptions=True)
 
     def should_handle(self, msg: Message) -> bool:
         """True if msg.receiver is this agent or it is @mentioned. Everything
@@ -38,24 +60,108 @@ class Agent(ABC):
 
     async def on_message(self, msg: Message) -> None:
         """TASK_ASSIGN -> handle_task, then publish TASK_RESULT (reply_to = assign id)
-        in the same channel. CHAT -> handle_chat. Catches every exception and turns
-        it into a CRASH TaskResult so one bug never kills the run."""
-        raise NotImplementedError
+        in the same channel. CHAT from the human -> handle_chat. Other messages are
+        ignored. Catches every exception: a bug in handle_task becomes a CRASH
+        TaskResult, a bug in handle_chat becomes an error line in the chat, so one
+        bug never kills the run."""
+        try:
+            if msg.type == MsgType.TASK_ASSIGN:
+                task = Task.from_dict(msg.payload["task"])
+                await self._execute(task, reply_to=msg.id, receiver=msg.sender)
+            elif msg.type == MsgType.CHAT and msg.sender == HUMAN:
+                await self.handle_chat(msg)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.exception("%s failed on message %s", self.agent_id, msg.id)
+            await self.bus.publish(Message(
+                MsgType.CHAT, sender=self.agent_id, channel=msg.channel, receiver=HUMAN,
+                content=f"@{HUMAN} {self.agent_id} hit an internal error: {type(exc).__name__}: {exc}",
+                mentions=[HUMAN], reply_to=msg.id))
+
+    async def _execute(self, task: Task, *, reply_to: str, receiver: str) -> TaskResult:
+        """Run `task` through handle_task and publish its TASK_RESULT. Never raises
+        (except for cancellation of the asyncio task itself)."""
+        started = time.monotonic()
+        if self.is_cancelled(task):
+            result = TaskResult(task.id, False, "", error="cancelled")
+        else:
+            await self.report_status(task, TaskStatus.RUNNING,
+                                     f"Received {task.id}: {_clip(task.goal, 60)}", public=True)
+            try:
+                result = await self.handle_task(task)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.exception("%s crashed on task %s", self.agent_id, task.id)
+                result = TaskResult(task.id, False, "", error=f"{type(exc).__name__}: {exc}",
+                                    failure_mode=FailureMode.CRASH)
+        result.task_id = task.id                      # a result always belongs to its task
+        result.summary = _clip(result.summary, self.settings.result_summary_max_chars)
+        if not result.duration:
+            result.duration = time.monotonic() - started
+        await self.bus.publish(Message(
+            MsgType.TASK_RESULT, sender=self.agent_id, channel=task.channel,
+            content=self._result_text(result, receiver), payload={"result": result.to_dict()},
+            receiver=receiver, mentions=[receiver], reply_to=reply_to))
+        return result
+
+    @staticmethod
+    def _result_text(result: TaskResult, receiver: str) -> str:
+        """Chat text of a TASK_RESULT, from a template (no LLM)."""
+        if result.declined:
+            text = f"Declined: {result.error or result.summary}" + (
+                f", suggest {result.suggest}" if result.suggest else "")
+        elif result.success:
+            text = f"Done: {result.summary}" + (
+                f" (files: {', '.join(result.artifacts)})" if result.artifacts else "")
+        else:
+            text = f"Failed: {result.error or result.summary}"
+        return f"@{receiver} {text}"
 
     @abstractmethod
     async def handle_task(self, task: Task) -> TaskResult: ...
 
     async def handle_chat(self, msg: Message) -> None:
-        """A human message addressed to this agent (DM or @mention)."""
-        raise NotImplementedError
+        """A human message addressed to this agent (DM or @mention).
+
+        Default (used by Workers): treat it as a task the human gave directly. The Router
+        registers it (a new root), handle_task runs, and the TASK_RESULT goes back to the
+        human in the same channel. `/cancel` cancels the unfinished tasks of this chat
+        session and says so (CANCEL_NOTICE below); other slash commands (/status, ...)
+        belong to the Orchestrator and the CLI and are ignored here. Subclasses override
+        this to do something else, e.g. answer a question without opening a task; they
+        should call super().handle_chat(msg) for anything they do not handle."""
+        text = msg.content.strip()
+        if text.split(" ")[0].lower() == "/cancel":
+            await self.announce_cancelled(
+                msg.channel, self.router.cancel_session(self.router.session_of(msg.channel)), msg.id)
+            return
+        if text.startswith("/"):
+            return
+        task = self.router.open_direct_task(msg, self.agent_id)
+        await self._execute(task, reply_to=msg.id, receiver=HUMAN)
+
+    async def announce_cancelled(self, channel: str, roots: list[str], reply_to: str | None = None) -> None:
+        """Tell the human what /cancel did. The payload {"cancelled_roots": [...]} lets the
+        CLI drop the requests that were still waiting for an answer in those roots."""
+        await self.bus.publish(Message(
+            MsgType.CHAT, sender=self.agent_id, channel=channel, receiver=HUMAN, reply_to=reply_to,
+            content=f"Cancelled {', '.join(roots)}" if roots else "No unfinished task to cancel",
+            payload={"cancelled_roots": roots}))
 
     # ---- services for subclasses --------------------------------------------
 
     async def report_status(self, task: Task, status: TaskStatus, note: str = "",
                             public: bool = False) -> None:
-        """Publish STATUS. public=True also shows it in the chat (only for:
-        received, done, failed, waiting for human). Template text, no LLM."""
-        raise NotImplementedError
+        """Publish STATUS in the task's channel. The Router updates the state table from
+        it. public=True also shows `note` in the chat (use it only for: received, done,
+        failed, waiting for human); otherwise the message has no text and stays out of
+        the chat. Template text, no LLM."""
+        await self.bus.publish(Message(
+            MsgType.STATUS, sender=self.agent_id, channel=task.channel,
+            content=f"{self.agent_id}: {note}" if public and note else "",
+            payload={"task_id": task.id, "status": status.value, "note": note, "public": public}))
 
     async def ask_human(self, task: Task, question: str, kind: HitlKind,
                         options: list[str] | None = None) -> str:

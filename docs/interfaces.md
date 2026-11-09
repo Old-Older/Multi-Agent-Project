@@ -107,7 +107,7 @@ payload 格式：
 
 | MsgType | payload | 谁发 |
 |---|---|---|
-| `CHAT` | `{}` | 人类、agent |
+| `CHAT` | `{}`；`/cancel` 之后的 "Cancelled R1" 通知带 `{"cancelled_roots": ["R1", ...]}`（CLI 据此清掉那些 root 里还在等回答的请求） | 人类、agent |
 | `TASK_ASSIGN` | `{"task": Task.to_dict()}` | Router |
 | `TASK_RESULT` | `{"result": TaskResult.to_dict()}` | Agent 基类 |
 | `HITL_REQUEST` | `{"request_id", "task_id", "root_id", "kind", "question", "options"}`（`task_id` 在 Orchestrator 澄清时为 `None`） | Router |
@@ -146,7 +146,7 @@ payload 格式：
 3. 发 `TASK_ASSIGN`：群聊任务发到 `group:main`，私聊任务发到 `dm_channel(requester, target)`。
 4. 在 `subtask_timeout_s` 内等待对应的 `TASK_RESULT`，超时返回 `TIMEOUT` 失败；任务处于 `WAITING_HUMAN` 时不计时（等人类多久都行，`/cancel` 可随时终止）。**任务失败时从不抛异常。**
 
-其他方法：`open_direct_task`（人类私聊或 @ 某个 agent 时登记任务）、`request_human`（HITL，编号 h1、h2……，弹在 `origin_channel`）、`board(session_id)`、`session_of(channel)`、`cancel_root`。
+其他方法：`locate_file(name, requester, root_id)`（文件在哪个 workspace，Orchestrator 收集交付物时用）、`open_direct_task`（人类私聊或 @ 某个 agent 时登记任务）、`request_human`（HITL，编号 h1、h2……，弹在 `origin_channel`）、`board(session_id)`、`session_of(channel)`、`cancel_root`。
 
 补充约定（第 2 步实现时定下的）：
 
@@ -154,38 +154,53 @@ payload 格式：
 - 同一目标的重试：同一 root 下，同一 agent、同一目标（忽略大小写和多余空格）最多尝试 `1 + max_retries_same_goal` 次；被拒绝（declined）的不占次数。
 - 被拒绝的调用（超限、未知 agent、文件找不到、root 已取消）返回 `success=False, failure_mode=TOOL_ERROR`，`error` 以 `refused:` 开头；**仍会在状态表里登记成一个 `FAILED` 任务**（方便 `/status` 和调试），不联系目标，也不占重试次数和委派次数。看板里不显示它们（避免 Worker 的 prompt 变长）。
 - `files` 先在请求者自己的 sandbox 里找；找不到时，到本 root 内产出过该文件（出现在某个结果的 `artifacts`）的 agent 的 sandbox 里找。Orchestrator 没有 sandbox，所以走第二条路。
-- 新增 `Router.new_root_id(session_id)`：返回 R1、R2……（每个会话各自计数），Orchestrator 开 root 时调用。
+- 新增 `Router.new_root_id(session_id)`：返回 R1、R2……，**在所有会话里全局唯一**（状态表、`cancel_root`、重试计数都只用 root id 区分，所以不能让不同会话出现同一个 root id）。Orchestrator 开 root 时调用。
 - 新增 `SessionBoard.add_task(task)`：`open_direct_task` 登记的直接任务不发 `TASK_ASSIGN`，由 Router 直接告诉看板。
 - `session_of(channel)` 直接返回频道名，每个频道一个会话。
 - `cancel_root` 之后，该 root 的新调用会被拒绝；等待中的 `dispatch` 返回 `error="cancelled"`，等待中的 `request_human`（包括 Orchestrator 的澄清）返回 `CANCELLED_ANSWER`（`mas.core.human`，值为 `"cancelled"`）。Router 无法停止正在运行的 agent，所以 **Worker 必须自己检查**：每一步 ReAct 开始前、执行 `requires_approval` 的工具前，调用 `self.is_cancelled(task)`；`ask_human` 返回 `CANCELLED_ANSWER` 时要当作中止，不能当成同意。
 - `Router.request_human` 改成关键字参数：`request_human(*, session_id, root_id, origin_channel, requester, kind, question, options=None, task_id=None)`。Worker 照旧调 `Agent.ask_human(task, question, kind, options)`（签名不变，基类负责从 task 里取这些字段）；Orchestrator 澄清时没有 Task，传 `task_id=None`。**如果你的桩 Router 实现了 `request_human`，要改成这个签名。**
 - 新增 `Agent.is_cancelled(task)`：该任务在状态表里是否已 `CANCELLED`。
+- 新增 `Router.cancel_session(session_id)`：取消这个会话里所有还有未结束任务的 root，返回被取消的 root 列表。私聊里的 `/cancel` 用它（Orchestrator 管不到私聊任务）。
 - Router 同时负责：根据 `STATUS` 更新状态表、把每条消息交给对应会话的看板。
 
 ### 3.5 状态表与看板
 
 - `StateTable`：唯一的任务状态来源，只由 Router 写入；`/status`、看板、评测都从这里读。
+  `status_text(session_id)`（`/status` 的回答）：当前 root（最近一个还有未结束任务的，否则最近一个）逐个列出任务；更早的 root 每个只占一行（"R1: 2 tasks, all done" / "done 1, failed 1, declined 1"），所以回答不会随聊天变长。
 - `SessionBoard`：由 Router（bus 上的 observer）把本会话的消息转发给它，用代码更新，**不调 LLM**。`render()` 的压缩顺序和保留规则见 §3.1。每个会话一块看板，保存到 `data/sessions/<session_id>/board.json`。
 
 ### 3.6 人类端 `mas/core/human.py`
 
-- `HumanIO` 是 id 为 `"human"` 的总线成员，有 `run / show / answer` 三个方法。
-- `CliHumanIO` 支持的命令：`/dm <agent> <内容>`、`/status`、`/cancel`、`/reply <编号> <回答>`。
-- `AutoResponder` 按 `HitlKind` 立即回复默认答案，并统计 `hitl_count`；`submit()` 供评测框架以人类身份下发任务。
+- `HumanIO` 是 id 为 `"human"` 的总线成员，有 `run / show / answer` 三个方法（子类实现），外加两个**共用的方法**（已实现，`AutoResponder` 直接用）：
+  - `HumanIO.request_from(msg)`：把 `HITL_REQUEST` 消息还原成 `HitlRequest`（Orchestrator 澄清时 `task_id` 是空字符串）。
+  - `handle_incoming(bus, msg)`：处理人类 inbox 里的一条消息——跳过人类自己发的；调用 `show`；如果是 `HITL_REQUEST`，就在后台调用 `answer`，并把答案作为 `HITL_RESPONSE`（`reply_to` 指向请求，发在请求所在的频道）发回。`run()` 其实就是"从 inbox 取消息 → `handle_incoming`"。后台处理，所以多个请求可以同时等待。
+- `CliHumanIO`（已实现）：`run` 同时读输入和显示消息，直到 `/quit` 或输入结束。
+  - 输入：直接打字 = 在群里发话（没有 `@` 谁由 Orchestrator 处理；恰好 `@` 一个 agent 时 `receiver` 就是它）；`/dm <agent> <内容>`（私聊，直接任务）；`/status`、`/cancel`（发给 Orchestrator，取消群里当前的请求）；`/cancel <agent>`（发到和那个 agent 的私聊，由它的 `handle_chat` 取消这个私聊里还在做的任务）；`/reply <编号> <回答>`（只有一个请求在等待时可省略编号）；`/help`；`/quit`。
+  - 编号：群里的请求是 `h1`，私聊里的请求是 `coder:h1`；群里和私聊可以各有自己的 `h1`，写 `h1` 时群里的优先。
+  - 显示：`CHAT`、`TASK_ASSIGN`、`TASK_RESULT`、`HITL_REQUEST`，以及 `public=True` 的 `STATUS`；私聊里的消息带 `(DM·coder)` 标签；人类自己发的、非公开的 `STATUS`、`HITL_RESPONSE` 不显示。
+  - 收到 `{"cancelled_roots": [...]}` 的 "Cancelled R1" 通知后，CLI 清掉同一频道里属于这些 root 的待回答请求（Orchestrator 在步骤 5 里发这个通知；私聊里由 Agent 基类发）。
+  - 输入：真实终端里用 `prompt_toolkit`（提示符固定在底部，消息从上面滚出来），没装或不是终端（管道、文件）时退回 `input()`。为了能测试，输入和输出也可以替换：`CliHumanIO(read_line=..., write=...)`。
+- `AutoResponder`（LI Heyang）按 `HitlKind` 立即回复默认答案，并统计 `hitl_count`；`submit()` 供评测框架以人类身份下发任务。它只需实现 `show`（可以什么都不做）、`answer`、`run` 和 `submit`，`run` 里调用 `handle_incoming` 即可。
 
 ### 3.7 Agent 基类 `mas/agents/base.py`
 
-子类只需实现 `handle_task`（以及需要时的 `handle_chat`）。下面这些服务由基类提供，ReAct 循环不需要直接操作总线：
+子类只需实现 `handle_task`（以及需要时重写 `handle_chat`）。下面这些服务由基类提供，ReAct 循环不需要直接操作总线：
 
 | 方法 | 作用 |
 |---|---|
+| `run()` | 订阅自己的 inbox，不停取消息；每条该自己处理的消息开一个独立的 asyncio 任务，所以一个 agent 可以同时做多个任务。`run()` 被取消时，在途的处理也一并取消（已实现） |
 | `should_handle(msg)` | 只处理 `receiver` 是自己或 @ 到自己的消息（已实现） |
-| `on_message(msg)` | `TASK_ASSIGN` → `handle_task` → 发 `TASK_RESULT`；任何异常都转成 `CRASH` 结果，保证不会让整个系统崩溃 |
-| `report_status(task, status, note, public)` | `public=True` 只用于收到、完成、失败、等待人类这几个节点 |
+| `on_message(msg)` | `TASK_ASSIGN` → 发"收到"的公开 `STATUS` → `handle_task` → 发 `TASK_RESULT`（`reply_to` 是那条 `TASK_ASSIGN`，发在 `task.channel` 里）；人类发来的 `CHAT` → `handle_chat`；其他消息忽略。`handle_task` 里的任何异常都转成 `CRASH` 结果，`handle_chat` 里的异常变成聊天里的一行报错，系统不会崩（已实现） |
+| `handle_chat(msg)` | **默认实现（Worker 直接用）**：把人类的私聊或 @ 当作直接任务——`Router.open_direct_task` 登记、跑 `handle_task`、把 `TASK_RESULT` 发回给人类；`/cancel` 取消这个私聊（或 @ 会话）里还没结束的任务并发"已取消"通知；其他以 `/` 开头的命令忽略。想"只回答问题不建任务"的子类可以重写，其余情况请调用 `super().handle_chat(msg)`（已实现） |
+| `report_status(task, status, note, public)` | 在 `task.channel` 发 `STATUS`，Router 据此更新状态表。`public=True` 才会在聊天里显示 `note`，只用于"收到"这类节点；否则消息没有正文（已实现） |
 | `ask_human(task, question, kind, options)` | 转给 `Router.request_human`；被 `/cancel` 时返回 `CANCELLED_ANSWER`（已实现） |
 | `is_cancelled(task)` | 任务是否已被 `/cancel`；Worker 每步前都要检查（已实现） |
 | `call_agent(task, target, goal, context, files)` | 再委派，转给 `Router.dispatch`（已实现） |
 | `board_text(task)` | 当前会话看板的文本（已实现） |
+
+基类在发出 `TASK_RESULT` 之前还会做三件事，Worker 不必操心：把 `result.task_id` 改成真实任务的 id；把 `summary` 截断到 `result_summary_max_chars`（默认 1500）；`duration` 为 0 时补上耗时。任务在开始前就已被 `/cancel` 的话，不会调用 `handle_task`，直接返回 `error="cancelled"`。
+
+新增 `Task.channel`：这个任务的 `TASK_ASSIGN`、`STATUS`、`TASK_RESULT` 所在的频道（群聊任务是 `group:main`，否则是请求者和执行者的私聊）。
 
 ### 3.8 虚拟工具 `mas/agents/virtual_tools.py`（schema 已实现）
 
@@ -210,8 +225,23 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 
 ### 3.10 Orchestrator `mas/agents/orchestrator.py`
 
-- `handle_chat`：处理 `/status`、`/cancel`、任务进行中的插话，其余消息开启 `run_root`。
-- `run_root` 的循环写在 docstring 里，对应 §2.1：一轮中的多个 `call_<agent>` 用 `asyncio.gather` 并发执行；`resp.text` 作为剩余计划写进看板；回给 LLM 的只有摘要、产物和是否成功；轮数用完时按 `MAX_ROUNDS` 汇报。
+- **该处理哪些消息**（`should_handle`）：发给它的（`receiver` 是 orchestrator，或 @ 到它），以及群里人类发的、没有 @ 任何人的消息（D7）。@ 了 agent 的消息只有那个 agent 处理。人类私聊 `orchestrator` 时，它在那个私聊会话里处理。
+- `handle_chat`：
+  - `/status`：直接读状态表回答，不调 LLM（输出规则见 §3.5）。如果有一个请求正在处理、还没派出任务，会先写一行"R2 is being worked on; no task has been sent out yet."。
+  - `/cancel`：取消这个会话里所有未结束的任务和正在运行的请求，打断它的循环，发 "Cancelled R1" 通知（payload 带 `cancelled_roots`，CLI 据此清掉残留的请求）；没有进行中的任务时回"没有进行中的任务可以取消"。
+  - 其他消息：同一个会话里**已有请求在运行**时，当作插话，下一轮以 "(Human addition) ..." 追加给 LLM（看板也会记下）；否则开新 root（`Router.new_root_id`）并 `run_root`。
+- `run_root` 的循环，对应 §2.1：
+  - 第一条 user 消息是 "Human request: ..." 加会话看板文字（早先的 root 在里面各占一行，所以"把刚才的纪要翻译成英文"能找到文件）。
+  - 每轮 `llm.chat(messages, function_specs)`；`resp.text` 作为剩余计划（截到 200 字）写进看板。
+  - 一轮中的多个 `call_<agent>` 经 `Router.dispatch` 执行：**不同 agent 之间并行，同一个 agent 的多个调用按顺序一个接一个**（它们共用那个 agent 的 workspace，同时跑会互相覆盖文件或同时 commit）；回给 LLM 的是 JSON：`success`、`summary`、`artifacts`、`refs`、`open_issues`、`error`；被拒绝时是 `declined`、`reason`、`suggest`。
+  - `ask_human` 走 `Router.request_human`（澄清，`task_id=None`），回答作为 `{"answer": ...}` 回给 LLM。
+  - `finish(summary, deliverables)` 必须**单独**调用（和别的调用一起发会被拒绝并提示）。交付物从产出它的 agent 的 workspace（`Router.locate_file`）拷到 `data/output/<root_id>-<启动时间>/`（如 `R1-20261109-153012`；root 编号每次启动都从 R1 重来，加上时间才不会和上次的文件混在一起，同一秒启动的会再加 `-2`）。完整路径在最终回复的 `payload["output_dir"]` 里。
+  - 没有任何工具调用但有文字：当作最终回答；既没有工具调用也没有文字：提醒一次，占一轮。
+  - 轮数用完（`max_orchestrator_rounds`，默认 8）：用代码拼一段 "Done: ... Not done: ..." 的汇报，失败模式 `max_rounds`，已成功的产物也保留。`LLMError`：汇报失败，失败模式 `crash`。
+  - 取消时看板上该 root 标为 "Cancelled"，不发最终回复。
+- **最终回复**是群里（或那个私聊里）一条 `CHAT`，`receiver` 是 human，文字是 `@human <summary>` 加交付物清单；`payload`：`{"final": True, "root_id", "success", "rounds", "failure_mode", "deliverables", "output_dir"}`。评测框架等它即可。`success` 的意思是"LLM 调用了 finish"，结果对不对由评测的检查器判断。
+- `Orchestrator.outcomes[root_id]`：`RootOutcome(root_id, success, rounds, failure_mode, summary, deliverables, output_dir, duration)`，评测框架可以直接读。
+- 能力档案（`function_specs`）：每个根任务开始时读一次各 agent 的 `memory.profile()` 拼进 `call_<agent>` 的描述；某个 agent 没有记忆或读失败，就不带档案。
 
 ### 3.11 工具 `mas/tools/base.py`
 
@@ -230,9 +260,15 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 
 ### 3.13 记忆 `mas/memory/base.py`
 
+- `JsonlMemory`（已实现）：每个 agent 一个文件 `data/memory/<agent_id>.jsonl`，一条 `Experience` 一行（UTF-8，中文不转义）。`JsonlMemory.for_agent(settings.memory_dir, agent_id)` 给出路径。不调 LLM。
+  - `add(exp)`：追加一行。同一个 `task_id` 写了两次，**后写的算数**（读的时候取最后一条，并算作最新），所以 Worker 可以先记失败、等异步反思出教训后再 `add` 一次带教训的。坏掉的行读的时候跳过并记一条警告，不会让整个记忆读不出来。
+  - `recall(query, k)`：按关键词重合度排序，返回最多 k 条。关键词：英文单词（小写，去掉 a/the 之类的停用词）和中文的相邻两字。目标和标签里的词算 2 分，摘要和教训里的算 1 分；**有教训的再加 1 分**（教训正是召回要给 Worker 看的）；同分新的在前；一个词都不重合的不返回。
+  - `profile(max_chars)`：能力档案，形如 `Recent performance: code 8/10 succeeded, git 3/3 succeeded. Known weak spots: pip install times out; pages that need JS rendering fail.`。统计的是**最近 20 条**（`PROFILE_WINDOW`）里每个标签的成功数/总数（一条有多个标签就各算一次，没有标签算 `other`），按出现次数从多到少排；"Known weak spots" 是最近几次失败的教训（最多 3 条，重复的只写一次，成功记录里的教训忽略，放不下的跳过）。没有任何记录时返回空字符串；长度绝不超过 `max_chars`。
+  - `all()`：按时间从旧到新返回全部记录（评测或调试用）。
+  - `clear()`：忘掉一切（删掉文件，没有文件也不报错）。评测框架要做"从空记忆开始"的对比实验时一行就能重置。只清这个 agent 自己的。
+- `tags_for_tools(tool_names, artifacts)`：Worker 打标签用的现成函数：`run_python` → `code`、`git` → `git`、`web_search`/`fetch_url` → `search`、读写删列文件 → `file`、写了 `.md`/`.txt` → `doc`，按第一次出现的顺序。不认识的工具不加标签。（对应评测的五类：code / doc / search / file / git。）
 - `Experience.tags` 根据用到的工具自动打标签（例如 `["code", "git"]`），不调 LLM。
-- `recall(query, k)` → 注入 Worker 的 prompt；`profile(max_chars)` → 拼进 `call_<agent>` 的描述。两者都不调 LLM。
-- 存储位置：`data/memory/<agent_id>.jsonl`。
+- `recall(query, k)` → 注入 Worker 的 prompt；`profile(max_chars)` → 拼进 `call_<agent>` 的描述（Orchestrator 每个根任务开始时读一次）。两者都不调 LLM。
 
 ### 3.14 LLM `mas/llm/`
 
@@ -263,6 +299,19 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 | `auto_hitl` | `False` | 评测时设为 `True` |
 
 `Settings.from_env(**overrides)` 读取 `.env` 中的变量（见 `.env.example`），遇到未知字段直接报错。运行时数据统一放在 `data/` 下（已在 `.gitignore` 中）。
+
+### 3.17 组装与入口 `mas/app.py`、`mas/demo.py`、`mas/__main__.py`（已实现）
+
+- `build_system(settings, llm, human, *, roles=None, worker_factory=..., sandbox_factory=...) -> System`：唯一知道各个零件怎么接在一起的地方。创建 `InMemoryBus`、`StateTable`，每个角色一个 workspace（`settings.workspaces_dir/<agent_id>`）和一份记忆（`JsonlMemory.for_agent`），然后是 `Router`、`Orchestrator` 和各个 Worker，最后让 human、orchestrator 和所有 Worker 加入 `group:main`（`Router` 要求被派活的 agent 在群里）。
+- `System`：`start()`（启动 Orchestrator 和各 Worker 的循环）、`stop()`、`run()`（启动全部，跑 human 一侧，直到 `/quit`，然后停掉 agent）；字段 `bus / state / router / orchestrator / workers / memories / sandboxes / human`。评测框架可以自己 `build_system(..., human=AutoResponder())` 再 `start()`。
+- **接口点（LI Heyang 要接的地方）**，每个都有默认值：
+  - `build_tools(role, settings) -> list[Tool]`：返回 `role.tool_names` 对应的真实工具。**现在返回空列表**，写好工具后在这里接上。
+  - `default_worker_factory`：`WorkerAgent(role, bus, router, settings, llm, build_tools(...), sandbox, memory)`；想换实现就传 `worker_factory=`（参数是 `RoleConfig` 和 `WorkerParts(bus, router, settings, llm, sandbox, memory)`）。
+  - `default_sandbox_factory`：按 `settings.sandbox_backend` 用 `LocalSandbox` 或 `DockerSandbox`。
+  - `make_llm(settings)`：按 `llm_provider` 建 `DeepSeekClient`；没有 `DEEPSEEK_API_KEY` 时直接退出并告诉你怎么办。`make_human(settings)`：`auto_hitl` 为真用 `AutoResponder`，否则用 `CliHumanIO`。
+- `python -m mas`：真实系统（需要 LI 的 `WorkerAgent`、工具、`DeepSeekClient`）。选项：`--data-dir`、`-v`。**日志写到 `<data-dir>/mas.log`**（INFO 及以上，出内部错误时有完整堆栈），不打到屏幕，免得堆栈冲乱聊天界面；`-v` 才同时打到屏幕。日志文件放在 `demo/` 外面，所以清空 demo 数据不会删掉它；日志文件写不了时退回屏幕。会读取 `.env`（装了 python-dotenv 的话）。
+- `python -m mas --demo`：**不需要 API key，也不需要 LI 的部分**。用真实的 bus / Router / 状态表 / 记忆 / Orchestrator / 命令行，换上三个替身：`demo_brain`（用规则决策的"LLM"，交给 `MockLLM(responder=...)`）、`DemoWorker`（假装工作三步，写一个文件，会拒绝自己做不了的事、做危险的事前问人类、被取消就停下、开始前召回教训、结束时记一条经验）、`DemoSandbox`（只能读写文件）。数据放在 `<data-dir>/demo/`，**每次启动都会先清空**（想保留上次的记忆和文件加 `--keep`）；`--delay` 调每一步的耗时。试试：`write a python script and a document`、`run the tests`（writer 拒绝，改派给 coder）、`write a script and push it`（要你批准，`/reply yes`），在同一次运行里，拒绝一次之后再做同样的事，会看到它记得上次的教训。
+- 命令行输出会立即 flush，所以通过管道（`| tee`、子进程）也是实时的。
 
 ---
 

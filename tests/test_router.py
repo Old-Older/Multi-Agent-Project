@@ -97,7 +97,7 @@ class RouterTestBase(unittest.IsolatedAsyncioTestCase):
             return TaskResult(task.id, True, summary, **kw)
         return h
 
-    async def call(self, target="coder", goal="写脚本", requester="orchestrator", parent=None,
+    async def call(self, target="coder", goal="write a script", requester="orchestrator", parent=None,
                    root="R1", origin=GROUP_MAIN, **kw):
         return await self.router.dispatch(
             requester=requester, target=target, goal=goal, parent=parent, session_id=origin,
@@ -109,30 +109,30 @@ class RouterTestBase(unittest.IsolatedAsyncioTestCase):
 
 class DispatchTest(RouterTestBase):
     async def test_success_flow(self):
-        self.start_worker("coder", self.ok("脚本写好了", artifacts=["a.py"]))
+        self.start_worker("coder", self.ok("script ready", artifacts=["a.py"]))
         r = await self.call()
         self.assertTrue(r.success)
         self.assertEqual(r.artifacts, ["a.py"])
         self.assertEqual(self.state.get(r.task_id).status, TaskStatus.DONE)
         [a] = self.assigns()
         self.assertEqual((a.sender, a.receiver, a.mentions, a.content),
-                         ("orchestrator", "coder", ["coder"], "@coder 写脚本"))
+                         ("orchestrator", "coder", ["coder"], "@coder write a script"))
         task = self.seen["coder"][0]
         self.assertEqual((task.chain, task.depth, task.requester), (["orchestrator"], 0, "orchestrator"))
 
     async def test_board_learns_task_and_result(self):
-        self.start_worker("coder", self.ok("好了", artifacts=["a.py"]))
-        self.router.board(GROUP_MAIN).start_root("R1", "写脚本")
+        self.start_worker("coder", self.ok("finished", artifacts=["a.py"]))
+        self.router.board(GROUP_MAIN).start_root("R1", "write a script")
         await self.call()
         text = self.router.board(GROUP_MAIN).render()
-        self.assertIn("coder「写脚本」→ a.py", text)
+        self.assertIn("coder \"write a script\" -> a.py", text)
 
     async def test_failure_and_decline_are_results_not_exceptions(self):
         async def fail(task): return TaskResult(task.id, False, "", error="boom", failure_mode=FailureMode.CRASH)
-        async def decline(task): return TaskResult(task.id, False, "不会", declined=True, suggest="coder")
+        async def decline(task): return TaskResult(task.id, False, "cannot", declined=True, suggest="coder")
         self.start_worker("coder", fail)
         self.start_worker("writer", decline)
-        r1, r2 = await self.call("coder"), await self.call("writer", goal="跑代码")
+        r1, r2 = await self.call("coder"), await self.call("writer", goal="run code")
         self.assertEqual(self.state.get(r1.task_id).status, TaskStatus.FAILED)
         self.assertEqual(self.state.get(r2.task_id).status, TaskStatus.DECLINED)
 
@@ -162,7 +162,7 @@ class DispatchTest(RouterTestBase):
         self.assertEqual(self.state.get(r.task_id).status, TaskStatus.FAILED)
         self.assertEqual(self.router._task_waiters, {})
         assign = self.assigns()[0]
-        await self.bus.publish(result_msg("coder", assign, TaskResult(r.task_id, True, "太晚了")))
+        await self.bus.publish(result_msg("coder", assign, TaskResult(r.task_id, True, "too late")))
         self.assertEqual(self.state.get(r.task_id).status, TaskStatus.FAILED)
 
     async def test_timeout_does_not_run_while_waiting_for_a_human(self):
@@ -220,7 +220,7 @@ class DispatchTest(RouterTestBase):
     async def test_status_messages_update_state(self):
         async def h(task):
             await self.bus.publish(Message(MsgType.STATUS, "coder", GROUP_MAIN, payload={
-                "task_id": task.id, "status": "running", "note": "开始", "public": False}))
+                "task_id": task.id, "status": "running", "note": "started", "public": False}))
             self.assertEqual(self.state.get(task.id).status, TaskStatus.RUNNING)
             return TaskResult(task.id, True, "ok")
         self.start_worker("coder", h)
@@ -283,7 +283,7 @@ class LimitTest(RouterTestBase):
         for _ in range(3):                                # first try + 2 retries
             self.assertEqual((await self.call()).error, "x")
         await self.assertRefused(await self.call(), "tried 3 times")
-        self.assertEqual((await self.call(goal="另一个目标")).error, "x")   # different goal is fine
+        self.assertEqual((await self.call(goal="another goal")).error, "x")   # different goal is fine
         self.assertEqual((await self.call(root="R2")).error, "x")           # other root is fine
 
     async def test_declined_does_not_use_up_retries(self):
@@ -302,7 +302,7 @@ class LimitTest(RouterTestBase):
         self.settings.max_delegations_per_task = 1
         for _ in range(3):
             await self.assertRefused(await self.call("nobody", requester="writer", parent=parent), "unknown agent")
-        self.assertTrue((await self.call("coder", goal="另一个", requester="writer", parent=parent)).success)
+        self.assertTrue((await self.call("coder", goal="another", requester="writer", parent=parent)).success)
 
     async def test_refused_task_is_linked_to_its_parent_and_chain(self):
         parent = Task(goal="x", assignee="coder", requester="orchestrator", session_id=GROUP_MAIN,
@@ -322,13 +322,13 @@ class LimitTest(RouterTestBase):
 
 class FilesTest(RouterTestBase):
     async def test_copies_from_producer_of_the_artifact(self):
-        self.sandboxes["researcher"].write_text("notes.md", "要点")
+        self.sandboxes["researcher"].write_text("notes.md", "key points")
         self.start_worker("researcher", self.ok(artifacts=["notes.md"]))
         self.start_worker("coder", self.ok())
-        await self.call("researcher", goal="调研")
-        r = await self.call("coder", goal="写脚本", files=["notes.md"])
+        await self.call("researcher", goal="research")
+        r = await self.call("coder", goal="write a script", files=["notes.md"])
         self.assertTrue(r.success)
-        self.assertEqual((self.tmp / "coder" / "inbox" / "notes.md").read_text(), "要点")
+        self.assertEqual((self.tmp / "coder" / "inbox" / "notes.md").read_text(), "key points")
         self.assertEqual(self.seen["coder"][0].files, ["notes.md"])
 
     async def test_copies_from_requesters_own_sandbox(self):
@@ -366,12 +366,12 @@ class HitlTest(RouterTestBase):
 
     async def test_request_and_answer(self):
         t = self.make_task()
-        fut = asyncio.create_task(self.ask(t, HitlKind.APPROVAL, "git push 吗？", ["yes", "no"]))
+        fut = asyncio.create_task(self.ask(t, HitlKind.APPROVAL, "git push?", ["yes", "no"]))
         await asyncio.sleep(0.01)
         [req] = [m for m in self.bus.history(GROUP_MAIN) if m.type == MsgType.HITL_REQUEST]
         self.assertEqual(req.payload, {"request_id": "h1", "task_id": t.id, "root_id": "R1", "kind": "approval",
-                                       "question": "git push 吗？", "options": ["yes", "no"]})
-        self.assertEqual((req.sender, req.receiver, req.content), ("coder", HUMAN, "@human git push 吗？ [yes / no]"))
+                                       "question": "git push?", "options": ["yes", "no"]})
+        self.assertEqual((req.sender, req.receiver, req.content), ("coder", HUMAN, "@human git push? [yes / no]"))
         self.assertEqual(t.status, TaskStatus.WAITING_HUMAN)
         self.assertFalse(fut.done())
         await self.answer(GROUP_MAIN, "h1", "yes")
@@ -383,23 +383,23 @@ class HitlTest(RouterTestBase):
         fa = asyncio.create_task(self.ask(a, HitlKind.APPROVAL, "q1"))
         fb = asyncio.create_task(self.ask(b, HitlKind.CLARIFY, "q2"))
         await asyncio.sleep(0.01)
-        await self.answer(GROUP_MAIN, "h2", "二")
-        self.assertEqual(await asyncio.wait_for(fb, 1), "二")
+        await self.answer(GROUP_MAIN, "h2", "two")
+        self.assertEqual(await asyncio.wait_for(fb, 1), "two")
         self.assertFalse(fa.done())                      # h1 keeps waiting, others are not blocked
-        await self.answer(GROUP_MAIN, "h1", "一")
-        self.assertEqual(await asyncio.wait_for(fa, 1), "一")
+        await self.answer(GROUP_MAIN, "h1", "one")
+        self.assertEqual(await asyncio.wait_for(fa, 1), "one")
 
     async def test_dm_session_has_its_own_numbers_and_stays_in_dm(self):
         dm = dm_channel("coder", "human")
         self.bus.join("human", dm)
         g, d = self.make_task(), self.make_task(origin=dm)
-        fg = asyncio.create_task(self.ask(g, HitlKind.ADVICE, "群里问"))
-        fd = asyncio.create_task(self.ask(d, HitlKind.ADVICE, "私聊问"))
+        fg = asyncio.create_task(self.ask(g, HitlKind.ADVICE, "asked in the group"))
+        fd = asyncio.create_task(self.ask(d, HitlKind.ADVICE, "asked in the DM"))
         await asyncio.sleep(0.01)
         self.assertEqual([m.payload["request_id"] for m in self.bus.history(GROUP_MAIN) if m.type == MsgType.HITL_REQUEST], ["h1"])
         self.assertEqual([m.payload["request_id"] for m in self.bus.history(dm) if m.type == MsgType.HITL_REQUEST], ["h1"])
-        await self.answer(dm, "h1", "私聊答")             # same id, other session: only the DM one wakes up
-        self.assertEqual(await asyncio.wait_for(fd, 1), "私聊答")
+        await self.answer(dm, "h1", "DM answer")             # same id, other session: only the DM one wakes up
+        self.assertEqual(await asyncio.wait_for(fd, 1), "DM answer")
         self.assertFalse(fg.done())
         fg.cancel()
 
@@ -415,10 +415,10 @@ class HitlTest(RouterTestBase):
         self.assertEqual(t.status, TaskStatus.CANCELLED)   # stays cancelled, not set back to running
 
     async def test_orchestrator_clarification_has_no_task(self):
-        self.router.board(GROUP_MAIN).start_root("R1", "写个脚本")   # the Orchestrator opens the root first
+        self.router.board(GROUP_MAIN).start_root("R1", "write a script")   # the Orchestrator opens the root first
         fut = asyncio.create_task(self.router.request_human(
             session_id=GROUP_MAIN, root_id="R1", origin_channel=GROUP_MAIN, requester="orchestrator",
-            kind=HitlKind.CLARIFY, question="要哪个版本？", options=["3.10", "3.11"]))
+            kind=HitlKind.CLARIFY, question="which version do you want?", options=["3.10", "3.11"]))
         await asyncio.sleep(0.01)
         [req] = [m for m in self.bus.history(GROUP_MAIN) if m.type == MsgType.HITL_REQUEST]
         self.assertEqual((req.sender, req.payload["task_id"], req.payload["root_id"]), ("orchestrator", None, "R1"))
@@ -467,37 +467,71 @@ class CancelTest(RouterTestBase):
         p2.cancel()
 
 
+class CancelSessionTest(RouterTestBase):
+    def task(self, session, root, assignee="coder", status=TaskStatus.RUNNING):
+        t = Task(goal="g" + root, assignee=assignee, requester="human", session_id=session, root_id=root,
+                 origin_channel=session)
+        self.state.register(t)
+        self.state.update(t.id, status)
+        return t
+
+    async def test_cancels_every_unfinished_root_of_the_session_only(self):
+        dm, other = dm_channel("human", "coder"), dm_channel("human", "writer")
+        a, b = self.task(dm, "R1"), self.task(dm, "R2")
+        done = self.task(dm, "R3", status=TaskStatus.DONE)
+        mine_elsewhere = self.task(other, "R9")      # root ids are unique across sessions
+        self.assertEqual(self.router.cancel_session(dm), ["R1", "R2"])
+        self.assertEqual([t.status for t in (a, b, done, mine_elsewhere)],
+                         [TaskStatus.CANCELLED, TaskStatus.CANCELLED, TaskStatus.DONE, TaskStatus.RUNNING])
+        self.assertEqual(self.router.cancel_session(dm), [])      # nothing left to cancel
+
+    async def test_a_root_with_several_tasks_is_listed_once(self):
+        dm = dm_channel("human", "coder")
+        self.task(dm, "R1"), self.task(dm, "R1", assignee="researcher")
+        self.assertEqual(self.router.cancel_session(dm), ["R1"])
+
+
 class DirectTaskAndBoardTest(RouterTestBase):
     async def test_open_direct_task_in_dm(self):
         dm = dm_channel("coder", "human")
-        msg = Message(MsgType.CHAT, HUMAN, dm, "修一下这个 bug", receiver="coder")
+        msg = Message(MsgType.CHAT, HUMAN, dm, "fix this bug", receiver="coder")
         self.router.board(dm).on_message(msg)             # the bus observer saw it first
         task = self.router.open_direct_task(msg, "coder")
         self.assertEqual((task.assignee, task.requester, task.chain, task.origin_channel, task.session_id),
                          ("coder", HUMAN, [HUMAN], dm, dm))
-        self.assertEqual(task.goal, "修一下这个 bug")
+        self.assertEqual(task.goal, "fix this bug")
         self.assertIs(self.state.get(task.id), task)
         board = self.router.board(dm)
-        self.assertEqual(board.roots[task.root_id].human_messages, ["修一下这个 bug"])
-        self.assertIn("coder 执行中「修一下这个 bug」", board.render())
+        self.assertEqual(board.roots[task.root_id].human_messages, ["fix this bug"])
+        self.assertIn("coder running \"fix this bug\"", board.render())
 
     async def test_open_direct_task_strips_mention(self):
-        msg = Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "@coder 写个脚本", mentions=["coder"], receiver="coder")
+        msg = Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "@coder write a script", mentions=["coder"], receiver="coder")
         task = self.router.open_direct_task(msg, "coder")
-        self.assertEqual(task.goal, "写个脚本")
+        self.assertEqual(task.goal, "write a script")
         self.assertEqual(task.session_id, GROUP_MAIN)
 
-    async def test_new_root_ids_are_per_session(self):
+    async def test_root_ids_are_unique_across_sessions(self):
         r = self.router
-        self.assertEqual([r.new_root_id("a"), r.new_root_id("a"), r.new_root_id("b")], ["R1", "R2", "R1"])
+        self.assertEqual([r.new_root_id("a"), r.new_root_id("a"), r.new_root_id("b")], ["R1", "R2", "R3"])
+
+    async def test_cancelling_a_root_does_not_touch_other_sessions(self):
+        r = self.router
+        dm = dm_channel(HUMAN, "coder")
+        group = Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "@coder write a script", receiver="coder")
+        private = Message(MsgType.CHAT, HUMAN, dm, "fix a bug", receiver="coder")
+        t1, t2 = r.open_direct_task(group, "coder"), r.open_direct_task(private, "coder")
+        self.assertNotEqual(t1.root_id, t2.root_id)
+        r.cancel_root(t1.root_id)
+        self.assertEqual((t1.status, t2.status), (TaskStatus.CANCELLED, TaskStatus.ASSIGNED))
 
     async def test_session_and_board(self):
         r = self.router
         self.assertEqual(r.session_of(GROUP_MAIN), GROUP_MAIN)
         self.assertNotEqual(r.session_of(dm_channel("human", "coder")), r.session_of(GROUP_MAIN))
         self.assertIs(r.board(GROUP_MAIN), r.board(GROUP_MAIN))
-        await self.bus.publish(Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "你好"))   # reaches the board via the observer
-        self.assertEqual(r.board(GROUP_MAIN)._pending_human, ["你好"])
+        await self.bus.publish(Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "hello"))   # reaches the board via the observer
+        self.assertEqual(r.board(GROUP_MAIN)._pending_human, ["hello"])
         self.assertEqual(r.board(dm_channel("human", "coder"))._pending_human, [])
 
 
