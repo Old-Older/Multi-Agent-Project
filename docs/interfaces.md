@@ -61,8 +61,8 @@ flowchart BT
 
 ```
 CliHumanIO ──publish(CHAT)──▶ MessageBus ──▶ 所有成员收到
-                                   │ observer
-                                   ├──▶ SessionBoard.on_message      （记录人类原话）
+                                   │ observer（Router）
+                                   ├──▶ Router 转发 → SessionBoard.on_message   （记录人类原话）
                                    ▼
 Orchestrator.should_handle → handle_chat → run_root
    loop:
@@ -135,7 +135,7 @@ payload 格式：
 | `subscribe(agent_id)` | 返回该成员的收件队列 |
 | `join(agent_id, channel)` | 加入频道；私聊频道在首次发消息时自动加入双方 |
 | `members(channel)` / `history(channel, limit)` | `history` 也是 `read_group` 工具的数据来源 |
-| `add_observer(fn)` | `fn` 同步地看到所有频道的每条消息。Router、看板、日志都通过它获取消息，不需要加入每个私聊 |
+| `add_observer(fn)` | `fn` 同步地看到所有频道的每条消息。Router、日志通过它获取消息，不需要加入每个私聊；会话看板不直接登记，由 Router 按会话转发 |
 
 ### 3.4 路由 `mas/core/router.py`（纯代码，不调 LLM）
 
@@ -163,7 +163,7 @@ payload 格式：
 ### 3.5 状态表与看板
 
 - `StateTable`：唯一的任务状态来源，只由 Router 写入；`/status`、看板、评测都从这里读。
-- `SessionBoard`：通过 observer 收到消息后用代码更新，**不调 LLM**。`render()` 的压缩顺序和保留规则见 §3.1。每个会话一块看板，保存到 `data/sessions/<session_id>/board.json`。
+- `SessionBoard`：由 Router（bus 上的 observer）把本会话的消息转发给它，用代码更新，**不调 LLM**。`render()` 的压缩顺序和保留规则见 §3.1。每个会话一块看板，保存到 `data/sessions/<session_id>/board.json`。
 
 ### 3.6 人类端 `mas/core/human.py`
 
