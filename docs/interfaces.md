@@ -169,9 +169,15 @@ payload 格式：
 
 ### 3.6 人类端 `mas/core/human.py`
 
-- `HumanIO` 是 id 为 `"human"` 的总线成员，有 `run / show / answer` 三个方法。
-- `CliHumanIO` 支持的命令：`/dm <agent> <内容>`、`/status`、`/cancel`、`/reply <编号> <回答>`。
-- `AutoResponder` 按 `HitlKind` 立即回复默认答案，并统计 `hitl_count`；`submit()` 供评测框架以人类身份下发任务。
+- `HumanIO` 是 id 为 `"human"` 的总线成员，有 `run / show / answer` 三个方法（子类实现），外加两个**共用的方法**（已实现，`AutoResponder` 直接用）：
+  - `HumanIO.request_from(msg)`：把 `HITL_REQUEST` 消息还原成 `HitlRequest`（Orchestrator 澄清时 `task_id` 是空字符串）。
+  - `handle_incoming(bus, msg)`：处理人类 inbox 里的一条消息——跳过人类自己发的；调用 `show`；如果是 `HITL_REQUEST`，就在后台调用 `answer`，并把答案作为 `HITL_RESPONSE`（`reply_to` 指向请求，发在请求所在的频道）发回。`run()` 其实就是"从 inbox 取消息 → `handle_incoming`"。后台处理，所以多个请求可以同时等待。
+- `CliHumanIO`（已实现）：`run` 同时读输入和显示消息，直到 `/quit` 或输入结束。
+  - 输入：直接打字 = 在群里发话（没有 `@` 谁由 Orchestrator 处理；恰好 `@` 一个 agent 时 `receiver` 就是它）；`/dm <agent> <内容>`（私聊，直接任务）；`/status`、`/cancel`（发给 Orchestrator）；`/reply <编号> <回答>`（只有一个请求在等待时可省略编号）；`/help`；`/quit`。
+  - 编号：群里的请求是 `h1`，私聊里的请求是 `coder:h1`；群里和私聊可以各有自己的 `h1`，写 `h1` 时群里的优先。
+  - 显示：`CHAT`、`TASK_ASSIGN`、`TASK_RESULT`、`HITL_REQUEST`，以及 `public=True` 的 `STATUS`；私聊里的消息带 `(私聊·coder)` 标签；人类自己发的、非公开的 `STATUS`、`HITL_RESPONSE` 不显示。
+  - 为了能测试，输入和输出可以替换：`CliHumanIO(read_line=..., write=...)`。
+- `AutoResponder`（LI Heyang）按 `HitlKind` 立即回复默认答案，并统计 `hitl_count`；`submit()` 供评测框架以人类身份下发任务。它只需实现 `show`（可以什么都不做）、`answer`、`run` 和 `submit`，`run` 里调用 `handle_incoming` 即可。
 
 ### 3.7 Agent 基类 `mas/agents/base.py`
 
