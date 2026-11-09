@@ -93,6 +93,19 @@ class InputTest(CliBase):
         self.assertEqual([(m.content, m.receiver) for m in self.sent()],
                          [("/status", ORCHESTRATOR), ("/cancel", ORCHESTRATOR)])
 
+    async def test_cancel_with_an_agent_name_goes_to_that_dm(self):
+        await self.type("/cancel coder")
+        [m] = self.sent(dm_channel(HUMAN, "coder"))
+        self.assertEqual((m.content, m.receiver), ("/cancel", "coder"))
+        self.assertEqual(self.sent(), [])
+
+    async def test_cancel_without_an_agent_name_goes_to_the_orchestrator(self):
+        await self.type("/cancel")
+        await self.type("/cancel R2")                      # not an agent: passed on as it is
+        await self.type("/cancel nobody")
+        self.assertEqual([(m.content, m.receiver) for m in self.sent()],
+                         [("/cancel", ORCHESTRATOR), ("/cancel R2", ORCHESTRATOR), ("/cancel nobody", ORCHESTRATOR)])
+
     async def test_help_unknown_command_and_blank_lines(self):
         await self.type("/help")
         self.assertIn("/reply", self.out[-1])
@@ -110,6 +123,38 @@ class InputTest(CliBase):
         run2 = asyncio.create_task(cli2.run(self.bus))
         await q.put(None)                                  # end of input
         await asyncio.wait_for(run2, 1)
+
+
+class CancelNoticeTest(CliBase):
+    def notice(self, roots, channel=GROUP_MAIN, sender="orchestrator"):
+        return Message(MsgType.CHAT, sender, channel, content=f"已取消 {', '.join(roots)}",
+                       receiver=HUMAN, payload={"cancelled_roots": roots})
+
+    async def test_requests_of_cancelled_roots_are_dropped(self):
+        dm = dm_channel(HUMAN, "coder")
+        await self.feed(hitl_request(rid="h1"))                                         # group, R1
+        await self.feed(hitl_request(rid="h2", sender="writer"))                         # group, R1
+        r2 = hitl_request(rid="h3"); r2.payload["root_id"] = "R2"
+        await self.feed(r2)                                                              # group, R2
+        await self.feed(hitl_request(channel=dm, rid="h1"))                              # a DM's R1
+        await self.feed(self.notice(["R1"]))
+        self.assertEqual(sorted(self.cli._pending), sorted([(GROUP_MAIN, "h3"), (dm, "h1")]))
+        self.assertEqual(self.out[-1], "[orchestrator] 已取消 R1")                        # the notice itself is shown
+        await self.type("/reply h1 yes")                                                 # h1 is the DM's now
+        self.assertEqual([m.channel for m in self.bus.history(dm) if m.type == MsgType.HITL_RESPONSE], [dm])
+        await self.type("/reply h2 yes")
+        self.assertIn("没有等待回答的请求 h2", self.out[-1])
+
+    async def test_a_dropped_request_sends_no_response(self):
+        await self.feed(hitl_request())
+        await self.feed(self.notice(["R1"]))
+        await _settle()
+        self.assertEqual([m for m in self.bus.history(GROUP_MAIN) if m.type == MsgType.HITL_RESPONSE], [])
+
+    async def test_an_empty_notice_changes_nothing(self):
+        await self.feed(hitl_request())
+        await self.feed(self.notice([]))
+        self.assertEqual(len(self.cli._pending), 1)
 
 
 class ShutdownTest(CliBase):
@@ -280,6 +325,95 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
             await asyncio.gather(*running, return_exceptions=True)
 
 
+class DmCancelIntegrationTest(unittest.IsolatedAsyncioTestCase):
+    """/dm a task, the agent asks for approval, then /cancel <agent>: nothing is left waiting."""
+
+    async def test_cancel_releases_the_agent_and_clears_the_cli(self):
+        bus = InMemoryBus()
+        for a in AGENTS + [HUMAN]:
+            bus.join(a, GROUP_MAIN)
+        state = StateTable()
+        settings = Settings(subtask_timeout_s=2.0)
+        router = Router(bus, state, {}, settings)
+        out: list[str] = []
+        lines: asyncio.Queue = asyncio.Queue()
+        cli = CliHumanIO(read_line=lines.get, write=out.append)
+        answers: list[str] = []
+
+        class Pusher(Agent):
+            async def handle_task(self, task: Task) -> TaskResult:
+                answer = await self.ask_human(task, "git push 吗？", HitlKind.APPROVAL)
+                answers.append(answer)
+                return TaskResult(task.id, False, "已取消", error="cancelled")
+        coder = Pusher("coder", bus, router, settings)
+        running = [asyncio.create_task(cli.run(bus)), asyncio.create_task(coder.run())]
+        try:
+            await lines.put("/dm coder 写脚本并推送")
+            await _until(lambda: any("请求批准" in o for o in out))
+            self.assertEqual(len(cli._pending), 1)
+            await lines.put("/cancel coder")
+            await _until(lambda: answers)
+            self.assertEqual(answers, ["cancelled"])                  # CANCELLED_ANSWER, not "yes"
+            await _until(lambda: not cli._pending)
+            self.assertTrue(any(o.endswith("已取消 R1") for o in out))
+            [task] = state.by_root("R1")
+            self.assertEqual(task.status, TaskStatus.CANCELLED)
+        finally:
+            for t in running:
+                t.cancel()
+            await asyncio.gather(*running, return_exceptions=True)
+
+
+class DefaultReaderTest(unittest.IsolatedAsyncioTestCase):
+    def test_without_a_terminal_the_plain_reader_is_used(self):
+        import sys
+        from contextlib import nullcontext
+        from unittest import mock
+
+        from mas.core.human import _stdin_line, default_reader
+        with mock.patch.object(sys.stdin, "isatty", return_value=False):
+            reader, patch = default_reader()
+        self.assertIs(reader, _stdin_line)
+        self.assertIs(patch, nullcontext)
+
+    def test_injected_reader_needs_no_stdout_patch(self):
+        from contextlib import nullcontext
+        self.assertIs(CliHumanIO(read_line=asyncio.Queue().get)._patch_stdout, nullcontext)
+
+    def test_without_prompt_toolkit_it_falls_back_to_input(self):
+        import builtins
+        import sys
+        from contextlib import nullcontext
+        from unittest import mock
+
+        from mas.core.human import _stdin_line, default_reader
+        real_import = builtins.__import__
+
+        def no_prompt_toolkit(name, *a, **kw):
+            if name.startswith("prompt_toolkit"):
+                raise ImportError(name)
+            return real_import(name, *a, **kw)
+        with mock.patch.object(sys.stdin, "isatty", return_value=True), \
+                mock.patch("builtins.__import__", side_effect=no_prompt_toolkit):
+            reader, patch = default_reader()
+        self.assertIs(reader, _stdin_line)
+        self.assertIs(patch, nullcontext)
+
+    @unittest.skipUnless(__import__("importlib").util.find_spec("prompt_toolkit"), "prompt_toolkit is not installed")
+    async def test_prompt_reader_reads_a_line_and_ends_on_ctrl_d(self):
+        from prompt_toolkit import PromptSession
+        from prompt_toolkit.input import create_pipe_input
+        from prompt_toolkit.output import DummyOutput
+
+        from mas.core.human import PromptReader
+        with create_pipe_input() as inp:
+            reader = PromptReader(PromptSession(input=inp, output=DummyOutput()))
+            inp.send_text("/status\n")
+            self.assertEqual(await asyncio.wait_for(reader(), 2), "/status")
+            inp.send_text("\x04")                                  # Ctrl-D on an empty line
+            self.assertIsNone(await asyncio.wait_for(reader(), 2))
+
+
 class HelperTest(unittest.IsolatedAsyncioTestCase):
     async def test_request_from_and_handle_incoming_work_for_any_humanio(self):
         """AutoResponder (LI Heyang) can reuse handle_incoming: it only has to implement
@@ -310,6 +444,9 @@ class HelperTest(unittest.IsolatedAsyncioTestCase):
     def test_orchestrator_clarification_has_an_empty_task_id(self):
         req = HumanIO.request_from(hitl_request(sender="orchestrator", kind="clarify", task_id=None))
         self.assertEqual((req.task_id, req.kind), ("", HitlKind.CLARIFY))
+
+    def test_the_request_carries_its_root(self):
+        self.assertEqual(HumanIO.request_from(hitl_request()).root_id, "R1")
 
 
 async def _until(cond, timeout=2.0):

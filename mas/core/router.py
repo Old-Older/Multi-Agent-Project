@@ -51,7 +51,7 @@ class Router:
         self._hitl_waiters: dict[tuple[str, str], asyncio.Future[str]] = {}
         self._hitl_root: dict[tuple[str, str], str] = {}      # open request -> its root id
         self._hitl_counter: dict[str, int] = {}
-        self._root_counter: dict[str, int] = {}
+        self._root_counter = 0
         self._delegations: dict[str, int] = {}                # parent task id -> count
         self._attempts: dict[tuple[str, str, str], list[str]] = {}
         self._cancelled_roots: set[str] = set()
@@ -193,11 +193,12 @@ class Router:
         board.add_task(task)                 # no TASK_ASSIGN is published for these
         return task
 
-    def new_root_id(self, session_id: str) -> str:
-        """Next root id of the session: R1, R2, ..."""
-        n = self._root_counter.get(session_id, 0) + 1
-        self._root_counter[session_id] = n
-        return f"R{n}"
+    def new_root_id(self, session_id: str = "") -> str:
+        """Next root id: R1, R2, ... Unique across all sessions, because the state table,
+        cancel_root and the retry counters identify a root by its id alone. (`session_id`
+        is accepted for compatibility and not used.)"""
+        self._root_counter += 1
+        return f"R{self._root_counter}"
 
     # ---- human in the loop -----------------------------------------------
 
@@ -270,6 +271,14 @@ class Router:
             waiter = self._hitl_waiters.get(key)
             if root == root_id and waiter and not waiter.done():
                 waiter.set_result(CANCELLED_ANSWER)
+
+    def cancel_session(self, session_id: str) -> list[str]:
+        """Cancel every root that still has unfinished tasks in the session (for /cancel in
+        a DM, where the Orchestrator is not involved). Returns the roots it cancelled."""
+        roots = list(dict.fromkeys(t.root_id for t in self.state.active(session_id)))
+        for root_id in roots:
+            self.cancel_root(root_id)
+        return roots
 
     # ---- bus observer ------------------------------------------------------
 

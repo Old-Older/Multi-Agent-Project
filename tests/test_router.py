@@ -467,6 +467,30 @@ class CancelTest(RouterTestBase):
         p2.cancel()
 
 
+class CancelSessionTest(RouterTestBase):
+    def task(self, session, root, assignee="coder", status=TaskStatus.RUNNING):
+        t = Task(goal="g" + root, assignee=assignee, requester="human", session_id=session, root_id=root,
+                 origin_channel=session)
+        self.state.register(t)
+        self.state.update(t.id, status)
+        return t
+
+    async def test_cancels_every_unfinished_root_of_the_session_only(self):
+        dm, other = dm_channel("human", "coder"), dm_channel("human", "writer")
+        a, b = self.task(dm, "R1"), self.task(dm, "R2")
+        done = self.task(dm, "R3", status=TaskStatus.DONE)
+        mine_elsewhere = self.task(other, "R9")      # root ids are unique across sessions
+        self.assertEqual(self.router.cancel_session(dm), ["R1", "R2"])
+        self.assertEqual([t.status for t in (a, b, done, mine_elsewhere)],
+                         [TaskStatus.CANCELLED, TaskStatus.CANCELLED, TaskStatus.DONE, TaskStatus.RUNNING])
+        self.assertEqual(self.router.cancel_session(dm), [])      # nothing left to cancel
+
+    async def test_a_root_with_several_tasks_is_listed_once(self):
+        dm = dm_channel("human", "coder")
+        self.task(dm, "R1"), self.task(dm, "R1", assignee="researcher")
+        self.assertEqual(self.router.cancel_session(dm), ["R1"])
+
+
 class DirectTaskAndBoardTest(RouterTestBase):
     async def test_open_direct_task_in_dm(self):
         dm = dm_channel("coder", "human")
@@ -487,9 +511,19 @@ class DirectTaskAndBoardTest(RouterTestBase):
         self.assertEqual(task.goal, "写个脚本")
         self.assertEqual(task.session_id, GROUP_MAIN)
 
-    async def test_new_root_ids_are_per_session(self):
+    async def test_root_ids_are_unique_across_sessions(self):
         r = self.router
-        self.assertEqual([r.new_root_id("a"), r.new_root_id("a"), r.new_root_id("b")], ["R1", "R2", "R1"])
+        self.assertEqual([r.new_root_id("a"), r.new_root_id("a"), r.new_root_id("b")], ["R1", "R2", "R3"])
+
+    async def test_cancelling_a_root_does_not_touch_other_sessions(self):
+        r = self.router
+        dm = dm_channel(HUMAN, "coder")
+        group = Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "@coder 写个脚本", receiver="coder")
+        private = Message(MsgType.CHAT, HUMAN, dm, "修 bug", receiver="coder")
+        t1, t2 = r.open_direct_task(group, "coder"), r.open_direct_task(private, "coder")
+        self.assertNotEqual(t1.root_id, t2.root_id)
+        r.cancel_root(t1.root_id)
+        self.assertEqual((t1.status, t2.status), (TaskStatus.CANCELLED, TaskStatus.ASSIGNED))
 
     async def test_session_and_board(self):
         r = self.router

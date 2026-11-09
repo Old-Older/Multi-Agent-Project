@@ -107,7 +107,7 @@ payload 格式：
 
 | MsgType | payload | 谁发 |
 |---|---|---|
-| `CHAT` | `{}` | 人类、agent |
+| `CHAT` | `{}`；`/cancel` 之后的"已取消"通知带 `{"cancelled_roots": ["R1", ...]}`（CLI 据此清掉那些 root 里还在等回答的请求） | 人类、agent |
 | `TASK_ASSIGN` | `{"task": Task.to_dict()}` | Router |
 | `TASK_RESULT` | `{"result": TaskResult.to_dict()}` | Agent 基类 |
 | `HITL_REQUEST` | `{"request_id", "task_id", "root_id", "kind", "question", "options"}`（`task_id` 在 Orchestrator 澄清时为 `None`） | Router |
@@ -154,12 +154,13 @@ payload 格式：
 - 同一目标的重试：同一 root 下，同一 agent、同一目标（忽略大小写和多余空格）最多尝试 `1 + max_retries_same_goal` 次；被拒绝（declined）的不占次数。
 - 被拒绝的调用（超限、未知 agent、文件找不到、root 已取消）返回 `success=False, failure_mode=TOOL_ERROR`，`error` 以 `refused:` 开头；**仍会在状态表里登记成一个 `FAILED` 任务**（方便 `/status` 和调试），不联系目标，也不占重试次数和委派次数。看板里不显示它们（避免 Worker 的 prompt 变长）。
 - `files` 先在请求者自己的 sandbox 里找；找不到时，到本 root 内产出过该文件（出现在某个结果的 `artifacts`）的 agent 的 sandbox 里找。Orchestrator 没有 sandbox，所以走第二条路。
-- 新增 `Router.new_root_id(session_id)`：返回 R1、R2……（每个会话各自计数），Orchestrator 开 root 时调用。
+- 新增 `Router.new_root_id(session_id)`：返回 R1、R2……，**在所有会话里全局唯一**（状态表、`cancel_root`、重试计数都只用 root id 区分，所以不能让不同会话出现同一个 root id）。Orchestrator 开 root 时调用。
 - 新增 `SessionBoard.add_task(task)`：`open_direct_task` 登记的直接任务不发 `TASK_ASSIGN`，由 Router 直接告诉看板。
 - `session_of(channel)` 直接返回频道名，每个频道一个会话。
 - `cancel_root` 之后，该 root 的新调用会被拒绝；等待中的 `dispatch` 返回 `error="cancelled"`，等待中的 `request_human`（包括 Orchestrator 的澄清）返回 `CANCELLED_ANSWER`（`mas.core.human`，值为 `"cancelled"`）。Router 无法停止正在运行的 agent，所以 **Worker 必须自己检查**：每一步 ReAct 开始前、执行 `requires_approval` 的工具前，调用 `self.is_cancelled(task)`；`ask_human` 返回 `CANCELLED_ANSWER` 时要当作中止，不能当成同意。
 - `Router.request_human` 改成关键字参数：`request_human(*, session_id, root_id, origin_channel, requester, kind, question, options=None, task_id=None)`。Worker 照旧调 `Agent.ask_human(task, question, kind, options)`（签名不变，基类负责从 task 里取这些字段）；Orchestrator 澄清时没有 Task，传 `task_id=None`。**如果你的桩 Router 实现了 `request_human`，要改成这个签名。**
 - 新增 `Agent.is_cancelled(task)`：该任务在状态表里是否已 `CANCELLED`。
+- 新增 `Router.cancel_session(session_id)`：取消这个会话里所有还有未结束任务的 root，返回被取消的 root 列表。私聊里的 `/cancel` 用它（Orchestrator 管不到私聊任务）。
 - Router 同时负责：根据 `STATUS` 更新状态表、把每条消息交给对应会话的看板。
 
 ### 3.5 状态表与看板
@@ -173,10 +174,11 @@ payload 格式：
   - `HumanIO.request_from(msg)`：把 `HITL_REQUEST` 消息还原成 `HitlRequest`（Orchestrator 澄清时 `task_id` 是空字符串）。
   - `handle_incoming(bus, msg)`：处理人类 inbox 里的一条消息——跳过人类自己发的；调用 `show`；如果是 `HITL_REQUEST`，就在后台调用 `answer`，并把答案作为 `HITL_RESPONSE`（`reply_to` 指向请求，发在请求所在的频道）发回。`run()` 其实就是"从 inbox 取消息 → `handle_incoming`"。后台处理，所以多个请求可以同时等待。
 - `CliHumanIO`（已实现）：`run` 同时读输入和显示消息，直到 `/quit` 或输入结束。
-  - 输入：直接打字 = 在群里发话（没有 `@` 谁由 Orchestrator 处理；恰好 `@` 一个 agent 时 `receiver` 就是它）；`/dm <agent> <内容>`（私聊，直接任务）；`/status`、`/cancel`（发给 Orchestrator）；`/reply <编号> <回答>`（只有一个请求在等待时可省略编号）；`/help`；`/quit`。
+  - 输入：直接打字 = 在群里发话（没有 `@` 谁由 Orchestrator 处理；恰好 `@` 一个 agent 时 `receiver` 就是它）；`/dm <agent> <内容>`（私聊，直接任务）；`/status`、`/cancel`（发给 Orchestrator，取消群里当前的请求）；`/cancel <agent>`（发到和那个 agent 的私聊，由它的 `handle_chat` 取消这个私聊里还在做的任务）；`/reply <编号> <回答>`（只有一个请求在等待时可省略编号）；`/help`；`/quit`。
   - 编号：群里的请求是 `h1`，私聊里的请求是 `coder:h1`；群里和私聊可以各有自己的 `h1`，写 `h1` 时群里的优先。
   - 显示：`CHAT`、`TASK_ASSIGN`、`TASK_RESULT`、`HITL_REQUEST`，以及 `public=True` 的 `STATUS`；私聊里的消息带 `(私聊·coder)` 标签；人类自己发的、非公开的 `STATUS`、`HITL_RESPONSE` 不显示。
-  - 为了能测试，输入和输出可以替换：`CliHumanIO(read_line=..., write=...)`。
+  - 收到 `{"cancelled_roots": [...]}` 的"已取消"通知后，CLI 清掉同一频道里属于这些 root 的待回答请求（Orchestrator 在步骤 5 里发这个通知；私聊里由 Agent 基类发）。
+  - 输入：真实终端里用 `prompt_toolkit`（提示符固定在底部，消息从上面滚出来），没装或不是终端（管道、文件）时退回 `input()`。为了能测试，输入和输出也可以替换：`CliHumanIO(read_line=..., write=...)`。
 - `AutoResponder`（LI Heyang）按 `HitlKind` 立即回复默认答案，并统计 `hitl_count`；`submit()` 供评测框架以人类身份下发任务。它只需实现 `show`（可以什么都不做）、`answer`、`run` 和 `submit`，`run` 里调用 `handle_incoming` 即可。
 
 ### 3.7 Agent 基类 `mas/agents/base.py`
@@ -188,7 +190,7 @@ payload 格式：
 | `run()` | 订阅自己的 inbox，不停取消息；每条该自己处理的消息开一个独立的 asyncio 任务，所以一个 agent 可以同时做多个任务。`run()` 被取消时，在途的处理也一并取消（已实现） |
 | `should_handle(msg)` | 只处理 `receiver` 是自己或 @ 到自己的消息（已实现） |
 | `on_message(msg)` | `TASK_ASSIGN` → 发"收到"的公开 `STATUS` → `handle_task` → 发 `TASK_RESULT`（`reply_to` 是那条 `TASK_ASSIGN`，发在 `task.channel` 里）；人类发来的 `CHAT` → `handle_chat`；其他消息忽略。`handle_task` 里的任何异常都转成 `CRASH` 结果，`handle_chat` 里的异常变成聊天里的一行报错，系统不会崩（已实现） |
-| `handle_chat(msg)` | **默认实现（Worker 直接用）**：把人类的私聊或 @ 当作直接任务——`Router.open_direct_task` 登记、跑 `handle_task`、把 `TASK_RESULT` 发回给人类；以 `/` 开头的命令忽略。想"只回答问题不建任务"的子类可以重写（已实现） |
+| `handle_chat(msg)` | **默认实现（Worker 直接用）**：把人类的私聊或 @ 当作直接任务——`Router.open_direct_task` 登记、跑 `handle_task`、把 `TASK_RESULT` 发回给人类；`/cancel` 取消这个私聊（或 @ 会话）里还没结束的任务并发"已取消"通知；其他以 `/` 开头的命令忽略。想"只回答问题不建任务"的子类可以重写，其余情况请调用 `super().handle_chat(msg)`（已实现） |
 | `report_status(task, status, note, public)` | 在 `task.channel` 发 `STATUS`，Router 据此更新状态表。`public=True` 才会在聊天里显示 `note`，只用于"收到"这类节点；否则消息没有正文（已实现） |
 | `ask_human(task, question, kind, options)` | 转给 `Router.request_human`；被 `/cancel` 时返回 `CANCELLED_ANSWER`（已实现） |
 | `is_cancelled(task)` | 任务是否已被 `/cancel`；Worker 每步前都要检查（已实现） |

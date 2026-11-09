@@ -246,6 +246,37 @@ class RunLoopTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.sleep(0.05)
         self.assertEqual((agent.handled, self.state.by_root("R1")), ([], []))
 
+    async def test_cancel_in_a_dm_cancels_the_tasks_of_that_chat(self):
+        dm = dm_channel("coder", "human")
+        self.bus.join("human", dm)
+        gate = asyncio.Event()
+        seen = {}
+
+        async def slow(task):
+            await gate.wait()
+            seen["cancelled"] = self.router.state.get(task.id).status      # what the worker would see
+            return TaskResult(task.id, True, "late")
+        agent = self.start(handler=slow)
+        await self.bus.publish(Message(MsgType.CHAT, HUMAN, dm, "做个长任务", receiver="coder"))
+        await _until(lambda: agent.handled)
+        await self.bus.publish(Message(MsgType.CHAT, HUMAN, dm, "/cancel", receiver="coder"))
+        await _until(lambda: [m for m in self.of_type(dm, MsgType.CHAT) if m.sender == "coder"])
+        [notice] = [m for m in self.of_type(dm, MsgType.CHAT) if m.sender == "coder"]
+        self.assertEqual((notice.content, notice.receiver, notice.payload), ("已取消 R1", HUMAN, {"cancelled_roots": ["R1"]}))
+        [task] = self.state.by_root("R1")
+        self.assertEqual(task.status, TaskStatus.CANCELLED)
+        self.assertTrue(agent.is_cancelled(task))
+        gate.set()                                                          # the worker finishes anyway
+        await _until(lambda: self.of_type(dm, MsgType.TASK_RESULT))
+        self.assertEqual(task.status, TaskStatus.CANCELLED)                 # and the status stays cancelled
+
+    async def test_cancel_with_nothing_running_says_so(self):
+        self.start()
+        await self.bus.publish(Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "/cancel", receiver="coder"))
+        await _until(lambda: [m for m in self.of_type(GROUP_MAIN, MsgType.CHAT) if m.sender == "coder"])
+        [notice] = [m for m in self.of_type(GROUP_MAIN, MsgType.CHAT) if m.sender == "coder"]
+        self.assertEqual((notice.content, notice.payload), ("没有进行中的任务可以取消", {"cancelled_roots": []}))
+
     async def test_a_crash_in_handle_chat_is_reported_in_the_chat(self):
         async def bad(msg):
             raise RuntimeError("聊天出错")

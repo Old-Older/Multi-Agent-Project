@@ -16,6 +16,7 @@ decompose and delegate tasks, run tools inside isolated sandboxes, and learn fro
 > | 5 | **任务在等人类时，`dispatch` 不会超时。** | 无需改动，知道就行。 |
 > | 6 | **同一目标最多试 3 次**（首次 + 2 次重试，同一 root、同一 agent、同一目标）；被 `decline` 的不占次数。再委派最多 2 层，每个任务最多再委派 2 次，链上已有的 agent 不能再被委派。 | 无需改动；撞到限制时会按第 4 条收到 `refused:` 结果。 |
 > | 7 | **`HumanIO` 新增了两个共用方法**：`HumanIO.request_from(msg)` 和 `handle_incoming(bus, msg)`（跳过人类自己的消息、调 `show`、遇到 `HITL_REQUEST` 就调 `answer` 并发回 `HITL_RESPONSE`）。`HitlRequest.task_id` 在 Orchestrator 澄清时是 `""`。 | 写 `AutoResponder` 时，`run` 里只需要"从 inbox 取消息 → `await self.handle_incoming(bus, msg)`"，`answer` 直接返回默认答案；不用自己拼 `HITL_RESPONSE`。 |
+> | 8 | **私聊里的 `/cancel` 由 `Agent.handle_chat` 处理**（取消这个私聊里未结束的任务，并发一条带 `cancelled_roots` 的"已取消"通知）。**root id 现在全局唯一**（R1、R2……跨会话递增）。新增依赖 `prompt_toolkit`（命令行用，`pip install -e .` 会装）。 | 如果你重写 `WorkerAgent.handle_chat`，对不认识的消息请调用 `super().handle_chat(msg)`，否则私聊里的 `/cancel` 会失效。不要自己假设 root id 在每个会话里从 R1 开始。 |
 
 ## Hard constraints (from the spec)
 

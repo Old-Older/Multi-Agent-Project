@@ -127,13 +127,28 @@ class Agent(ABC):
 
         Default (used by Workers): treat it as a task the human gave directly. The Router
         registers it (a new root), handle_task runs, and the TASK_RESULT goes back to the
-        human in the same channel. Slash commands (/status, /cancel, ...) belong to the
-        Orchestrator and the CLI and are ignored here. Subclasses override this to do
-        something else, e.g. answer a question without opening a task."""
-        if msg.content.lstrip().startswith("/"):
+        human in the same channel. `/cancel` cancels the unfinished tasks of this chat
+        session and says so (CANCEL_NOTICE below); other slash commands (/status, ...)
+        belong to the Orchestrator and the CLI and are ignored here. Subclasses override
+        this to do something else, e.g. answer a question without opening a task; they
+        should call super().handle_chat(msg) for anything they do not handle."""
+        text = msg.content.strip()
+        if text.split(" ")[0].lower() == "/cancel":
+            await self.announce_cancelled(
+                msg.channel, self.router.cancel_session(self.router.session_of(msg.channel)), msg.id)
+            return
+        if text.startswith("/"):
             return
         task = self.router.open_direct_task(msg, self.agent_id)
         await self._execute(task, reply_to=msg.id, receiver=HUMAN)
+
+    async def announce_cancelled(self, channel: str, roots: list[str], reply_to: str | None = None) -> None:
+        """Tell the human what /cancel did. The payload {"cancelled_roots": [...]} lets the
+        CLI drop the requests that were still waiting for an answer in those roots."""
+        await self.bus.publish(Message(
+            MsgType.CHAT, sender=self.agent_id, channel=channel, receiver=HUMAN, reply_to=reply_to,
+            content=f"已取消 {', '.join(roots)}" if roots else "没有进行中的任务可以取消",
+            payload={"cancelled_roots": roots}))
 
     # ---- services for subclasses --------------------------------------------
 

@@ -10,8 +10,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -42,6 +44,7 @@ class HitlRequest:
     kind: HitlKind
     question: str
     options: list[str] = field(default_factory=list)
+    root_id: str = ""       # the request (root) it belongs to; lets /cancel drop it
 
 
 class HumanIO(ABC):
@@ -67,7 +70,7 @@ class HumanIO(ABC):
         return HitlRequest(
             request_id=p["request_id"], agent_id=msg.sender, task_id=p.get("task_id") or "",
             channel=msg.channel, kind=HitlKind(p["kind"]), question=p["question"],
-            options=list(p.get("options") or []))
+            options=list(p.get("options") or []), root_id=p.get("root_id") or "")
 
     async def handle_incoming(self, bus: MessageBus, msg: Message) -> None:
         """What to do with one message from the human's inbox: show it (the human's own
@@ -102,7 +105,7 @@ class HumanIO(ABC):
 
 
 async def _stdin_line() -> str | None:
-    """Read one line from the terminal without blocking the event loop. None at EOF.
+    """Read one line from a pipe or file without blocking the event loop. None at EOF.
     (The reading thread cannot be interrupted, so a program that stops while waiting for
     input needs to exit the process, e.g. with Ctrl-D or /quit.)"""
     try:
@@ -111,11 +114,42 @@ async def _stdin_line() -> str | None:
         return None
 
 
+class PromptReader:
+    """Reads a line with prompt_toolkit, so the prompt stays at the bottom and messages
+    that arrive while the human is typing are printed above it (run() has to be wrapped
+    in prompt_toolkit's patch_stdout for that). Ctrl-D and Ctrl-C end the input."""
+
+    def __init__(self, session=None) -> None:
+        if session is None:
+            from prompt_toolkit import PromptSession
+            session = PromptSession()
+        self._session = session
+
+    async def __call__(self) -> str | None:
+        try:
+            return await self._session.prompt_async("> ")
+        except (EOFError, KeyboardInterrupt):
+            return None
+
+
+def default_reader():
+    """(read_line, stdout_patch) for a real terminal: prompt_toolkit when it is installed
+    and stdin is a terminal, otherwise plain input() (pipes, files, no prompt_toolkit)."""
+    if sys.stdin.isatty():
+        try:
+            from prompt_toolkit.patch_stdout import patch_stdout
+            return PromptReader(), patch_stdout
+        except ImportError:
+            pass
+    return _stdin_line, nullcontext
+
+
 HELP_TEXT = """命令：
   直接输入文字              在群里发给大家（没有 @ 谁，就由 Orchestrator 处理；@coder 则直接交给 coder）
   /dm <agent> <内容>        私聊某个 agent，直接交给它一个任务
   /status                   看当前任务进度
-  /cancel                   取消当前请求
+  /cancel                   取消群里当前的请求
+  /cancel <agent>           取消和某个 agent 私聊里还在做的任务
   /reply <编号> <回答>      回答一个请求，如 /reply h1 yes；私聊里的请求用 coder:h1
                             只有一个请求在等待时，可以省略编号：/reply yes
   /help                     显示这段说明
@@ -137,7 +171,11 @@ class CliHumanIO(HumanIO):
 
     def __init__(self, read_line: Callable[[], Awaitable[str | None]] | None = None,
                  write: Callable[[str], None] | None = None) -> None:
-        self._read_line = read_line or _stdin_line
+        if read_line is None:
+            read_line, self._patch_stdout = default_reader()
+        else:
+            self._patch_stdout = nullcontext
+        self._read_line = read_line
         self._write = write or print
         self._bus: MessageBus | None = None
         # open HITL requests: (channel, request id) -> (future holding the answer, request)
@@ -153,11 +191,12 @@ class CliHumanIO(HumanIO):
         inbox = bus.subscribe(HUMAN)
         shower = asyncio.create_task(self._show_loop(bus, inbox))
         try:
-            self._write(HELP_TEXT)
-            while True:
-                line = await self._read_line()
-                if line is None or not await self.handle_input(line):
-                    break
+            with self._patch_stdout():
+                self._write(HELP_TEXT)
+                while True:
+                    line = await self._read_line()
+                    if line is None or not await self.handle_input(line):
+                        break
         finally:
             shower.cancel()
             await asyncio.gather(shower, return_exceptions=True)
@@ -170,6 +209,20 @@ class CliHumanIO(HumanIO):
                 await self.handle_incoming(bus, msg)
             except Exception:
                 log.exception("cli failed to show message %s", msg.id)
+
+    async def handle_incoming(self, bus: MessageBus, msg: Message) -> None:
+        await super().handle_incoming(bus, msg)
+        roots = msg.payload.get("cancelled_roots") if msg.type == MsgType.CHAT else None
+        if roots:
+            self._drop_requests(msg.channel, roots)
+
+    def _drop_requests(self, channel: str, roots: list[str]) -> None:
+        """After /cancel: forget the open requests of the cancelled roots in `channel`
+        (their agents have already been released, so nobody waits for the answer)."""
+        for key, (fut, req) in list(self._pending.items()):
+            if req.channel == channel and req.root_id in roots:
+                fut.cancel()
+                self._pending.pop(key, None)
 
     # ---- output ------------------------------------------------------------------
 
@@ -211,6 +264,8 @@ class CliHumanIO(HumanIO):
         cmd = cmd.lower()
         if cmd == "/dm":
             await self._dm(rest)
+        elif cmd == "/cancel" and rest in self._agents():
+            await self._send(dm_channel(HUMAN, rest), "/cancel", rest)   # that agent cancels its DM tasks
         elif cmd in ("/status", "/cancel"):
             await self._send(GROUP_MAIN, text, ORCHESTRATOR)       # the Orchestrator answers these
         elif cmd == "/reply":
