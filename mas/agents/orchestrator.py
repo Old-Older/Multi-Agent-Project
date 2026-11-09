@@ -55,6 +55,7 @@ class _RootRun:
     session_id: str
     channel: str
     started: float = field(default_factory=time.monotonic)
+    stamp: str = field(default_factory=lambda: time.strftime("%Y%m%d-%H%M%S"))   # start time, names the output dir
     task: asyncio.Task | None = None                          # the asyncio task running run_root
     interjections: list[str] = field(default_factory=list)    # human additions not yet shown to the LLM
     results: list[tuple[str, str, TaskResult]] = field(default_factory=list)   # (agent, goal, result)
@@ -236,8 +237,7 @@ class Orchestrator(Agent):
         for tc in calls:
             if tc not in agents and tc not in asks and tc not in finishes:
                 obs[tc.id] = self._error(f"no such tool: {tc.name}")
-        outs = await asyncio.gather(*(self._call_agent(msg, run, tc) for tc in agents))   # in parallel
-        obs.update({tc.id: out for tc, out in zip(agents, outs)})
+        obs.update(await self._call_agents(msg, run, agents))
         for tc in asks:                                      # a human answers one at a time
             obs[tc.id] = await self._ask_human(msg, run, tc)
         finish = None
@@ -248,6 +248,24 @@ class Orchestrator(Agent):
                 finish = tc
                 obs[tc.id] = json.dumps({"success": True})
         return obs, finish
+
+    async def _call_agents(self, msg: Message, run: _RootRun, calls: list[ToolCall]) -> dict[str, str]:
+        """Run the call_<agent> calls of one round. Different agents work in parallel; the
+        calls to one and the same agent run one after the other, because they would share
+        that agent's workspace (two tasks writing the same file or committing at once)."""
+        by_agent: dict[str, list[ToolCall]] = {}
+        for tc in calls:
+            by_agent.setdefault(target_of(tc.name) or "", []).append(tc)
+
+        async def one_after_another(group: list[ToolCall]) -> dict[str, str]:
+            out: dict[str, str] = {}
+            for tc in group:
+                out[tc.id] = await self._call_agent(msg, run, tc)
+            return out
+        merged: dict[str, str] = {}
+        for part in await asyncio.gather(*(one_after_another(g) for g in by_agent.values())):
+            merged.update(part)
+        return merged
 
     async def _call_agent(self, msg: Message, run: _RootRun, tc: ToolCall) -> str:
         target, args = target_of(tc.name), tc.arguments
@@ -321,11 +339,22 @@ class Orchestrator(Agent):
             text += " Not done: " + "; ".join(todo) + "."
         return text
 
+    def _output_dir(self, run: _RootRun) -> Path:
+        """data/output/<root>-<start time>/. Root ids start again from R1 in every program
+        run, the start time keeps the runs apart (and a counter keeps two runs that started
+        in the same second apart)."""
+        base = self.settings.output_dir / f"{run.root_id}-{run.stamp}"
+        path, n = base, 1
+        while path.exists():
+            n += 1
+            path = base.with_name(f"{base.name}-{n}")
+        return path
+
     async def _conclude(self, msg: Message, run: _RootRun, success: bool, failure: FailureMode | None,
                         summary: str, deliverables: list[str]) -> None:
         """Copy the deliverables to output/<root_id>/, close the root on the board, and post
         the final reply."""
-        out_dir = self.settings.output_dir / run.root_id
+        out_dir = self._output_dir(run)
         copied, missing = [], []
         for name in dict.fromkeys(deliverables):
             src = self.router.locate_file(name, ORCHESTRATOR, run.root_id)

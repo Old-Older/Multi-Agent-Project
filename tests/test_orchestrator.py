@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import shutil
 import tempfile
 import unittest
@@ -126,7 +127,9 @@ class LoopTest(OrchestratorTestBase):
         self.assertEqual(final.content.split("\n")[0], "@human script ready")
         self.assertEqual((final.sender, final.receiver, final.payload["success"], final.payload["rounds"]),
                          ("orchestrator", HUMAN, True, 2))
-        out = self.settings.output_dir / "R1"
+        out = Path(final.payload["output_dir"])
+        self.assertEqual((out.parent, re.fullmatch(r"R1-\d{8}-\d{6}", out.name) is not None),
+                         (self.settings.output_dir, True))                  # data/output/<root>-<start time>
         self.assertEqual((out / "a.py").read_text(), "print(1)")
         self.assertIn(f"Deliverables: a.py (collected in {out})", final.content)
         self.assertEqual(final.payload["deliverables"], ["a.py"])
@@ -192,6 +195,37 @@ class LoopTest(OrchestratorTestBase):
         results = self.tool_results()
         self.assertEqual([r["summary"] for r in results], ["code", "docs"])        # in the order of the calls
 
+    async def test_calls_to_the_same_agent_wait_for_each_other(self):
+        events: list[str] = []
+        gate = asyncio.Event()
+
+        async def coder(task):
+            events.append(f"{task.goal} started")
+            await asyncio.sleep(0.03)
+            events.append(f"{task.goal} done")
+            return TaskResult(task.id, True, task.goal)
+
+        async def writer(task):
+            events.append("docs started")
+            gate.set()
+            return TaskResult(task.id, True, "docs")
+        self.start([reply("", call("1", "call_coder", goal="a.py"), call("2", "call_coder", goal="b.py"),
+                          call("3", "call_writer", goal="docs")), reply("", finish())],
+                   workers={"coder": coder, "writer": writer})
+        await self.say("two scripts and the docs")
+        await self.final()
+        self.assertEqual([e for e in events if e.startswith(("a.py", "b.py"))],
+                         ["a.py started", "a.py done", "b.py started", "b.py done"])   # one after the other
+        self.assertLess(events.index("docs started"), events.index("a.py done"))        # another agent runs alongside
+        self.assertEqual([r["summary"] for r in self.tool_results()], ["a.py", "b.py", "docs"])   # in call order
+
+    async def test_the_output_dir_is_not_reused_by_a_run_that_starts_in_the_same_second(self):
+        run = self.orchestrator_run()
+        first = self.orch._output_dir(run)
+        first.mkdir(parents=True)
+        second = self.orch._output_dir(run)
+        self.assertEqual((first.name, second.name), (f"R1-{run.stamp}", f"R1-{run.stamp}-2"))
+
     async def test_a_declined_task_is_reassigned(self):
         async def decline(task):
             return TaskResult(task.id, False, "needs to run code", declined=True, suggest="coder", error="needs to run code")
@@ -234,7 +268,7 @@ class LoopTest(OrchestratorTestBase):
                          (False, "max_rounds", 2))
         self.assertIn("Used all 2 rounds", final.content)
         self.assertIn("did part of it", final.content)                     # what was done is reported
-        self.assertTrue((self.settings.output_dir / "R1" / "part.md").exists())    # and the partial files kept
+        self.assertTrue((Path(final.payload["output_dir"]) / "part.md").exists())    # and the partial files kept
         self.assertEqual(self.orch.outcomes["R1"].failure_mode, FailureMode.MAX_ROUNDS)
 
     async def test_text_without_tools_is_taken_as_the_answer(self):
@@ -302,6 +336,12 @@ class LoopTest(OrchestratorTestBase):
         second_first_call = self.llm.calls[1][0][1]["content"]
         self.assertIn("R1 meeting minutes are ready", second_first_call)
         self.assertEqual(sorted(self.orch.outcomes), ["R1", "R2"])
+
+
+    def orchestrator_run(self):
+        from mas.agents.orchestrator import _RootRun
+        self.start([])
+        return _RootRun(root_id="R1", session_id=GROUP_MAIN, channel=GROUP_MAIN)
 
 
 class ClarifyTest(OrchestratorTestBase):

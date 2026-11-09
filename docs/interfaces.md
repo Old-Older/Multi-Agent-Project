@@ -233,9 +233,9 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 - `run_root` 的循环，对应 §2.1：
   - 第一条 user 消息是 "Human request: ..." 加会话看板文字（早先的 root 在里面各占一行，所以"把刚才的纪要翻译成英文"能找到文件）。
   - 每轮 `llm.chat(messages, function_specs)`；`resp.text` 作为剩余计划（截到 200 字）写进看板。
-  - 一轮中的多个 `call_<agent>` 用 `asyncio.gather` 并发执行，经 `Router.dispatch`；回给 LLM 的是 JSON：`success`、`summary`、`artifacts`、`refs`、`open_issues`、`error`；被拒绝时是 `declined`、`reason`、`suggest`。
+  - 一轮中的多个 `call_<agent>` 经 `Router.dispatch` 执行：**不同 agent 之间并行，同一个 agent 的多个调用按顺序一个接一个**（它们共用那个 agent 的 workspace，同时跑会互相覆盖文件或同时 commit）；回给 LLM 的是 JSON：`success`、`summary`、`artifacts`、`refs`、`open_issues`、`error`；被拒绝时是 `declined`、`reason`、`suggest`。
   - `ask_human` 走 `Router.request_human`（澄清，`task_id=None`），回答作为 `{"answer": ...}` 回给 LLM。
-  - `finish(summary, deliverables)` 必须**单独**调用（和别的调用一起发会被拒绝并提示）。交付物从产出它的 agent 的 workspace（`Router.locate_file`）拷到 `data/output/<root_id>/`。
+  - `finish(summary, deliverables)` 必须**单独**调用（和别的调用一起发会被拒绝并提示）。交付物从产出它的 agent 的 workspace（`Router.locate_file`）拷到 `data/output/<root_id>-<启动时间>/`（如 `R1-20261109-153012`；root 编号每次启动都从 R1 重来，加上时间才不会和上次的文件混在一起，同一秒启动的会再加 `-2`）。完整路径在最终回复的 `payload["output_dir"]` 里。
   - 没有任何工具调用但有文字：当作最终回答；既没有工具调用也没有文字：提醒一次，占一轮。
   - 轮数用完（`max_orchestrator_rounds`，默认 8）：用代码拼一段 "Done: ... Not done: ..." 的汇报，失败模式 `max_rounds`，已成功的产物也保留。`LLMError`：汇报失败，失败模式 `crash`。
   - 取消时看板上该 root 标为 "Cancelled"，不发最终回复。
