@@ -89,7 +89,7 @@ class Router:
         sources: dict[str, Path] = {}
         if denied is None:
             for name in files:
-                src = self._locate(name, requester, root_id)
+                src = self.locate_file(name, requester, root_id)
                 if src is None:
                     denied = f"file not found: {name}"
                     break
@@ -152,9 +152,10 @@ class Router:
             return f"same goal already tried {attempts} times on {target}"
         return None
 
-    def _locate(self, name: str, requester: str, root_id: str) -> Path | None:
+    def locate_file(self, name: str, requester: str, root_id: str) -> Path | None:
         """Where `name` lives: the requester's own sandbox, else the workspace of the
-        agent whose result in this root listed it as an artifact (newest first)."""
+        agent whose result in this root listed it as an artifact (newest first). The
+        Orchestrator uses it to collect the deliverables."""
         owners = [requester] + [
             t.assignee for t in reversed(self.state.by_root(root_id))
             if (r := self.state.result(t.id)) and name in r.artifacts]

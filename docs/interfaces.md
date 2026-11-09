@@ -146,7 +146,7 @@ payload 格式：
 3. 发 `TASK_ASSIGN`：群聊任务发到 `group:main`，私聊任务发到 `dm_channel(requester, target)`。
 4. 在 `subtask_timeout_s` 内等待对应的 `TASK_RESULT`，超时返回 `TIMEOUT` 失败；任务处于 `WAITING_HUMAN` 时不计时（等人类多久都行，`/cancel` 可随时终止）。**任务失败时从不抛异常。**
 
-其他方法：`open_direct_task`（人类私聊或 @ 某个 agent 时登记任务）、`request_human`（HITL，编号 h1、h2……，弹在 `origin_channel`）、`board(session_id)`、`session_of(channel)`、`cancel_root`。
+其他方法：`locate_file(name, requester, root_id)`（文件在哪个 workspace，Orchestrator 收集交付物时用）、`open_direct_task`（人类私聊或 @ 某个 agent 时登记任务）、`request_human`（HITL，编号 h1、h2……，弹在 `origin_channel`）、`board(session_id)`、`session_of(channel)`、`cancel_root`。
 
 补充约定（第 2 步实现时定下的）：
 
@@ -166,6 +166,7 @@ payload 格式：
 ### 3.5 状态表与看板
 
 - `StateTable`：唯一的任务状态来源，只由 Router 写入；`/status`、看板、评测都从这里读。
+  `status_text(session_id)`（`/status` 的回答）：当前 root（最近一个还有未结束任务的，否则最近一个）逐个列出任务；更早的 root 每个只占一行（"R1：2 个任务，全部完成" / "完成 1、失败 1、拒绝 1"），所以回答不会随聊天变长。
 - `SessionBoard`：由 Router（bus 上的 observer）把本会话的消息转发给它，用代码更新，**不调 LLM**。`render()` 的压缩顺序和保留规则见 §3.1。每个会话一块看板，保存到 `data/sessions/<session_id>/board.json`。
 
 ### 3.6 人类端 `mas/core/human.py`
@@ -224,8 +225,23 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 
 ### 3.10 Orchestrator `mas/agents/orchestrator.py`
 
-- `handle_chat`：处理 `/status`、`/cancel`、任务进行中的插话，其余消息开启 `run_root`。
-- `run_root` 的循环写在 docstring 里，对应 §2.1：一轮中的多个 `call_<agent>` 用 `asyncio.gather` 并发执行；`resp.text` 作为剩余计划写进看板；回给 LLM 的只有摘要、产物和是否成功；轮数用完时按 `MAX_ROUNDS` 汇报。
+- **该处理哪些消息**（`should_handle`）：发给它的（`receiver` 是 orchestrator，或 @ 到它），以及群里人类发的、没有 @ 任何人的消息（D7）。@ 了 agent 的消息只有那个 agent 处理。人类私聊 `orchestrator` 时，它在那个私聊会话里处理。
+- `handle_chat`：
+  - `/status`：直接读状态表回答，不调 LLM（输出规则见 §3.5）。如果有一个请求正在处理、还没派出任务，会先写一行"R2 正在处理，还没有派出任务"。
+  - `/cancel`：取消这个会话里所有未结束的任务和正在运行的请求，打断它的循环，发"已取消 R1"通知（payload 带 `cancelled_roots`，CLI 据此清掉残留的请求）；没有进行中的任务时回"没有进行中的任务可以取消"。
+  - 其他消息：同一个会话里**已有请求在运行**时，当作插话，下一轮以"（人类补充）……"追加给 LLM（看板也会记下）；否则开新 root（`Router.new_root_id`）并 `run_root`。
+- `run_root` 的循环，对应 §2.1：
+  - 第一条 user 消息是"人类的请求"加会话看板文字（早先的 root 在里面各占一行，所以"把刚才的纪要翻译成英文"能找到文件）。
+  - 每轮 `llm.chat(messages, function_specs)`；`resp.text` 作为剩余计划（截到 200 字）写进看板。
+  - 一轮中的多个 `call_<agent>` 用 `asyncio.gather` 并发执行，经 `Router.dispatch`；回给 LLM 的是 JSON：`success`、`summary`、`artifacts`、`refs`、`open_issues`、`error`；被拒绝时是 `declined`、`reason`、`suggest`。
+  - `ask_human` 走 `Router.request_human`（澄清，`task_id=None`），回答作为 `{"answer": ...}` 回给 LLM。
+  - `finish(summary, deliverables)` 必须**单独**调用（和别的调用一起发会被拒绝并提示）。交付物从产出它的 agent 的 workspace（`Router.locate_file`）拷到 `data/output/<root_id>/`。
+  - 没有任何工具调用但有文字：当作最终回答；既没有工具调用也没有文字：提醒一次，占一轮。
+  - 轮数用完（`max_orchestrator_rounds`，默认 8）：用代码拼一段"已完成 / 未完成"的汇报，失败模式 `max_rounds`，已成功的产物也保留。`LLMError`：汇报失败，失败模式 `crash`。
+  - 取消时看板上该 root 标为"已取消"，不发"全部完成"。
+- **最终回复**是群里（或那个私聊里）一条 `CHAT`，`receiver` 是 human，文字是 `@human <summary>` 加交付物清单；`payload`：`{"final": True, "root_id", "success", "rounds", "failure_mode", "deliverables", "output_dir"}`。评测框架等它即可。`success` 的意思是"LLM 调用了 finish"，结果对不对由评测的检查器判断。
+- `Orchestrator.outcomes[root_id]`：`RootOutcome(root_id, success, rounds, failure_mode, summary, deliverables, output_dir, duration)`，评测框架可以直接读。
+- 能力档案（`function_specs`）：每个根任务开始时读一次各 agent 的 `memory.profile()` 拼进 `call_<agent>` 的描述；某个 agent 没有记忆或读失败，就不带档案。
 
 ### 3.11 工具 `mas/tools/base.py`
 

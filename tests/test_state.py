@@ -75,5 +75,53 @@ class StateTableTest(unittest.TestCase):
         self.assertIn("进行中 2 个", text)
 
 
+class StatusTextTest(unittest.TestCase):
+    def table(self):
+        st = StateTable()
+        self.tasks = {}
+        for name, root, status in [("a", "R1", TaskStatus.DONE), ("b", "R1", TaskStatus.DONE),
+                                   ("c", "R2", TaskStatus.DONE), ("d", "R2", TaskStatus.FAILED),
+                                   ("e", "R2", TaskStatus.DECLINED), ("f", "R3", TaskStatus.RUNNING),
+                                   ("g", "R3", TaskStatus.DONE)]:
+            t = mk(goal=f"目标{name}", root=root)
+            st.register(t)
+            st.update(t.id, status)
+            self.tasks[name] = t
+        return st
+
+    def test_current_root_in_detail_earlier_roots_one_line_each(self):
+        text = self.table().status_text("s1")
+        lines = text.split("\n")
+        self.assertEqual(lines[0], "R3：任务 2 个，进行中 1 个：")
+        self.assertIn(f"{self.tasks['f'].id} coder [running]「目标f」", lines[1])
+        self.assertIn(f"{self.tasks['g'].id} coder [done]「目标g」", lines[2])
+        self.assertEqual(lines[3:], ["更早的请求：", "  R1：2 个任务，全部完成", "  R2：3 个任务，完成 1、失败 1、拒绝 1"])
+        for name in "abcde":                              # earlier tasks are not listed one by one
+            self.assertNotIn(self.tasks[name].id, text)
+
+    def test_the_answer_does_not_grow_with_finished_requests(self):
+        st = StateTable()
+        for i in range(1, 31):
+            t = mk(root=f"R{i}")
+            st.register(t)
+            st.finish(TaskResult(t.id, True, "ok"))
+        text = st.status_text("s1")
+        self.assertLess(len(text.split("\n")), 35)
+        self.assertEqual(text.split("\n")[0], "R30：任务 1 个，进行中 0 个：")     # nothing running: the latest root
+
+    def test_a_finished_latest_root_gives_way_to_an_older_running_one(self):
+        st = StateTable()
+        old, new = mk(root="R1"), mk(root="R2")
+        st.register(old), st.register(new)
+        st.update(old.id, TaskStatus.RUNNING)
+        st.finish(TaskResult(new.id, True, "ok"))
+        self.assertTrue(st.status_text("s1").startswith("R1：任务 1 个，进行中 1 个："))
+
+    def test_other_sessions_are_not_mixed_in(self):
+        st = StateTable()
+        st.register(mk(session="s1", root="R1")), st.register(mk(session="s2", root="R2"))
+        self.assertNotIn("R2", st.status_text("s1"))
+
+
 if __name__ == "__main__":
     unittest.main()
