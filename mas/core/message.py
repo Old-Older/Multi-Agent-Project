@@ -53,7 +53,8 @@ class TaskResultPayload(TypedDict):
 
 class HitlRequestPayload(TypedDict):
     request_id: str                   # short id shown to the human, e.g. "h1"
-    task_id: str
+    task_id: str | None               # None when the Orchestrator asks for clarification
+    root_id: str
     kind: str                         # HitlKind value
     question: str
     options: list[str]

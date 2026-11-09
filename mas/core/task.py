@@ -50,7 +50,8 @@ class Task:
     origin_channel: str               # where the root request came from; decides visibility and HITL
     context: str = ""                 # call-specific notes; session progress comes from the board
     files: list[str] = field(default_factory=list)   # names copied into the assignee's inbox/
-    chain: list[str] = field(default_factory=list)   # delegation chain, e.g. ["orchestrator", "coder"]
+    chain: list[str] = field(default_factory=list)   # who delegated, top down, excluding the assignee:
+                                                     # ["orchestrator", "coder"] = coder re-delegated to the assignee
     parent_id: str | None = None
     status: TaskStatus = TaskStatus.ASSIGNED
     id: str = field(default_factory=lambda: "t" + uuid.uuid4().hex[:6])
