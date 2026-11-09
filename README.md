@@ -25,7 +25,7 @@ decompose and delegate tasks, run tools inside isolated sandboxes, and learn fro
 
 ```bash
 # 演示：不需要 API key，也不需要 LI 的部分（stand-in LLM 和 worker，其余都是真的）
-~/.virtualenvs/agents/bin/python -m mas --demo            # 想从头开始加 --fresh
+~/.virtualenvs/agents/bin/python -m mas --demo            # 每次启动都从干净的状态开始；想保留上次的记忆和文件加 --keep
 
 # 真实系统：需要 .env 里的 DEEPSEEK_API_KEY，以及 WorkerAgent、工具、DeepSeekClient（LI 的部分）写好
 ~/.virtualenvs/agents/bin/python -m mas
@@ -34,7 +34,7 @@ decompose and delegate tasks, run tools inside isolated sandboxes, and learn fro
 ~/.virtualenvs/agents/bin/python -m unittest
 ```
 
-演示里可以试：`write a python script and a document`、`run the tests`（writer 拒绝，改派给 coder）、`write a script and push it`（要你批准，`/reply yes`）、`/status`、`/cancel`、`/dm researcher find out about decorators`。命令行里输入 `/help` 看全部命令。组装代码在 `mas/app.py`，LI 要接的地方见 `docs/interfaces.md` §3.17。
+演示里可以试：`write a python script and a document`、`run the tests`（writer 拒绝，改派给 coder）、`write a script and push it`（要你批准，`/reply yes`）、`/status`、`/cancel`、`/dm researcher find out about decorators`。命令行里输入 `/help` 看全部命令。日志写在 `<data-dir>/mas.log`（出内部错误时堆栈在这里，聊天里只有一行提示），加 `-v` 才同时打到屏幕。组装代码在 `mas/app.py`，LI 要接的地方见 `docs/interfaces.md` §3.17。
 
 ## Hard constraints (from the spec)
 

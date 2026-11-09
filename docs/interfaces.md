@@ -309,8 +309,8 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
   - `default_worker_factory`：`WorkerAgent(role, bus, router, settings, llm, build_tools(...), sandbox, memory)`；想换实现就传 `worker_factory=`（参数是 `RoleConfig` 和 `WorkerParts(bus, router, settings, llm, sandbox, memory)`）。
   - `default_sandbox_factory`：按 `settings.sandbox_backend` 用 `LocalSandbox` 或 `DockerSandbox`。
   - `make_llm(settings)`：按 `llm_provider` 建 `DeepSeekClient`；没有 `DEEPSEEK_API_KEY` 时直接退出并告诉你怎么办。`make_human(settings)`：`auto_hitl` 为真用 `AutoResponder`，否则用 `CliHumanIO`。
-- `python -m mas`：真实系统（需要 LI 的 `WorkerAgent`、工具、`DeepSeekClient`）。选项：`--data-dir`、`-v`。会读取 `.env`（装了 python-dotenv 的话）。
-- `python -m mas --demo`：**不需要 API key，也不需要 LI 的部分**。用真实的 bus / Router / 状态表 / 记忆 / Orchestrator / 命令行，换上三个替身：`demo_brain`（用规则决策的"LLM"，交给 `MockLLM(responder=...)`）、`DemoWorker`（假装工作三步，写一个文件，会拒绝自己做不了的事、做危险的事前问人类、被取消就停下、开始前召回教训、结束时记一条经验）、`DemoSandbox`（只能读写文件）。数据放在 `<data-dir>/demo/`；`--delay` 调每一步的耗时，`--fresh` 清掉上次的数据。试试：`write a python script and a document`、`run the tests`（writer 拒绝，改派给 coder）、`write a script and push it`（要你批准，`/reply yes`），拒绝一次之后再做同样的事，会看到它记得上次的教训。
+- `python -m mas`：真实系统（需要 LI 的 `WorkerAgent`、工具、`DeepSeekClient`）。选项：`--data-dir`、`-v`。**日志写到 `<data-dir>/mas.log`**（INFO 及以上，出内部错误时有完整堆栈），不打到屏幕，免得堆栈冲乱聊天界面；`-v` 才同时打到屏幕。日志文件放在 `demo/` 外面，所以清空 demo 数据不会删掉它；日志文件写不了时退回屏幕。会读取 `.env`（装了 python-dotenv 的话）。
+- `python -m mas --demo`：**不需要 API key，也不需要 LI 的部分**。用真实的 bus / Router / 状态表 / 记忆 / Orchestrator / 命令行，换上三个替身：`demo_brain`（用规则决策的"LLM"，交给 `MockLLM(responder=...)`）、`DemoWorker`（假装工作三步，写一个文件，会拒绝自己做不了的事、做危险的事前问人类、被取消就停下、开始前召回教训、结束时记一条经验）、`DemoSandbox`（只能读写文件）。数据放在 `<data-dir>/demo/`，**每次启动都会先清空**（想保留上次的记忆和文件加 `--keep`）；`--delay` 调每一步的耗时。试试：`write a python script and a document`、`run the tests`（writer 拒绝，改派给 coder）、`write a script and push it`（要你批准，`/reply yes`），在同一次运行里，拒绝一次之后再做同样的事，会看到它记得上次的教训。
 - 命令行输出会立即 flush，所以通过管道（`| tee`、子进程）也是实时的。
 
 ---

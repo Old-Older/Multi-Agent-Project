@@ -19,9 +19,26 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--data-dir", type=Path, default=None,
                    help="where memory, sessions and outputs go (default: ./data; the demo uses <data-dir>/demo)")
     p.add_argument("--delay", type=float, default=0.4, help="demo only: seconds each demo step takes")
-    p.add_argument("--fresh", action="store_true", help="demo only: delete the demo's old memory and files first")
-    p.add_argument("-v", "--verbose", action="store_true", help="show log messages (default: warnings only)")
+    p.add_argument("--keep", action="store_true",
+                   help="demo only: keep the memory and files of the previous run (default: start clean)")
+    p.add_argument("-v", "--verbose", action="store_true",
+                   help="also print the log on the screen (it always goes to <data-dir>/mas.log)")
     return p.parse_args(argv)
+
+
+def configure_logging(log_path: Path, verbose: bool = False) -> None:
+    """The log goes to a file, so that a stack trace does not land in the middle of the chat
+    (the chat itself shows a one-line error). With `verbose` it is printed on the screen too."""
+    handlers: list[logging.Handler] = []
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        handlers.append(logging.FileHandler(log_path, encoding="utf-8"))
+    except OSError as exc:
+        print(f"cannot write the log file {log_path}: {exc}", file=sys.stderr)
+    if verbose or not handlers:
+        handlers.append(logging.StreamHandler(sys.stderr))
+    logging.basicConfig(level=logging.INFO, handlers=handlers, force=True,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
 def load_dotenv_if_available() -> None:
@@ -36,13 +53,12 @@ def load_dotenv_if_available() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    logging.basicConfig(level=logging.INFO if args.verbose else logging.WARNING,
-                        format="%(levelname)s %(name)s: %(message)s", stream=sys.stderr)
     load_dotenv_if_available()
     overrides = {"data_dir": args.data_dir} if args.data_dir else {}
     settings = Settings.from_env(**overrides)
+    configure_logging(settings.data_dir / "mas.log", args.verbose)
     if args.demo:
-        if args.fresh:
+        if not args.keep:
             reset_demo_data(settings.data_dir)
         system = build_demo_system(demo_settings(settings, settings.data_dir), delay=args.delay)
     else:

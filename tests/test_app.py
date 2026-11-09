@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import io
 import json
+import logging
 import os
 import select
 import shutil
@@ -17,7 +20,7 @@ from mas.agents.base import Agent
 from mas.agents.orchestrator import Orchestrator
 from mas.agents.roles import ROLES
 from mas.app import System, WorkerParts, build_system, default_worker_factory, make_human, make_llm
-from mas.__main__ import parse_args
+from mas.__main__ import configure_logging, parse_args
 from mas.config import Settings
 from mas.core.human import AutoResponder, CliHumanIO
 from mas.core.message import GROUP_MAIN, HUMAN, ORCHESTRATOR, MsgType
@@ -328,12 +331,73 @@ async def _wait_final(test, n):
     return test.finals()[n - 1]
 
 
+class LoggingTest(TmpDirTest):
+    def setUp(self):
+        super().setUp()
+        self.root_logger = logging.getLogger()
+        self.saved = (list(self.root_logger.handlers), self.root_logger.level)
+
+    def tearDown(self):
+        for h in list(self.root_logger.handlers):
+            self.root_logger.removeHandler(h)
+            h.close()
+        for h in self.saved[0]:
+            self.root_logger.addHandler(h)
+        self.root_logger.setLevel(self.saved[1])
+        super().tearDown()
+
+    def kinds(self):
+        return sorted(type(h).__name__ for h in self.root_logger.handlers)
+
+    def test_an_error_goes_to_the_file_only(self):
+        configure_logging(self.tmp / "logs" / "mas.log")                # the folder is created
+        self.assertEqual(self.kinds(), ["FileHandler"])
+        try:
+            raise ValueError("boom")
+        except ValueError:
+            logging.getLogger("mas.agents.base").exception("coder crashed on task t1")
+        text = (self.tmp / "logs" / "mas.log").read_text(encoding="utf-8")
+        self.assertIn("ERROR mas.agents.base: coder crashed on task t1", text)
+        self.assertIn("ValueError: boom", text)                          # with the stack trace
+
+    def test_verbose_also_prints_on_the_screen(self):
+        configure_logging(self.tmp / "mas.log", verbose=True)
+        self.assertEqual(self.kinds(), ["FileHandler", "StreamHandler"])
+
+    def test_calling_it_twice_does_not_double_the_lines(self):
+        configure_logging(self.tmp / "mas.log")
+        configure_logging(self.tmp / "mas.log")
+        logging.getLogger("x").warning("once")
+        self.assertEqual((self.tmp / "mas.log").read_text().count("once"), 1)
+
+    def test_configuring_again_replaces_the_old_setup(self):
+        configure_logging(self.tmp / "first.log")
+        configure_logging(self.tmp / "second.log", verbose=True)
+        self.assertEqual(self.kinds(), ["FileHandler", "StreamHandler"])
+        logging.getLogger("x").warning("only the new file")
+        self.assertEqual(((self.tmp / "first.log").read_text(), "only the new file" in (self.tmp / "second.log").read_text()), ("", True))
+
+    def test_info_messages_are_kept_in_the_file(self):
+        configure_logging(self.tmp / "mas.log")
+        logging.getLogger("x").info("something happened")
+        self.assertIn("INFO x: something happened", (self.tmp / "mas.log").read_text())
+
+    def test_a_log_file_that_cannot_be_written_falls_back_to_the_screen(self):
+        blocker = self.tmp / "file"
+        blocker.write_text("not a folder")
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            configure_logging(blocker / "mas.log")                       # a folder cannot be made below a file
+        self.assertEqual(self.kinds(), ["StreamHandler"])
+        self.assertIn("cannot write the log file", err.getvalue())
+
+
 class EntryPointTest(TmpDirTest):
     def test_arguments(self):
         a = parse_args([])
-        self.assertEqual((a.demo, a.data_dir, a.delay, a.fresh, a.verbose), (False, None, 0.4, False, False))
-        a = parse_args(["--demo", "--data-dir", "x", "--delay", "0", "--fresh", "-v"])
-        self.assertEqual((a.demo, a.data_dir, a.delay, a.fresh, a.verbose), (True, Path("x"), 0.0, True, True))
+        self.assertEqual((a.demo, a.data_dir, a.delay, a.keep, a.verbose), (False, None, 0.4, False, False))
+        a = parse_args(["--demo", "--data-dir", "x", "--delay", "0", "--keep", "-v"])
+        self.assertEqual((a.demo, a.data_dir, a.delay, a.keep, a.verbose), (True, Path("x"), 0.0, True, True))
 
     def test_demo_settings_keep_everything_under_data_dir_demo(self):
         s = demo_settings(Settings(), self.tmp)
@@ -344,7 +408,7 @@ class EntryPointTest(TmpDirTest):
     def test_python_dash_m_mas_demo_runs_a_request_end_to_end(self):
         """The real program, started like a user would: a request goes in, files and a report come out."""
         env = dict(os.environ, PYTHONPATH=str(ROOT), DEEPSEEK_API_KEY="")
-        p = subprocess.Popen([sys.executable, "-m", "mas", "--demo", "--data-dir", str(self.tmp), "--delay", "0", "--fresh"],
+        p = subprocess.Popen([sys.executable, "-m", "mas", "--demo", "--data-dir", str(self.tmp), "--delay", "0"],
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                              cwd=self.tmp, env=env)
         try:
@@ -371,6 +435,33 @@ class EntryPointTest(TmpDirTest):
         self.assertEqual(p.returncode, 0)
         outputs = list((self.tmp / "demo" / "output").glob("R1-*/script-*.py"))
         self.assertEqual(len(outputs), 1)
+
+    def run_demo(self, *args):
+        """Start the demo and quit at once. Returns the process."""
+        env = dict(os.environ, PYTHONPATH=str(ROOT))
+        return subprocess.run([sys.executable, "-m", "mas", "--demo", "--data-dir", str(self.tmp), "--delay", "0", *args],
+                              input="/quit\n", capture_output=True, text=True, cwd=self.tmp, env=env, timeout=30)
+
+    def test_the_demo_starts_clean_unless_told_to_keep_the_old_data(self):
+        marker = self.tmp / "demo" / "memory" / "coder.jsonl"
+        marker.parent.mkdir(parents=True)
+        marker.write_text("an old memory\n")
+        self.assertEqual(self.run_demo("--keep").returncode, 0)
+        self.assertTrue(marker.exists())                               # --keep: still there
+        self.assertEqual(self.run_demo().returncode, 0)
+        self.assertFalse(marker.exists())                              # default: gone
+
+    def test_the_log_goes_to_a_file_not_to_the_screen_unless_verbose(self):
+        quiet = self.run_demo()
+        log = self.tmp / "mas.log"
+        self.assertTrue(log.exists())
+        self.assertNotIn("INFO", quiet.stderr + quiet.stdout)
+        self.assertNotIn("Traceback", quiet.stderr + quiet.stdout)
+
+    def test_the_log_is_a_file_and_stays_out_of_the_cleared_demo_folder(self):
+        self.run_demo()
+        self.assertTrue((self.tmp / "mas.log").exists())               # next to demo/, so clearing demo/ keeps it
+        self.assertFalse((self.tmp / "demo" / "mas.log").exists())
 
     def test_without_a_key_the_real_system_says_what_to_do(self):
         env = dict(os.environ, PYTHONPATH=str(ROOT), DEEPSEEK_API_KEY="", LLM_PROVIDER="deepseek")
