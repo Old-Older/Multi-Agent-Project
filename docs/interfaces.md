@@ -265,6 +265,7 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
   - `recall(query, k)`：按关键词重合度排序，返回最多 k 条。关键词：英文单词（小写，去掉 a/the 之类的停用词）和中文的相邻两字。目标和标签里的词算 2 分，摘要和教训里的算 1 分；**有教训的再加 1 分**（教训正是召回要给 Worker 看的）；同分新的在前；一个词都不重合的不返回。
   - `profile(max_chars)`：能力档案，形如 `Recent performance: code 8/10 succeeded, git 3/3 succeeded. Known weak spots: pip install times out; pages that need JS rendering fail.`。统计的是**最近 20 条**（`PROFILE_WINDOW`）里每个标签的成功数/总数（一条有多个标签就各算一次，没有标签算 `other`），按出现次数从多到少排；"Known weak spots" 是最近几次失败的教训（最多 3 条，重复的只写一次，成功记录里的教训忽略，放不下的跳过）。没有任何记录时返回空字符串；长度绝不超过 `max_chars`。
   - `all()`：按时间从旧到新返回全部记录（评测或调试用）。
+  - `clear()`：忘掉一切（删掉文件，没有文件也不报错）。评测框架要做"从空记忆开始"的对比实验时一行就能重置。只清这个 agent 自己的。
 - `tags_for_tools(tool_names, artifacts)`：Worker 打标签用的现成函数：`run_python` → `code`、`git` → `git`、`web_search`/`fetch_url` → `search`、读写删列文件 → `file`、写了 `.md`/`.txt` → `doc`，按第一次出现的顺序。不认识的工具不加标签。（对应评测的五类：code / doc / search / file / git。）
 - `Experience.tags` 根据用到的工具自动打标签（例如 `["code", "git"]`），不调 LLM。
 - `recall(query, k)` → 注入 Worker 的 prompt；`profile(max_chars)` → 拼进 `call_<agent>` 的描述（Orchestrator 每个根任务开始时读一次）。两者都不调 LLM。

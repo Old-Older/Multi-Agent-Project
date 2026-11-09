@@ -66,6 +66,21 @@ class StorageTest(MemoryTestBase):
         got = self.mem.all()
         self.assertEqual([(e.task_id, e.lesson) for e in got], [("t2", ""), ("t1", "check the proxy first")])
 
+    def test_clear_forgets_everything_and_the_memory_keeps_working(self):
+        self.mem.add(exp("t1", success=False, lesson="a lesson"))
+        self.mem.clear()
+        self.assertEqual((self.mem.all(), self.mem.recall("script"), self.mem.profile(), self.mem.path.exists()),
+                         ([], [], "", False))
+        self.mem.clear()                                               # nothing to clear: not an error
+        self.mem.add(exp("t2"))
+        self.assertEqual([e.task_id for e in self.mem.all()], ["t2"])
+
+    def test_clear_only_touches_its_own_agent(self):
+        other = JsonlMemory.for_agent(self.tmp / "memory", "writer")
+        self.mem.add(exp("t1")), other.add(exp("t2"))
+        self.mem.clear()
+        self.assertEqual([e.task_id for e in other.all()], ["t2"])
+
     def test_memory_of_two_agents_is_separate(self):
         other = JsonlMemory.for_agent(self.tmp / "memory", "writer")
         self.mem.add(exp("t1"))

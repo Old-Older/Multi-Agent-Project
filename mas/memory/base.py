@@ -102,6 +102,11 @@ class JsonlMemory(Memory):
         with self.path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(asdict(exp), ensure_ascii=False) + "\n")
 
+    def clear(self) -> None:
+        """Forget everything (delete the file). For the eval harness: an experiment that
+        must start from an empty memory. Nothing to do if there is no file."""
+        self.path.unlink(missing_ok=True)
+
     def all(self) -> list[Experience]:
         """Every experience, oldest first; a line that cannot be read is skipped."""
         if not self.path.exists():
