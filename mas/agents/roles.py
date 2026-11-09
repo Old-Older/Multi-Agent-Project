@@ -24,14 +24,14 @@ ROLES: dict[str, RoleConfig] = {
     "researcher": RoleConfig(
         agent_id="researcher",
         display_name="Researcher",
-        capability="搜索网络、抓取网页、收集并整理资料，结果写成 .md/.txt。不运行代码。",
+        capability="Searches the web, fetches pages, collects and organizes material; results are written as .md/.txt. Does not run code.",
         system_prompt="",             # TODO(LI Heyang)
         tool_names=["web_search", "fetch_url", "read_file", "write_file", "list_files"],
     ),
     "coder": RoleConfig(
         agent_id="coder",
         display_name="Coder",
-        capability="编写并运行 Python 代码，文件增删改查，Git 提交与推送。",
+        capability="Writes and runs Python code, creates/reads/updates/deletes files, commits and pushes with Git.",
         system_prompt="",
         tool_names=["read_file", "write_file", "delete_file", "list_files",
                     "run_python", "git"],
@@ -39,7 +39,7 @@ ROLES: dict[str, RoleConfig] = {
     "writer": RoleConfig(
         agent_id="writer",
         display_name="Writer",
-        capability="撰写和修改 Markdown / 纯文本文档。不上网、不运行代码。",
+        capability="Writes and edits Markdown / plain-text documents. Does not browse the web or run code.",
         system_prompt="",
         tool_names=["read_file", "write_file", "list_files"],
     ),

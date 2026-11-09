@@ -51,6 +51,7 @@ class HitlEntry:
     answer: str | None = None         # None = still waiting for the human
 
 
+# Sentence endings of both Chinese and Western text (LLM answers may be in either).
 _SENTENCE_END = re.compile(r"[。！？!?\n]|\.(?:\s|$)")
 
 
@@ -195,11 +196,11 @@ class SessionBoard:
     def _build(self, current: RootRecord | None, earlier: list[RootRecord],
                dropped: int, summary_cap: int | None) -> str:
         if current is None:
-            return f"## 会话看板（session {self.session_id}）\n（暂无内容）"
-        out = [f"## 会话看板（session {self.session_id}，根任务 {current.root_id}）"]
-        out.append("人类原话：")
+            return f"## Session board (session {self.session_id})\n(nothing yet)"
+        out = [f"## Session board (session {self.session_id}, root {current.root_id})"]
+        out.append("Human's words:")
         for i, m in enumerate(current.human_messages):
-            out.append(f'  - {"（插话）" if i else ""}"{m}"')
+            out.append(f'  - {"(interjection) " if i else ""}"{m}"')
 
         mine = [t for t in self.tasks.values() if t.root_id == current.root_id]
         done = [t for t in mine if t.state == "done"]
@@ -208,46 +209,46 @@ class SessionBoard:
         asks = [h for h in self.hitl.values() if h.root_id == current.root_id]
 
         if done:
-            out.append("已完成：")
+            out.append("Done:")
             for t in done:
-                line = f"  - {t.id} {t.assignee}「{t.goal}」"
+                line = f"  - {t.id} {t.assignee} \"{t.goal}\""
                 if t.artifacts:
-                    line += "→ " + ", ".join(t.artifacts)
+                    line += " -> " + ", ".join(t.artifacts)
                 if t.refs:
-                    line += "｜" + ", ".join(f"{k}={v}" for k, v in t.refs.items())
+                    line += " | " + ", ".join(f"{k}={v}" for k, v in t.refs.items())
                 if t.summary:
-                    line += "｜要点：" + _cap(t.summary, summary_cap)
+                    line += " | key points: " + _cap(t.summary, summary_cap)
                 out.append(line)
         if bad:
-            out.append("失败/拒绝：")
+            out.append("Failed / declined:")
             for t in bad:
                 reason = _cap(_first_sentence(t.error or t.summary), 60)
                 if t.state == "declined":
-                    line = f"  - {t.id} {t.assignee} 拒绝：{reason}"
+                    line = f"  - {t.id} {t.assignee} declined: {reason}"
                     if t.suggest:
-                        line += f"，建议 {t.suggest}"
+                        line += f", suggest {t.suggest}"
                 else:
-                    line = f"  - {t.id} {t.assignee} 失败：{reason}"
+                    line = f"  - {t.id} {t.assignee} failed: {reason}"
                 out.append(line)
         answered = [h for h in asks if h.answer is not None]
         if answered:
-            out.append("人类决定：")
-            out += [f"  - {h.request_id}「{h.question}」→ {h.answer}" for h in answered]
+            out.append("Human decisions:")
+            out += [f"  - {h.request_id} \"{h.question}\" -> {h.answer}" for h in answered]
 
-        todo = [f"  - {t.id} {t.assignee} 执行中「{t.goal}」" for t in running]
-        todo += [f"  - {h.request_id} 等待人类：{h.question}" for h in asks if h.answer is None]
+        todo = [f"  - {t.id} {t.assignee} running \"{t.goal}\"" for t in running]
+        todo += [f"  - {h.request_id} waiting for the human: {h.question}" for h in asks if h.answer is None]
         for t in done:
-            todo += [f"  - 遗留（{t.id}）：{issue}" for issue in t.open_issues]
+            todo += [f"  - left over ({t.id}): {issue}" for issue in t.open_issues]
         if current.plan:
-            todo.append(f"  - 剩余计划：{current.plan}")
+            todo.append(f"  - remaining plan: {current.plan}")
         if todo:
-            out.append("未办：")
+            out.append("To do:")
             out += todo
 
         if earlier:
-            out.append("早先：")
+            out.append("Earlier:")
             if dropped:
-                out.append(f"  - 另有 {dropped} 个早先任务，可用 read_group 查看")
+                out.append(f"  - {dropped} more earlier request(s), see read_group")
             for r in earlier[dropped:]:
                 out.append("  - " + self._root_line(r))
         return "\n".join(out)
@@ -259,7 +260,7 @@ class SessionBoard:
             gist = (r.human_messages[0] if r.human_messages else "")[:40]
         line = f"{r.root_id} {gist}"
         if r.deliverables:
-            line += " → " + ", ".join(r.deliverables)
+            line += " -> " + ", ".join(r.deliverables)
         return line
 
     # ---- persistence -----------------------------------------------------

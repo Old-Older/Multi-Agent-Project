@@ -131,8 +131,8 @@ class Orchestrator(Agent):
         text = self.router.state.status_text(session)
         run = self._runs.get(session)
         if run and not self.router.state.by_root(run.root_id):
-            line = f"{run.root_id} 正在处理，还没有派出任务。"
-            return line if text.startswith("当前会话还没有任务") else f"{line}\n{text}"
+            line = f"{run.root_id} is being worked on; no task has been sent out yet."
+            return line if text.startswith("No tasks in this session") else f"{line}\n{text}"
         return text
 
     async def _cancel(self, msg: Message, session: str) -> None:
@@ -155,7 +155,7 @@ class Orchestrator(Agent):
 
         up to settings.max_orchestrator_rounds:
           resp = llm.chat(messages, function_specs(session))
-          resp.text -> board.set_plan (the "剩余步骤" line)
+          resp.text -> board.set_plan (the "Remaining steps" line)
           run all call_<agent> tool calls concurrently (asyncio.gather) via
             router.dispatch; feed back summary + artifacts + success only
           ask_human -> router.request_human(HitlKind.CLARIFY)
@@ -170,12 +170,12 @@ class Orchestrator(Agent):
         try:
             await self._loop(msg, run)
         except asyncio.CancelledError:
-            self._close(run, False, None, "已取消", [])
+            self._close(run, False, None, "Cancelled", [])
             raise
         finally:
             self._runs.pop(session, None)
             if not board.roots[run.root_id].finished:         # a bug ended the loop: do not leave it open
-                self._close(run, False, FailureMode.CRASH, "内部出错，请求被中断", [])
+                self._close(run, False, FailureMode.CRASH, "Internal error, the request was interrupted", [])
 
     def _close(self, run: _RootRun, success: bool, failure: FailureMode | None, summary: str,
                deliverables: list[str], output_dir: str = "") -> RootOutcome:
@@ -191,16 +191,16 @@ class Orchestrator(Agent):
         specs = self.function_specs(run.session_id)          # capability profiles refreshed per root
         messages: list[ChatMessage] = [
             {"role": "system", "content": self.system_prompt()},
-            {"role": "user", "content": f"人类的请求：{msg.content.strip()}\n\n{board.render()}"},
+            {"role": "user", "content": f"Human request: {msg.content.strip()}\n\n{board.render()}"},
         ]
         for n in range(1, self.settings.max_orchestrator_rounds + 1):
             run.rounds = n
             for text in run.drain():
-                messages.append({"role": "user", "content": f"（人类补充）{text}"})
+                messages.append({"role": "user", "content": f"(Human addition) {text}"})
             try:
                 resp = await self.llm.chat(list(messages), specs, temperature=self.settings.temperature)
             except LLMError as exc:
-                await self._conclude(msg, run, False, FailureMode.CRASH, f"调用 LLM 失败：{exc}",
+                await self._conclude(msg, run, False, FailureMode.CRASH, f"LLM call failed: {exc}",
                                      self._artifacts(run))
                 return
             if resp.text.strip():
@@ -209,7 +209,7 @@ class Orchestrator(Agent):
                 if resp.text.strip():                        # the answer without the finish tool: accept it
                     await self._conclude(msg, run, True, None, resp.text.strip(), self._artifacts(run))
                     return
-                messages.append({"role": "user", "content": "请调用一个工具；任务完成时调用 finish。"})
+                messages.append({"role": "user", "content": "Please call a tool; when the task is done, call finish."})
                 continue
             messages.append(self._assistant_message(resp.text, resp.tool_calls))
             observations, finish = await self._run_tools(msg, run, resp.tool_calls)
@@ -217,7 +217,7 @@ class Orchestrator(Agent):
                 messages.append({"role": "tool", "tool_call_id": tc.id, "content": observations[tc.id]})
             if finish is not None:
                 args = finish.arguments
-                await self._conclude(msg, run, True, None, str(args.get("summary") or "").strip() or "（已完成）",
+                await self._conclude(msg, run, True, None, str(args.get("summary") or "").strip() or "(done)",
                                      [str(d) for d in args.get("deliverables") or []])
                 return
         await self._conclude(msg, run, False, FailureMode.MAX_ROUNDS, self._partial_summary(run),
@@ -235,7 +235,7 @@ class Orchestrator(Agent):
         finishes = [tc for tc in calls if tc.name == FINISH]
         for tc in calls:
             if tc not in agents and tc not in asks and tc not in finishes:
-                obs[tc.id] = self._error(f"没有这个工具：{tc.name}")
+                obs[tc.id] = self._error(f"no such tool: {tc.name}")
         outs = await asyncio.gather(*(self._call_agent(msg, run, tc) for tc in agents))   # in parallel
         obs.update({tc.id: out for tc, out in zip(agents, outs)})
         for tc in asks:                                      # a human answers one at a time
@@ -243,7 +243,7 @@ class Orchestrator(Agent):
         finish = None
         for tc in finishes:
             if len(calls) > len(finishes) or finish is not None:
-                obs[tc.id] = self._error("finish 要单独调用：先等其他调用的结果，确认都完成了再 finish。")
+                obs[tc.id] = self._error("finish must be called alone: wait for the results of the other calls, and call finish once you have confirmed everything is done.")
             else:
                 finish = tc
                 obs[tc.id] = json.dumps({"success": True})
@@ -253,9 +253,9 @@ class Orchestrator(Agent):
         target, args = target_of(tc.name), tc.arguments
         goal = str(args.get("goal") or "").strip()
         if target not in self.roles:
-            return self._error(f"没有这个 agent：{target}")
+            return self._error(f"no such agent: {target}")
         if not goal:
-            return self._error("缺少参数 goal")
+            return self._error("missing argument goal")
         files = args.get("files") or []
         result = await self.router.dispatch(
             requester=ORCHESTRATOR, target=target, goal=goal, context=str(args.get("context") or ""),
@@ -267,7 +267,7 @@ class Orchestrator(Agent):
     async def _ask_human(self, msg: Message, run: _RootRun, tc: ToolCall) -> str:
         question = str(tc.arguments.get("question") or "").strip()
         if not question:
-            return self._error("缺少参数 question")
+            return self._error("missing argument question")
         options = tc.arguments.get("options") or []
         answer = await self.router.request_human(
             session_id=run.session_id, root_id=run.root_id, origin_channel=msg.channel,
@@ -311,14 +311,14 @@ class Orchestrator(Agent):
 
     @staticmethod
     def _partial_summary(run: _RootRun) -> str:
-        done = [f"{agent}「{_clip(goal, 40)}」：{_clip(r.summary, 80)}" for agent, goal, r in run.results if r.success]
-        todo = [f"{agent}「{_clip(goal, 40)}」：{_clip(r.error or r.summary, 80)}"
+        done = [f"{agent} \"{_clip(goal, 40)}\": {_clip(r.summary, 80)}" for agent, goal, r in run.results if r.success]
+        todo = [f"{agent} \"{_clip(goal, 40)}\": {_clip(r.error or r.summary, 80)}"
                 for agent, goal, r in run.results if not r.success]
-        text = f"已用完 {run.rounds} 轮，没能完成全部目标。"
+        text = f"Used all {run.rounds} rounds without completing the whole request."
         if done:
-            text += "已完成：" + "；".join(done) + "。"
+            text += " Done: " + "; ".join(done) + "."
         if todo:
-            text += "未完成：" + "；".join(todo) + "。"
+            text += " Not done: " + "; ".join(todo) + "."
         return text
 
     async def _conclude(self, msg: Message, run: _RootRun, success: bool, failure: FailureMode | None,
@@ -338,9 +338,9 @@ class Orchestrator(Agent):
         outcome = self._close(run, success, failure, summary, copied, str(out_dir) if copied else "")
         text = f"@{HUMAN} {summary}"
         if copied:
-            text += f"\n交付物：{', '.join(copied)}（已汇总到 {out_dir}）"
+            text += f"\nDeliverables: {', '.join(copied)} (collected in {out_dir})"
         if missing:
-            text += f"\n（找不到这些文件：{', '.join(missing)}）"
+            text += f"\n(files not found: {', '.join(missing)})"
         await self._say(msg, text, payload={
             "final": True, "root_id": run.root_id, "success": outcome.success, "rounds": outcome.rounds,
             "failure_mode": failure.value if failure else None, "deliverables": copied,
@@ -366,19 +366,19 @@ class Orchestrator(Agent):
             return ""
 
     def system_prompt(self) -> str:
-        names = "、".join(f"{r.display_name}（call_{r.agent_id}）" for r in self.roles.values())
-        return f"""你是多 agent 系统的调度员（Orchestrator）。人类提出一个请求，你通过调用工具把它交给合适的 agent 完成，最后向人类汇报。你的 agent：{names}。每个工具的描述里写了它能做什么、不能做什么，以及它近期的表现。
+        names = ", ".join(f"{r.display_name} (call_{r.agent_id})" for r in self.roles.values())
+        return f"""You are the Orchestrator of a multi-agent system. A human makes a request; you hand it to the right agents by calling tools, and report to the human at the end. Your agents: {names}. The description of each tool says what that agent can and cannot do, and how it has performed recently.
 
-规则：
-1. 每次调用只交给一个 agent，目标（goal）必须是这个 agent 凭自己的能力就能独立完成的。需要多种能力就拆成多次调用，不要把需要两个 agent 的活交给一个。
-2. 互不依赖的调用放在同一轮里一起发出，它们会并行执行。有先后依赖的分轮发。
-3. 上一步产出的文件用 files 参数交给下一个 agent，不要在 context 里复述内容。会话的整体进展已经在会话看板里，context 只写这次调用特有的说明。
-4. 每次发出工具调用时，在同一条回复的文字部分写一行"剩余步骤：……"。
-5. 工具返回的是摘要、产物文件名和是否成功，不是全文。agent 拒绝（declined）并给了 suggest 时，改派给建议的 agent；失败时可以改写目标、换一个 agent 或重试，同一个目标最多试 3 次，仍失败就在汇报里如实说明。
-6. 人类的请求含糊到无法着手时，才用 ask_human 提问；能合理推断就直接做。
-7. 交付物只能是 .md、.txt 或代码文件。
-8. 全部完成后立即单独调用 finish（不要和别的调用一起），summary 写清楚做了什么，deliverables 列出交付文件名。不要多余的确认轮次。
-9. 对话中标有"（人类补充）"的是人类在你工作时追加的要求，要照着调整。"""
+Rules:
+1. Each call goes to one agent only, and its goal must be something that agent can complete on its own with its own abilities. If several abilities are needed, split the work into several calls; never give one agent a job that needs two agents.
+2. Calls that do not depend on each other go in the same round, and they run in parallel. Calls that depend on earlier results go in later rounds.
+3. Hand the files produced by an earlier step to the next agent with the files argument; do not repeat their content in context. The overall progress of the session is already on the session board, so context only holds notes specific to this call.
+4. Whenever you make tool calls, write one line "Remaining steps: ..." in the text part of the same reply.
+5. A tool returns a summary, the artifact file names and whether it succeeded, not the full text. When an agent declines (declined) and gives a suggest, reassign the job to the suggested agent. When a call fails you may rewrite the goal, pick another agent or retry; the same goal is tried at most 3 times, and if it still fails say so honestly in your report.
+6. Use ask_human only when the request is too vague to start; if you can reasonably infer what is meant, just do it.
+7. Deliverables may only be .md, .txt or code files.
+8. When everything is done, call finish at once and alone (not together with other calls); the summary says what was done and deliverables lists the delivered file names. No extra confirmation rounds.
+9. A message marked "(Human addition)" is something the human added while you were working; adjust accordingly."""
 
     async def handle_task(self, task: Task) -> TaskResult:
         raise NotImplementedError("the Orchestrator is never assigned tasks")

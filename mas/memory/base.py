@@ -38,7 +38,7 @@ class Memory(ABC):
     @abstractmethod
     def profile(self, max_chars: int = 300) -> str:
         """Success counts per tag plus recent failure lessons, e.g.
-        '近期表现：code 8/10 成功，git 3/3 成功。已知短板：……'"""
+        'Recent performance: code 8/10 succeeded, git 3/3 succeeded. Known weak spots: ...'"""
 
 
 class JsonlMemory(Memory):

@@ -110,7 +110,7 @@ class RunLoopTest(unittest.IsolatedAsyncioTestCase):
         self.running.append(asyncio.create_task(agent.run()))
         return agent
 
-    async def dispatch(self, target="coder", goal="写脚本", root="R1", origin=GROUP_MAIN, requester="orchestrator"):
+    async def dispatch(self, target="coder", goal="write a script", root="R1", origin=GROUP_MAIN, requester="orchestrator"):
         return await self.router.dispatch(requester=requester, target=target, goal=goal, session_id=origin,
                                           root_id=root, origin_channel=origin)
 
@@ -118,14 +118,14 @@ class RunLoopTest(unittest.IsolatedAsyncioTestCase):
         return [m for m in self.bus.history(channel, 100) if m.type == type_]
 
     async def test_task_roundtrip(self):
-        self.start(handler=lambda t: _ret(TaskResult(t.id, True, "脚本写好了", artifacts=["a.py"])))
+        self.start(handler=lambda t: _ret(TaskResult(t.id, True, "script ready", artifacts=["a.py"])))
         r = await self.dispatch()
-        self.assertEqual((r.success, r.summary, r.artifacts), (True, "脚本写好了", ["a.py"]))
+        self.assertEqual((r.success, r.summary, r.artifacts), (True, "script ready", ["a.py"]))
         self.assertEqual(self.state.get(r.task_id).status, TaskStatus.DONE)
         [assign] = self.of_type(GROUP_MAIN, MsgType.TASK_ASSIGN)
         [res] = self.of_type(GROUP_MAIN, MsgType.TASK_RESULT)
         self.assertEqual((res.sender, res.receiver, res.reply_to), ("coder", "orchestrator", assign.id))
-        self.assertEqual(res.content, "@orchestrator 完成：脚本写好了（文件：a.py）")
+        self.assertEqual(res.content, "@orchestrator Done: script ready (files: a.py)")
         self.assertGreater(r.duration, 0)                  # filled in when the worker did not
 
     async def test_received_status_is_public_and_updates_the_table(self):
@@ -139,14 +139,14 @@ class RunLoopTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(seen["status"], TaskStatus.RUNNING)    # set by the STATUS message
         [st] = self.of_type(GROUP_MAIN, MsgType.STATUS)
         self.assertTrue(st.payload["public"])
-        self.assertEqual(st.content, "coder：收到 " + st.payload["task_id"] + "：写脚本")
+        self.assertEqual(st.content, "coder: Received " + st.payload["task_id"] + ": write a script")
 
     async def test_report_status_not_public_has_no_chat_text(self):
         agent = DummyAgent("coder", self.bus, self.router, self.settings)
         t = Task(goal="g", assignee="coder", requester="orchestrator", session_id=GROUP_MAIN,
                  root_id="R1", origin_channel=GROUP_MAIN)
         self.state.register(t)
-        await agent.report_status(t, TaskStatus.RUNNING, "第 3 步")
+        await agent.report_status(t, TaskStatus.RUNNING, "step 3")
         [st] = self.of_type(GROUP_MAIN, MsgType.STATUS)
         self.assertEqual((st.content, st.payload["public"], t.status), ("", False, TaskStatus.RUNNING))
 
@@ -178,12 +178,12 @@ class RunLoopTest(unittest.IsolatedAsyncioTestCase):
         async def h(task):
             calls.append(task.goal)
             if task.goal == "boom":
-                raise ValueError("坏了")
+                raise ValueError("broken")
             return TaskResult(task.id, True, "fine")
         self.start(handler=h)
         with self.assertLogs("mas.agents.base", level="ERROR"):
             bad = await self.dispatch(goal="boom")
-        self.assertEqual((bad.success, bad.failure_mode, bad.error), (False, FailureMode.CRASH, "ValueError: 坏了"))
+        self.assertEqual((bad.success, bad.failure_mode, bad.error), (False, FailureMode.CRASH, "ValueError: broken"))
         self.assertEqual(self.state.get(bad.task_id).status, TaskStatus.FAILED)
         self.assertTrue((await self.dispatch(goal="ok")).success)      # still alive
         self.assertEqual(calls, ["boom", "ok"])
@@ -200,7 +200,7 @@ class RunLoopTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_summary_is_clipped_and_task_id_corrected(self):
         self.settings.result_summary_max_chars = 20
-        self.start(handler=lambda t: _ret(TaskResult("wrong-id", True, "很长" * 50)))
+        self.start(handler=lambda t: _ret(TaskResult("wrong-id", True, "very long" * 50)))
         r = await self.dispatch()
         self.assertEqual(len(r.summary), 20)
         self.assertTrue(r.summary.endswith("…"))
@@ -219,30 +219,30 @@ class RunLoopTest(unittest.IsolatedAsyncioTestCase):
     async def test_human_dm_becomes_a_direct_task(self):
         dm = dm_channel("coder", "human")
         self.bus.join("human", dm)
-        agent = self.start(handler=lambda t: _ret(TaskResult(t.id, True, "修好了", refs={"commit": "abc"})))
-        msg = Message(MsgType.CHAT, HUMAN, dm, "修一下这个 bug", receiver="coder")
+        agent = self.start(handler=lambda t: _ret(TaskResult(t.id, True, "fixed", refs={"commit": "abc"})))
+        msg = Message(MsgType.CHAT, HUMAN, dm, "fix this bug", receiver="coder")
         await self.bus.publish(msg)
         await _until(lambda: self.of_type(dm, MsgType.TASK_RESULT))
         [res] = self.of_type(dm, MsgType.TASK_RESULT)
-        self.assertEqual((res.receiver, res.reply_to, res.content), (HUMAN, msg.id, "@human 完成：修好了"))
+        self.assertEqual((res.receiver, res.reply_to, res.content), (HUMAN, msg.id, "@human Done: fixed"))
         [task] = self.state.by_root("R1")
-        self.assertEqual((task.goal, task.requester, task.status), ("修一下这个 bug", HUMAN, TaskStatus.DONE))
+        self.assertEqual((task.goal, task.requester, task.status), ("fix this bug", HUMAN, TaskStatus.DONE))
         board = self.router.board(dm)
-        self.assertEqual(board.roots["R1"].human_messages, ["修一下这个 bug"])
+        self.assertEqual(board.roots["R1"].human_messages, ["fix this bug"])
         self.assertEqual(agent.handled, [task.id])
 
     async def test_mention_in_the_group_is_a_direct_task(self):
         self.start()
-        await self.bus.publish(Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "@coder 写个脚本",
+        await self.bus.publish(Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "@coder write a script",
                                        mentions=["coder"]))
         await _until(lambda: self.of_type(GROUP_MAIN, MsgType.TASK_RESULT))
         [task] = self.state.by_root("R1")
-        self.assertEqual((task.goal, task.origin_channel), ("写个脚本", GROUP_MAIN))
+        self.assertEqual((task.goal, task.origin_channel), ("write a script", GROUP_MAIN))
 
     async def test_slash_commands_and_agent_chat_are_ignored_by_default(self):
         agent = self.start()
         await self.bus.publish(Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "/status", receiver="coder"))
-        await self.bus.publish(Message(MsgType.CHAT, "writer", GROUP_MAIN, "@coder 帮个忙", mentions=["coder"]))
+        await self.bus.publish(Message(MsgType.CHAT, "writer", GROUP_MAIN, "@coder help me", mentions=["coder"]))
         await asyncio.sleep(0.05)
         self.assertEqual((agent.handled, self.state.by_root("R1")), ([], []))
 
@@ -257,12 +257,12 @@ class RunLoopTest(unittest.IsolatedAsyncioTestCase):
             seen["cancelled"] = self.router.state.get(task.id).status      # what the worker would see
             return TaskResult(task.id, True, "late")
         agent = self.start(handler=slow)
-        await self.bus.publish(Message(MsgType.CHAT, HUMAN, dm, "做个长任务", receiver="coder"))
+        await self.bus.publish(Message(MsgType.CHAT, HUMAN, dm, "do a long task", receiver="coder"))
         await _until(lambda: agent.handled)
         await self.bus.publish(Message(MsgType.CHAT, HUMAN, dm, "/cancel", receiver="coder"))
         await _until(lambda: [m for m in self.of_type(dm, MsgType.CHAT) if m.sender == "coder"])
         [notice] = [m for m in self.of_type(dm, MsgType.CHAT) if m.sender == "coder"]
-        self.assertEqual((notice.content, notice.receiver, notice.payload), ("已取消 R1", HUMAN, {"cancelled_roots": ["R1"]}))
+        self.assertEqual((notice.content, notice.receiver, notice.payload), ("Cancelled R1", HUMAN, {"cancelled_roots": ["R1"]}))
         [task] = self.state.by_root("R1")
         self.assertEqual(task.status, TaskStatus.CANCELLED)
         self.assertTrue(agent.is_cancelled(task))
@@ -275,17 +275,17 @@ class RunLoopTest(unittest.IsolatedAsyncioTestCase):
         await self.bus.publish(Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "/cancel", receiver="coder"))
         await _until(lambda: [m for m in self.of_type(GROUP_MAIN, MsgType.CHAT) if m.sender == "coder"])
         [notice] = [m for m in self.of_type(GROUP_MAIN, MsgType.CHAT) if m.sender == "coder"]
-        self.assertEqual((notice.content, notice.payload), ("没有进行中的任务可以取消", {"cancelled_roots": []}))
+        self.assertEqual((notice.content, notice.payload), ("No unfinished task to cancel", {"cancelled_roots": []}))
 
     async def test_a_crash_in_handle_chat_is_reported_in_the_chat(self):
         async def bad(msg):
-            raise RuntimeError("聊天出错")
+            raise RuntimeError("chat failed")
         agent = self.start(chat_handler=bad)
         with self.assertLogs("mas.agents.base", level="ERROR"):
-            await self.bus.publish(Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "你好", receiver="coder"))
+            await self.bus.publish(Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "hello", receiver="coder"))
             await _until(lambda: [m for m in self.of_type(GROUP_MAIN, MsgType.CHAT) if m.sender == "coder"])
         [err] = [m for m in self.of_type(GROUP_MAIN, MsgType.CHAT) if m.sender == "coder"]
-        self.assertIn("RuntimeError: 聊天出错", err.content)
+        self.assertIn("RuntimeError: chat failed", err.content)
         self.assertTrue((await self.dispatch()).success)           # the loop is still running
 
     async def test_cancelling_run_cancels_the_handlers_in_flight(self):

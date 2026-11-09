@@ -21,7 +21,7 @@ from mas.llm.mock import MockLLM
 
 
 def make_task(**kw) -> Task:
-    base = dict(goal="写一个脚本", assignee="coder", requester="orchestrator",
+    base = dict(goal="write a script", assignee="coder", requester="orchestrator",
                 session_id="s1", root_id="r1", origin_channel=GROUP_MAIN)
     return Task(**{**base, **kw})
 
@@ -54,8 +54,8 @@ class TaskTest(unittest.TestCase):
         self.assertEqual(make_task(chain=["orchestrator", "coder", "researcher"]).depth, 2)
 
     def test_result_roundtrip(self):
-        r = TaskResult("t1", False, "超时", error="timeout",
-                       failure_mode=FailureMode.TIMEOUT, open_issues=["未推送"])
+        r = TaskResult("t1", False, "timed out", error="timeout",
+                       failure_mode=FailureMode.TIMEOUT, open_issues=["not pushed"])
         d = json.loads(json.dumps(r.to_dict()))
         self.assertEqual(TaskResult.from_dict(d), r)
 
@@ -66,11 +66,11 @@ class TaskTest(unittest.TestCase):
 
 class VirtualToolTest(unittest.TestCase):
     def test_call_agent_spec_is_openai_function(self):
-        spec = call_agent_spec(ROLES["coder"], profile="近期表现：code 8/10")
+        spec = call_agent_spec(ROLES["coder"], profile="Recent performance: code 8/10")
         o = spec.to_openai()
         self.assertEqual(o["type"], "function")
         self.assertEqual(o["function"]["name"], "call_coder")
-        self.assertIn("近期表现", o["function"]["description"])
+        self.assertIn("Recent performance", o["function"]["description"])
         self.assertEqual(o["function"]["parameters"]["required"], ["goal"])
 
     def test_target_of(self):

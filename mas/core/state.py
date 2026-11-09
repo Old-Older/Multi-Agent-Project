@@ -71,7 +71,7 @@ class StateTable:
         does not grow with the length of the chat."""
         tasks = [t for t in self._tasks.values() if t.session_id == session_id]
         if not tasks:
-            return "当前会话还没有任务。"
+            return "No tasks in this session yet."
         roots: dict[str, list[Task]] = {}
         for t in tasks:
             roots.setdefault(t.root_id, []).append(t)
@@ -79,31 +79,35 @@ class StateTable:
         current = next((r for r in reversed(ids) if any(not t.status.finished for t in roots[r])), ids[-1])
         mine = roots[current]
         running = sum(1 for t in mine if not t.status.finished)
-        lines = [f"{current}：任务 {len(mine)} 个，进行中 {running} 个："]
+        lines = [f"{current}: {_n(len(mine), 'task')}, {running} in progress:"]
         for t in mine:
-            line = f"  {t.id} {t.assignee} [{t.status.value}]「{_clip(t.goal)}」"
+            line = f"  {t.id} {t.assignee} [{t.status.value}] \"{_clip(t.goal)}\""
             if t.id in self._notes:
-                line += f"：{_clip(self._notes[t.id])}"
+                line += f": {_clip(self._notes[t.id])}"
             lines.append(line)
         earlier = [r for r in ids if r != current]
         if earlier:
-            lines.append("更早的请求：")
-            lines += [f"  {r}：{len(roots[r])} 个任务，{self._counts(roots[r])}" for r in earlier]
+            lines.append("Earlier requests:")
+            lines += [f"  {r}: {_n(len(roots[r]), 'task')}, {self._counts(roots[r])}" for r in earlier]
         return "\n".join(lines)
 
     @staticmethod
     def _counts(tasks: list[Task]) -> str:
-        """'全部完成', or e.g. '完成 3、失败 1' for a root that did not go entirely well."""
+        """'all done', or e.g. 'done 3, failed 1' for a root that did not go entirely well."""
         if all(t.status == TaskStatus.DONE for t in tasks):
-            return "全部完成"
-        names = {TaskStatus.DONE: "完成", TaskStatus.FAILED: "失败", TaskStatus.DECLINED: "拒绝",
-                 TaskStatus.CANCELLED: "取消"}
+            return "all done"
+        names = {TaskStatus.DONE: "done", TaskStatus.FAILED: "failed", TaskStatus.DECLINED: "declined",
+                 TaskStatus.CANCELLED: "cancelled"}
         parts = [f"{label} {n}" for status, label in names.items()
                  if (n := sum(1 for t in tasks if t.status == status))]
         unfinished = sum(1 for t in tasks if not t.status.finished)
         if unfinished:
-            parts.append(f"未结束 {unfinished}")
-        return "、".join(parts)
+            parts.append(f"unfinished {unfinished}")
+        return ", ".join(parts)
+
+
+def _n(n: int, word: str) -> str:
+    return f"{n} {word}" + ("" if n == 1 else "s")
 
 
 def _clip(text: str, n: int = 40) -> str:

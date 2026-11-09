@@ -144,18 +144,19 @@ def default_reader():
     return _stdin_line, nullcontext
 
 
-HELP_TEXT = """命令：
-  直接输入文字              在群里发给大家（没有 @ 谁，就由 Orchestrator 处理；@coder 则直接交给 coder）
-  /dm <agent> <内容>        私聊某个 agent，直接交给它一个任务
-  /status                   看当前任务进度
-  /cancel                   取消群里当前的请求
-  /cancel <agent>           取消和某个 agent 私聊里还在做的任务
-  /reply <编号> <回答>      回答一个请求，如 /reply h1 yes；私聊里的请求用 coder:h1
-                            只有一个请求在等待时，可以省略编号：/reply yes
-  /help                     显示这段说明
-  /quit                     退出"""
+HELP_TEXT = """Commands:
+  just type text            say it in the group (nobody @mentioned: the Orchestrator handles it; @coder: coder handles it directly)
+  /dm <agent> <message>     private chat with an agent, handing it a task directly
+  /status                   show the progress of the current tasks
+  /cancel                   cancel the current request in the group
+  /cancel <agent>           cancel the tasks still running in the private chat with that agent
+  /reply <id> <answer>      answer a request, e.g. /reply h1 yes; for a request in a DM use coder:h1
+                            with only one request waiting the id can be left out: /reply yes
+  /help                     show this help
+  /quit                     quit"""
 
-_KIND_LABEL = {HitlKind.APPROVAL: "请求批准", HitlKind.CLARIFY: "需要澄清", HitlKind.ADVICE: "请求帮助"}
+_KIND_LABEL = {HitlKind.APPROVAL: "asks for approval", HitlKind.CLARIFY: "needs clarification",
+               HitlKind.ADVICE: "asks for help"}
 _ID_TOKEN = re.compile(r"^(?:([A-Za-z_][\w-]*):)?(h\d+)$")
 _MENTION = re.compile(r"@([A-Za-z_][\w-]*)")
 
@@ -236,17 +237,17 @@ class CliHumanIO(HumanIO):
         """The text shown for `msg`, or None if the CLI does not show it."""
         if msg.sender == HUMAN:
             return None
-        tag = "" if is_group(msg.channel) else f"(私聊·{_other(msg.channel)}) "
+        tag = "" if is_group(msg.channel) else f"(DM·{_other(msg.channel)}) "
         if msg.type in (MsgType.CHAT, MsgType.TASK_ASSIGN, MsgType.TASK_RESULT):
             return f"{tag}[{msg.sender}] {msg.content}"
         if msg.type == MsgType.STATUS:
             return f"{tag}· {msg.content}" if msg.payload.get("public") and msg.content else None
         if msg.type == MsgType.HITL_REQUEST:
             req = HumanIO.request_from(msg)
-            line = f"{tag}? [{req.request_id}] {msg.sender} {_KIND_LABEL[req.kind]}：{req.question}"
+            line = f"{tag}? [{req.request_id}] {msg.sender} {_KIND_LABEL[req.kind]}: {req.question}"
             if req.options:
-                line += f"　可选：{' / '.join(req.options)}"
-            return f"{line}\n   回复：/reply {_reply_token(req)} <回答>"
+                line += f"  options: {' / '.join(req.options)}"
+            return f"{line}\n   reply: /reply {_reply_token(req)} <answer>"
         return None
 
     # ---- input -------------------------------------------------------------------
@@ -275,7 +276,7 @@ class CliHumanIO(HumanIO):
         elif cmd in ("/quit", "/exit"):
             return False
         else:
-            self._write(f"不认识的命令 {cmd}，输入 /help 查看可用命令。")
+            self._write(f"Unknown command {cmd}. Type /help for the available commands.")
         return True
 
     def _agents(self) -> list[str]:
@@ -300,9 +301,9 @@ class CliHumanIO(HumanIO):
         agent, _, text = rest.partition(" ")
         text = text.strip()
         if not agent or not text:
-            self._write("用法：/dm <agent> <内容>")
+            self._write("Usage: /dm <agent> <message>")
         elif agent not in self._agents():
-            self._write(f"没有这个 agent：{agent}。可选：{', '.join(self._agents())}")
+            self._write(f"No such agent: {agent}. Available: {', '.join(self._agents())}")
         else:
             await self._send(dm_channel(HUMAN, agent), text, agent)
 
@@ -327,20 +328,20 @@ class CliHumanIO(HumanIO):
         elif len(self._pending) == 1 and rest:
             key, answer = next(iter(self._pending)), rest
         elif not self._pending:
-            self._write("现在没有等待回答的请求。")
+            self._write("No request is waiting for an answer.")
             return
         else:
-            self._write("有多个请求在等待，请写上编号：/reply <编号> <回答>。等待中：" + self._waiting())
+            self._write("Several requests are waiting, please give the id: /reply <id> <answer>. Waiting: " + self._waiting())
             return
         if key is None:
             return
         if not answer:
-            self._write("请写上回答：/reply <编号> <回答>")
+            self._write("Please write the answer: /reply <id> <answer>")
             return
         fut, req = self._pending[key]
         if not fut.done():
             fut.set_result(answer)
-        self._write(f"已回复 {_reply_token(req)}：{answer}")
+        self._write(f"Replied to {_reply_token(req)}: {answer}")
 
     def _find_request(self, token: str) -> tuple[str, str] | None:
         """The open request `token` refers to, or None (after telling the human why).
@@ -359,13 +360,13 @@ class CliHumanIO(HumanIO):
             if len(candidates) == 1:
                 return candidates[0]
         if candidates:
-            self._write(f"{rid} 不止一个，请写成 " + " 或 ".join(_reply_token(self._pending[k][1]) for k in candidates))
+            self._write(f"{rid} matches more than one request, write it as " + " or ".join(_reply_token(self._pending[k][1]) for k in candidates))
         else:
-            self._write(f"没有等待回答的请求 {token}。等待中：" + self._waiting())
+            self._write(f"No open request {token}. Waiting: " + self._waiting())
         return None
 
     def _waiting(self) -> str:
-        return "、".join(_reply_token(req) for _, req in self._pending.values()) or "（无）"
+        return ", ".join(_reply_token(req) for _, req in self._pending.values()) or "(none)"
 
 
 def _other(channel: str) -> str:
@@ -384,8 +385,8 @@ class AutoResponder(HumanIO):
 
     DEFAULT_ANSWERS = {
         HitlKind.APPROVAL: "yes",
-        HitlKind.CLARIFY: "按原描述执行",
-        HitlKind.ADVICE: "换一种方法",
+        HitlKind.CLARIFY: "proceed as described",
+        HitlKind.ADVICE: "try a different approach",
     }
 
     def __init__(self) -> None:

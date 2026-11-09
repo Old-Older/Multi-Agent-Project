@@ -76,7 +76,7 @@ class Agent(ABC):
             log.exception("%s failed on message %s", self.agent_id, msg.id)
             await self.bus.publish(Message(
                 MsgType.CHAT, sender=self.agent_id, channel=msg.channel, receiver=HUMAN,
-                content=f"@{HUMAN} {self.agent_id} 内部出错：{type(exc).__name__}: {exc}",
+                content=f"@{HUMAN} {self.agent_id} hit an internal error: {type(exc).__name__}: {exc}",
                 mentions=[HUMAN], reply_to=msg.id))
 
     async def _execute(self, task: Task, *, reply_to: str, receiver: str) -> TaskResult:
@@ -87,7 +87,7 @@ class Agent(ABC):
             result = TaskResult(task.id, False, "", error="cancelled")
         else:
             await self.report_status(task, TaskStatus.RUNNING,
-                                     f"收到 {task.id}：{_clip(task.goal, 60)}", public=True)
+                                     f"Received {task.id}: {_clip(task.goal, 60)}", public=True)
             try:
                 result = await self.handle_task(task)
             except asyncio.CancelledError:
@@ -110,13 +110,13 @@ class Agent(ABC):
     def _result_text(result: TaskResult, receiver: str) -> str:
         """Chat text of a TASK_RESULT, from a template (no LLM)."""
         if result.declined:
-            text = f"拒绝：{result.error or result.summary}" + (
-                f"，建议 {result.suggest}" if result.suggest else "")
+            text = f"Declined: {result.error or result.summary}" + (
+                f", suggest {result.suggest}" if result.suggest else "")
         elif result.success:
-            text = f"完成：{result.summary}" + (
-                f"（文件：{', '.join(result.artifacts)}）" if result.artifacts else "")
+            text = f"Done: {result.summary}" + (
+                f" (files: {', '.join(result.artifacts)})" if result.artifacts else "")
         else:
-            text = f"失败：{result.error or result.summary}"
+            text = f"Failed: {result.error or result.summary}"
         return f"@{receiver} {text}"
 
     @abstractmethod
@@ -147,7 +147,7 @@ class Agent(ABC):
         CLI drop the requests that were still waiting for an answer in those roots."""
         await self.bus.publish(Message(
             MsgType.CHAT, sender=self.agent_id, channel=channel, receiver=HUMAN, reply_to=reply_to,
-            content=f"已取消 {', '.join(roots)}" if roots else "没有进行中的任务可以取消",
+            content=f"Cancelled {', '.join(roots)}" if roots else "No unfinished task to cancel",
             payload={"cancelled_roots": roots}))
 
     # ---- services for subclasses --------------------------------------------
@@ -160,7 +160,7 @@ class Agent(ABC):
         the chat. Template text, no LLM."""
         await self.bus.publish(Message(
             MsgType.STATUS, sender=self.agent_id, channel=task.channel,
-            content=f"{self.agent_id}：{note}" if public and note else "",
+            content=f"{self.agent_id}: {note}" if public and note else "",
             payload={"task_id": task.id, "status": status.value, "note": note, "public": public}))
 
     async def ask_human(self, task: Task, question: str, kind: HitlKind,
