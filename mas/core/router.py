@@ -23,8 +23,7 @@ from mas.config import Settings
 from mas.core.board import SessionBoard
 from mas.core.bus import MessageBus
 from mas.core.human import CANCELLED_ANSWER, HitlKind
-from mas.core.message import (GROUP_MAIN, HUMAN, ORCHESTRATOR, Message, MsgType,
-                              dm_channel, is_group)
+from mas.core.message import GROUP_MAIN, HUMAN, ORCHESTRATOR, Message, MsgType
 from mas.core.state import StateTable
 from mas.core.task import FailureMode, Task, TaskResult, TaskStatus
 from mas.sandbox.base import Sandbox
@@ -73,8 +72,7 @@ class Router:
            refusal does not count towards the retry or delegation limits.
         2. Register in the StateTable; copy `files` from the requester's sandbox
            (or from the agent that produced them in this root) into the target's inbox/.
-        3. Publish TASK_ASSIGN: in GROUP_MAIN if origin_channel is a group,
-           otherwise in dm_channel(requester, target).
+        3. Publish TASK_ASSIGN in task.channel (the group, or the DM of requester and target).
         4. Await the TASK_RESULT of that task, with settings.subtask_timeout_s;
            on timeout return a TIMEOUT failure. The clock does not run while the task
            is WAITING_HUMAN (a human may take as long as they like; /cancel ends it).
@@ -115,9 +113,8 @@ class Router:
 
         fut: asyncio.Future[TaskResult] = asyncio.get_running_loop().create_future()
         self._task_waiters[task.id] = fut
-        channel = GROUP_MAIN if is_group(origin_channel) else dm_channel(requester, target)
         await self.bus.publish(Message(
-            MsgType.TASK_ASSIGN, sender=requester, channel=channel,
+            MsgType.TASK_ASSIGN, sender=requester, channel=task.channel,
             content=f"@{target} {goal}", payload={"task": task.to_dict()},
             receiver=target, mentions=[target]))
         try:

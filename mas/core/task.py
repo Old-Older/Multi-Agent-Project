@@ -13,6 +13,8 @@ from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import Any
 
+from mas.core.message import GROUP_MAIN, dm_channel, is_group
+
 
 class TaskStatus(str, Enum):
     ASSIGNED = "assigned"
@@ -56,6 +58,13 @@ class Task:
     status: TaskStatus = TaskStatus.ASSIGNED
     id: str = field(default_factory=lambda: "t" + uuid.uuid4().hex[:6])
     created_at: float = field(default_factory=time.time)
+
+    @property
+    def channel(self) -> str:
+        """Channel this task's TASK_ASSIGN, STATUS and TASK_RESULT travel in: the group
+        for tasks that started in the group, otherwise the DM of requester and assignee.
+        (For a task a human gave straight to an agent in a DM, that is the DM itself.)"""
+        return GROUP_MAIN if is_group(self.origin_channel) else dm_channel(self.requester, self.assignee)
 
     @property
     def depth(self) -> int:

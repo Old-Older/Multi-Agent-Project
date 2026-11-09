@@ -175,17 +175,23 @@ payload 格式：
 
 ### 3.7 Agent 基类 `mas/agents/base.py`
 
-子类只需实现 `handle_task`（以及需要时的 `handle_chat`）。下面这些服务由基类提供，ReAct 循环不需要直接操作总线：
+子类只需实现 `handle_task`（以及需要时重写 `handle_chat`）。下面这些服务由基类提供，ReAct 循环不需要直接操作总线：
 
 | 方法 | 作用 |
 |---|---|
+| `run()` | 订阅自己的 inbox，不停取消息；每条该自己处理的消息开一个独立的 asyncio 任务，所以一个 agent 可以同时做多个任务。`run()` 被取消时，在途的处理也一并取消（已实现） |
 | `should_handle(msg)` | 只处理 `receiver` 是自己或 @ 到自己的消息（已实现） |
-| `on_message(msg)` | `TASK_ASSIGN` → `handle_task` → 发 `TASK_RESULT`；任何异常都转成 `CRASH` 结果，保证不会让整个系统崩溃 |
-| `report_status(task, status, note, public)` | `public=True` 只用于收到、完成、失败、等待人类这几个节点 |
+| `on_message(msg)` | `TASK_ASSIGN` → 发"收到"的公开 `STATUS` → `handle_task` → 发 `TASK_RESULT`（`reply_to` 是那条 `TASK_ASSIGN`，发在 `task.channel` 里）；人类发来的 `CHAT` → `handle_chat`；其他消息忽略。`handle_task` 里的任何异常都转成 `CRASH` 结果，`handle_chat` 里的异常变成聊天里的一行报错，系统不会崩（已实现） |
+| `handle_chat(msg)` | **默认实现（Worker 直接用）**：把人类的私聊或 @ 当作直接任务——`Router.open_direct_task` 登记、跑 `handle_task`、把 `TASK_RESULT` 发回给人类；以 `/` 开头的命令忽略。想"只回答问题不建任务"的子类可以重写（已实现） |
+| `report_status(task, status, note, public)` | 在 `task.channel` 发 `STATUS`，Router 据此更新状态表。`public=True` 才会在聊天里显示 `note`，只用于"收到"这类节点；否则消息没有正文（已实现） |
 | `ask_human(task, question, kind, options)` | 转给 `Router.request_human`；被 `/cancel` 时返回 `CANCELLED_ANSWER`（已实现） |
 | `is_cancelled(task)` | 任务是否已被 `/cancel`；Worker 每步前都要检查（已实现） |
 | `call_agent(task, target, goal, context, files)` | 再委派，转给 `Router.dispatch`（已实现） |
 | `board_text(task)` | 当前会话看板的文本（已实现） |
+
+基类在发出 `TASK_RESULT` 之前还会做三件事，Worker 不必操心：把 `result.task_id` 改成真实任务的 id；把 `summary` 截断到 `result_summary_max_chars`（默认 1500）；`duration` 为 0 时补上耗时。任务在开始前就已被 `/cancel` 的话，不会调用 `handle_task`，直接返回 `error="cancelled"`。
+
+新增 `Task.channel`：这个任务的 `TASK_ASSIGN`、`STATUS`、`TASK_RESULT` 所在的频道（群聊任务是 `group:main`，否则是请求者和执行者的私聊）。
 
 ### 3.8 虚拟工具 `mas/agents/virtual_tools.py`（schema 已实现）
 
