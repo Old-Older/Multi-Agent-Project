@@ -1,0 +1,1862 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-Agent System 代码导览</title>
+<style>
+:root{--bg:#fafaf8;--card:#fff;--ink:#1f2328;--mute:#6b7280;--line:#cfd4da;--accent:#2563eb;--ok:#15803d;--bad:#b91c1c;--hl:#fff1b8;--hlb:#d4a72c;--chip:#dbe8ff;--code:#f3f4f6}
+@media (prefers-color-scheme:dark){:root{--bg:#16181c;--card:#1f2228;--ink:#e6e8eb;--mute:#9aa3af;--line:#3a404a;--accent:#6ea8ff;--ok:#4ade80;--bad:#f87171;--hl:#4a3f12;--hlb:#c99a2e;--chip:#233350;--code:#14161a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 -apple-system,"PingFang SC","Helvetica Neue",sans-serif}
+main{max-width:1060px;margin:0 auto;padding:20px 16px 70px}
+h1{font-size:22px;margin:0 0 4px}h2{font-size:18px;margin:30px 0 8px}
+.sub{color:var(--mute);margin:0 0 12px}
+code,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+.mute{color:var(--mute)}
+/* hierarchy */
+.nest{background:var(--card);border:2px solid var(--line);border-radius:12px;padding:10px 14px}
+.nest .nest{margin-top:8px;background:var(--bg)}
+.nest > .name{font-weight:700;font-size:16px}
+.nest .what{color:var(--mute);font-size:13.5px}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:8px}
+.field{border:1px solid var(--line);border-radius:8px;padding:6px 9px;background:var(--card);font-size:13.5px}
+.field b{display:block}
+.outside{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:10px}
+.outside .o{border:2px dashed var(--line);border-radius:12px;padding:8px 12px;background:var(--card);font-size:14px}
+.legend{font-size:13.5px;color:var(--mute);margin-top:8px}
+/* stepper */
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.tab{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 12px;cursor:pointer}
+.tab.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0}
+.flow .st{border:2px solid var(--line);background:var(--card);border-radius:8px;padding:5px 10px;font-size:13.5px;transition:all .3s}
+.flow .st.on{background:var(--hl);border-color:var(--hlb);font-weight:700}
+.flow .ar{color:var(--mute)}
+.panel{display:grid;grid-template-columns:1fr 1.05fr;gap:14px;align-items:start}
+@media (max-width:820px){.panel{grid-template-columns:1fr}}
+.codebox{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:8px 0;overflow-x:auto}
+.codebox .ln{white-space:pre;padding:0 12px;min-height:20px;line-height:20px;border-left:4px solid transparent;transition:background .3s}
+.codebox .ln.on{background:var(--hl);border-left-color:var(--hlb);font-weight:700}
+.codebox .ln.bad.on{background:#fecaca;border-left-color:var(--bad)}
+@media (prefers-color-scheme:dark){.codebox .ln.bad.on{background:#4a1f1f}}
+.cm{color:var(--mute)}
+.bus{border:2px solid var(--accent);border-radius:12px;padding:8px 10px;background:var(--card)}
+.bus .t{font-weight:700;margin-bottom:6px}
+.slot{border:1px solid var(--line);border-radius:8px;padding:5px 8px;margin-top:6px;transition:all .3s}
+.slot .st2{font-size:12.5px;color:var(--mute);font-family:ui-monospace,Menlo,monospace}
+.slot.hl,.row.hl{background:var(--hl);border-color:var(--hlb)}
+.row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;border:1px solid var(--line);border-radius:6px;padding:4px 7px;margin-top:4px;font-size:13.5px;transition:all .3s;min-height:30px}
+.row .nm{min-width:64px;font-weight:600}
+.env{background:var(--chip);border-radius:6px;padding:1px 7px;font-size:12.5px}
+.env.new{animation:pop .6s}
+@keyframes pop{0%{transform:scale(.2);opacity:0}100%{transform:scale(1);opacity:1}}
+.none{color:var(--mute);font-style:italic}
+.took{color:var(--ok);font-weight:600}
+.lostmark{color:var(--bad);font-weight:700}
+.say{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:12px 0;min-height:76px}
+.say .ti{font-weight:700;margin-bottom:2px}
+.ctl{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.ctl button{font:inherit;font-size:14px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:8px;padding:7px 14px;cursor:pointer}
+.ctl button.p{background:var(--accent);color:#fff;border-color:var(--accent)}
+.ctl button:disabled{opacity:.4;cursor:not-allowed}
+.prog{color:var(--mute);font-size:14px}
+:root{--okbg:#e7f6ec;--badbg:#fdecec;--warnbg:#fff4e0;--warn:#b45309}
+@media (prefers-color-scheme:dark){:root{--okbg:#14301e;--badbg:#3b1d1d;--warnbg:#3a2d12;--warn:#fbbf24}}
+.env.ok{background:var(--okbg);color:var(--ok)}.env.bad{background:var(--badbg);color:var(--bad)}.env.warn{background:var(--warnbg);color:var(--warn)}
+.who{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;align-items:center;margin-bottom:8px}
+.who .nm{font-weight:700}.who .tx{font-size:13.5px;padding:3px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);transition:all .3s}
+.who .tx.hl{background:var(--hl);border-color:var(--hlb)}
+.who .tx.bad{background:var(--badbg);border-color:var(--bad)}
+.msgline{font-size:12.5px;font-family:ui-monospace,Menlo,monospace;padding:1px 0}
+.dec{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:14px 0}
+.dec h3{font-size:16px;margin:0 0 2px}
+.badge{display:inline-block;font-size:12px;border-radius:99px;padding:1px 9px;margin-left:6px;font-weight:600}
+.badge.hi{background:var(--badbg);color:var(--bad)}.badge.mid{background:var(--warnbg);color:var(--warn)}.badge.lo{background:var(--chip);color:var(--accent)}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin-top:10px}
+.opt{border:2px solid var(--line);border-radius:10px;padding:9px 11px;cursor:pointer;display:block;background:var(--bg)}
+.opt:has(input:checked){border-color:var(--accent);background:var(--chip)}
+.opt input{margin-right:6px}.opt ul{margin:6px 0 0;padding-left:18px;font-size:13.5px}
+.rec{font-size:12px;color:var(--ok);font-weight:700;margin-left:6px}
+.why{font-size:13.5px;color:var(--mute);margin-top:8px}
+.result{background:var(--code);border:1px solid var(--line);border-radius:10px;padding:10px 12px;white-space:pre-wrap;margin-top:10px}
+.panel>div{min-width:0}
+.gbtn{font:inherit;font-size:14px;border:1px solid var(--accent);background:var(--accent);color:#fff;border-radius:8px;padding:7px 14px;cursor:pointer}
+.gbtn.alt{background:var(--card);color:var(--ink);border-color:var(--line)}
+table.cmp{display:block;overflow-x:auto;max-width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);font-size:13.5px;margin:8px 0}
+table.cmp th,table.cmp td{padding:6px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.cmp th{background:var(--code)}
+.concept{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--accent);border-radius:8px;padding:8px 12px;margin:10px 0;font-size:14px}
+.side{display:none}
+.tocm{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 12px;margin:10px 0}
+.tocm summary{cursor:pointer;font-weight:600}
+.tocm a,.side a{display:block;color:var(--ink);text-decoration:none;padding:3px 8px;border-radius:6px;font-size:14px}
+.tocm a:hover,.side a:hover{background:var(--chip)}
+.tocm .part,.side .part{font-size:12px;color:var(--mute);font-weight:700;letter-spacing:.04em;margin:10px 8px 2px}
+.side a.sub2{padding-left:22px;font-size:13px;color:var(--mute)}
+.tocm a.sub2{padding-left:22px;font-size:13px;color:var(--mute)}
+.side a.on{background:var(--hl);font-weight:700;color:var(--ink)}
+@media (min-width:1050px){
+  .side{display:block;position:fixed;left:0;top:0;bottom:0;width:250px;overflow-y:auto;padding:16px 10px 30px;border-right:1px solid var(--line);background:var(--bg)}
+  body{padding-left:250px}
+  .tocm{display:none}
+}
+h2,h3[id]{scroll-margin-top:12px}
+
+/* ---- tutorial structure ---- */
+h1{font-size:26px;margin:0 0 4px}
+h2{font-size:22px;margin:56px 0 12px;padding:14px 0 0;border-top:3px solid var(--accent)}
+h2:first-of-type{margin-top:28px}
+h3.sec{font-size:17px;margin:34px 0 6px;padding-left:10px;border-left:4px solid var(--accent)}
+.pill{display:inline-block;font-size:12.5px;font-weight:700;border-radius:99px;padding:2px 11px;border:1px solid var(--line);background:var(--card)}
+.pill.ok{background:var(--okbg);color:var(--ok);border-color:var(--ok)}
+.pill.info{background:var(--chip);color:var(--accent);border-color:var(--accent)}
+.pill.mute{color:var(--mute)}
+.pill.li{background:#efe7fb;color:#6d28d9;border-color:#6d28d9}
+@media (prefers-color-scheme:dark){.pill.li{background:#2d2147;color:#c4a8ff;border-color:#a78bfa}}
+.chap{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin:0 0 6px}
+.chap-top{margin-bottom:4px}
+.chap-row{display:grid;grid-template-columns:44px 1fr;gap:8px;font-size:14px;padding:2px 0}
+.chap-row b{color:var(--mute);font-weight:600}
+.legend2{display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 10px}
+.layers{display:grid;gap:10px}
+.layer{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.lname{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px}
+.lname span{color:var(--mute);font-size:13px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
+.mc{display:block;text-decoration:none;color:var(--ink);border:2px solid var(--line);border-radius:10px;padding:7px 10px;background:var(--bg)}
+.mc span{display:block;font-size:12.5px;color:var(--mute);margin:2px 0}
+.mc em{display:block;font-style:normal;font-size:12px;font-weight:700}
+.mc.ok{border-color:var(--ok);background:var(--okbg)}.mc.ok em{color:var(--ok)}
+.mc.info{border-color:var(--accent);background:var(--chip)}.mc.info em{color:var(--accent)}
+.mc.mute em{color:var(--mute)}
+.mc.li{border-color:#a78bfa}.mc.li em{color:#7c3aed}
+a.mc:hover{transform:translateY(-1px)}
+.journey{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin:8px 0}
+.jn{display:block;text-decoration:none;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px;position:relative}
+.jn i{position:absolute;top:-8px;left:-6px;background:var(--accent);color:#fff;font-style:normal;font-size:12px;font-weight:700;border-radius:99px;width:22px;height:22px;display:flex;align-items:center;justify-content:center}
+.jn b{display:block;margin-left:14px}
+.jn span{display:block;font-size:13px;color:var(--mute);margin:2px 0}
+.jn em{font-style:normal;font-size:12px;color:var(--accent);font-weight:700}
+.how{margin:6px 0;padding-left:20px}.how li{margin:3px 0}
+.later{display:grid;gap:10px}
+.lc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px}
+.lc b{margin-right:8px}.lc p{margin:6px 0 0;font-size:14px}
+.glabel{font-size:12.5px;font-weight:700;color:var(--mute);margin:10px 0 2px;letter-spacing:.03em}
+.field.meth{border-style:dashed}
+.badge.ok2{background:var(--okbg);color:var(--ok)}
+.opt:has(input:disabled){cursor:default}
+.dec .dt{font-size:16px;font-weight:700;margin:0 0 2px}
+.side a.chap{font-weight:700;margin-top:10px;padding-left:8px}
+.tocm a.chap{font-weight:700;margin-top:6px}
+</style>
+</head>
+<body>
+<main>
+<h1>Multi-Agent System 代码导览</h1>
+<p class="sub">一步一步、用可视化看清"每一步做了什么"，同时看清整个项目是怎么拆分的。所有动画都要手动点 Next，想看多久都行。</p>
+
+<h2 id="chap0">总览：项目地图与阅读方法</h2>
+
+<h3 class="sec">0.1 项目地图：每个文件在哪、哪一步做</h3>
+<p class="sub">项目代码在 <code>mas/</code> 下，按职责分成几个目录。每张卡片是一个文件，颜色表示它的状态；点卡片可以跳到对应章节。</p>
+<div class="legend2"><span class="pill ok">已完成</span><span class="pill info">下一步</span><span class="pill mute">后续步骤</span><span class="pill li">LI Heyang 负责</span></div>
+<div class="layers">
+  <div class="layer"><div class="lname"><b class="mono">mas/core/</b><span>消息、任务、通信、状态（JIAN Yimin）</span></div><div class="cards">
+    <div class="mc ok"><b class="mono">message.py</b><span>Message、MsgType、频道函数</span><em>接口骨架 ✓</em></div>
+    <div class="mc ok"><b class="mono">task.py</b><span>Task、TaskResult、状态枚举</span><em>接口骨架 ✓</em></div>
+    <a class="mc ok" href="#sec1-1"><b class="mono">bus.py</b><span>MessageBus / InMemoryBus</span><em>步骤 1 ✓ · 1.1–1.2</em></a>
+    <a class="mc ok" href="#sec1-3"><b class="mono">board.py</b><span>SessionBoard 会话看板</span><em>步骤 1 ✓ · 1.3</em></a>
+    <a class="mc ok" href="#sec1-4"><b class="mono">state.py</b><span>StateTable 任务状态表</span><em>步骤 1 ✓ · 1.4</em></a>
+    <a class="mc ok" href="#chap2"><b class="mono">router.py</b><span>Router：派任务、等结果、问人类、取消</span><em>步骤 2 ✓ · 2.1–2.6</em></a>
+    <a class="mc ok" href="#chap4"><b class="mono">human.py</b><span>HumanIO / CliHumanIO 命令行</span><em>步骤 4 ✓ · 4.1–4.5</em></a>
+  </div></div>
+  <div class="layer"><div class="lname"><b class="mono">mas/agents/</b><span>会思考、会行动的 agent</span></div><div class="cards">
+    <a class="mc ok" href="#chap3"><b class="mono">base.py</b><span>Agent 基类（共用部分）</span><em>步骤 3 ✓ · 3.1–3.3</em></a>
+    <a class="mc ok" href="#chap5"><b class="mono">orchestrator.py</b><span>Orchestrator：拆任务、调度</span><em>步骤 5 ✓ · 5.1–5.5</em></a>
+    <div class="mc ok"><b class="mono">virtual_tools.py</b><span>call_&lt;agent&gt; 等工具的 schema</span><em>接口骨架 ✓</em></div>
+    <div class="mc li"><b class="mono">worker.py / roles.py</b><span>WorkerAgent：ReAct 循环</span><em>LI Heyang</em></div>
+  </div></div>
+  <div class="layer"><div class="lname"><b class="mono">mas/ 入口</b><span>把零件接成程序（JIAN Yimin）</span></div><div class="cards">
+    <a class="mc ok" href="#chap7"><b class="mono">app.py</b><span>build_system：组装一切</span><em>步骤 7 ✓ · 7.1</em></a>
+    <a class="mc ok" href="#chap7"><b class="mono">demo.py</b><span>演示用的替身 LLM / Worker / Sandbox</span><em>步骤 7 ✓ · 7.3</em></a>
+    <a class="mc ok" href="#chap7"><b class="mono">__main__.py</b><span>python -m mas [--demo]</span><em>步骤 7 ✓</em></a>
+  </div></div>
+  <div class="layer"><div class="lname"><b class="mono">mas/memory/</b><span>记忆与进化（JIAN Yimin）</span></div><div class="cards">
+    <a class="mc ok" href="#chap6"><b class="mono">memory/base.py</b><span>JsonlMemory：召回、能力档案</span><em>步骤 6 ✓ · 6.1–6.5</em></a>
+  </div></div>
+  <div class="layer"><div class="lname"><b class="mono">底层能力</b><span>不依赖 bus，独立开发（LI Heyang）</span></div><div class="cards">
+    <div class="mc li"><b class="mono">llm/</b><span>LLMClient、DeepSeek、MockLLM</span><em>LI Heyang</em></div>
+    <div class="mc li"><b class="mono">tools/</b><span>Tool 基类与各种工具</span><em>LI Heyang</em></div>
+    <div class="mc li"><b class="mono">sandbox/</b><span>每个 agent 的工作目录</span><em>LI Heyang</em></div>
+    <div class="mc li"><b class="mono">eval/</b><span>评测框架</span><em>LI Heyang</em></div>
+  </div></div>
+</div>
+
+<h3 class="sec">0.2 一次请求的旅程：每个模块什么时候登场</h3>
+<p class="sub">人类说一句"调研 X 并写个示例脚本"，会依次经过下面这些环节。后面的章节就是把这条链路上的模块一个个拆开看。</p>
+<div class="journey">
+  <a class="jn" href="#sec4-2"><i>1</i><b>人类发消息</b><span>CliHumanIO 把输入变成 CHAT 消息</span><em>4.2</em></a>
+  <a class="jn" href="#sec1-2"><i>2</i><b>消息被发布</b><span>MessageBus 存历史、通知 Router、投递给成员</span><em>1.2</em></a>
+  <a class="jn" href="#sec1-3"><i>3</i><b>看板记下原话</b><span>Router 把消息转给本会话的 SessionBoard</span><em>1.3</em></a>
+  <a class="jn" href="#sec5-2"><i>4</i><b>Orchestrator 决策</b><span>LLM 决定调用哪些 Worker</span><em>5.2</em></a>
+  <a class="jn" href="#sec2-2"><i>5</i><b>派任务</b><span>Router.dispatch：检查限制、登记 StateTable、发 TASK_ASSIGN</span><em>2.2</em></a>
+  <a class="jn" href="#sec3-3"><i>6</i><b>Worker 执行</b><span>Agent 基类收消息，WorkerAgent 跑 ReAct 循环；需要批准时问人类</span><em>3.3 · 2.3 · 4.3</em></a>
+  <a class="jn" href="#sec5-2"><i>7</i><b>结果回来</b><span>TASK_RESULT 经 Router 唤醒 dispatch，Orchestrator 汇总回复</span><em>2.2 · 5.2</em></a>
+</div>
+
+<h3 class="sec">0.3 怎么读这份文档</h3>
+<ul class="how">
+  <li><b>一个步骤 = 一个章节。</b>章节开头的卡片写明这一步的目标、改了哪些文件、完成状态。</li>
+  <li><b>一个子节 = 一个概念。</b>先看静态结构图（"谁包含谁"），再点 Next 一步步看动画；动画里左边是代码（当前执行的行会高亮），右边是数据的实时变化。</li>
+  <li><b>名字都是代码里的真名。</b>解释是中文，<code>InMemoryBus</code>、<code>dispatch</code>、<code>inbox</code> 这类名字保持英文，方便和代码对照。</li>
+  <li><b>结构图里的两种格子。</b>实线格子是<b>属性</b>（attribute，它存着的数据），虚线格子是<b>方法</b>（method，它能做的事）。</li>
+  <li>左侧是目录（窄屏在页面顶部折叠），可以随时跳转。</li>
+</ul>
+
+<h2 id="chap1">步骤 1：通信与数据层（bus · board · state）</h2>
+<div class="chap"><div class="chap-top"><span class="pill ok">已完成 · 提交 9896d9d · 27 个测试</span></div>
+<div class="chap-row"><b>目标</b><span>让消息能被发布、记录、投递；让"会话看板"和"任务状态表"有地方存。这一层不调用 LLM，也不依赖任何 agent。</span></div>
+<div class="chap-row"><b>文件</b><span><code>mas/core/bus.py</code>　<code>mas/core/board.py</code>　<code>mas/core/state.py</code></span></div>
+</div>
+<h3 class="sec">1.1 InMemoryBus：谁包含谁</h3>
+<div class="nest">
+  <div class="name mono">MessageBus <span class="what">— abstract class（抽象类）：只列出有哪些方法，不存数据</span></div>
+  <div class="nest">
+    <div class="name mono">InMemoryBus <span class="what">— implements MessageBus（实现它）：把所有数据放在内存里</span></div>
+    <div class="glabel">属性（attribute）：它存着的数据</div>
+    <div class="fields">
+      <div class="field"><b class="mono">_members</b>channel → [agent ids]<br><span class="mute">谁在哪个 channel 里</span></div>
+      <div class="field"><b class="mono">_history</b>channel → [Message, ...]<br><span class="mute">每个 channel 的消息记录</span></div>
+      <div class="field"><b class="mono">_inboxes</b>agent id → asyncio.Queue<br><span class="mute">每个 agent 一个 inbox</span></div>
+      <div class="field"><b class="mono">_observers</b>[callback, ...]<br><span class="mute">发布消息时要调用的函数列表</span></div>
+    </div>
+    <div class="glabel">方法（method）：它能做的事</div>
+    <div class="fields">
+      <div class="field meth"><b class="mono">publish(msg)</b>发布一条消息：存历史 → 通知 observer → 投递<br><span class="mute">async，见 1.2</span></div>
+      <div class="field meth"><b class="mono">subscribe(agent_id)</b>领取自己的 inbox（没有就创建）</div>
+      <div class="field meth"><b class="mono">join(agent_id, channel)</b>加入一个频道</div>
+      <div class="field meth"><b class="mono">members(channel)</b>某个频道有哪些成员</div>
+      <div class="field meth"><b class="mono">history(channel, limit)</b>读某个频道最近的消息</div>
+      <div class="field meth"><b class="mono">add_observer(fn)</b>登记一个"每条消息都通知我"的函数</div>
+    </div>
+  </div>
+</div>
+<div class="outside">
+  <div class="o"><b class="mono">Router</b><br><span class="mute">在 InMemoryBus <b>外面</b>。它调用 <code>bus.add_observer(自己的函数)</code>，把函数放进 <code>_observers</code> 里，所以 bus 每发一条消息都会调用它。Router 再把消息转发给"这条消息所属会话"的 <b class="mono">SessionBoard</b>（SessionBoard 自己不登记 observer，见 2.1）。</span></div>
+  <div class="o"><b class="mono">Agent</b>（human / coder / writer）<br><span class="mute">也在外面。调用 <code>bus.subscribe("coder")</code> 拿到自己的 inbox，然后 <code>inbox.get()</code> 取消息。</span></div>
+</div>
+<p class="legend">实线嵌套 = "包含"；虚线框 = "在外面，通过方法调用 bus"。下面的动画就是这张图里的数据一步一步变化。</p>
+
+<h3 class="sec">1.2 publish：一条消息的三步</h3>
+<div class="tabs" id="tabs"></div>
+<div class="flow" id="flow"></div>
+<div class="panel">
+  <div><div class="codebox mono" id="code"></div></div>
+  <div id="stage"></div>
+</div>
+<div class="say"><div class="ti" id="ti"></div><div id="tx"></div></div>
+<div class="ctl">
+  <button id="prev">← Prev</button>
+  <button id="next" class="p">Next →</button>
+  <button id="restart">Restart</button>
+  <button id="auto">Auto play (3s / step)</button>
+  <span class="prog" id="prog"></span>
+</div>
+
+<h3 class="sec">1.3 SessionBoard：会话看板与 pending buffer</h3>
+<p class="sub">SessionBoard 靠 <code>on_message</code>（由 Router 转发过来）和 <code>start_root</code>（被 Orchestrator 调用）两条路拿到人类的话。下面看为什么需要 <code>_pending_human</code>。</p>
+<div class="tabs" id="tabs2"></div>
+<div class="flow" id="flow2"></div>
+<div class="panel">
+  <div><div class="codebox mono" id="code2"></div></div>
+  <div id="stage2"></div>
+</div>
+<div class="say"><div class="ti" id="ti2"></div><div id="tx2"></div></div>
+<div class="ctl">
+  <button id="prev2">← Prev</button>
+  <button id="next2" class="p">Next →</button>
+  <button id="restart2">Restart</button>
+  <span class="prog" id="prog2"></span>
+</div>
+
+<h3 class="sec">1.4 StateTable：任务状态登记表</h3>
+<p class="sub">每个子任务一行。只有 Router 往里写，<code>/status</code>、看板、评测只读。注意它和 SessionBoard 不同：它是给程序查的账本，不是给 LLM 读的文字。</p>
+<div class="tabs" id="tabs3"></div>
+<div class="flow" id="flow3"></div>
+<div class="panel">
+  <div><div class="codebox mono" id="code3"></div></div>
+  <div id="stage3"></div>
+</div>
+<div class="say"><div class="ti" id="ti3"></div><div id="tx3"></div></div>
+<div class="ctl">
+  <button id="prev3">← Prev</button>
+  <button id="next3" class="p">Next →</button>
+  <button id="restart3">Restart</button>
+  <span class="prog" id="prog3"></span>
+</div>
+
+<h2 id="chap2">步骤 2：Router（路由层）</h2>
+<div class="chap"><div class="chap-top"><span class="pill ok">已完成 · 提交 6b9493a、b8011b9 · Router 35 个测试 · 6 个决定已落实</span></div>
+<div class="chap-row"><b>目标</b><span>把"派任务、等结果、问人类、取消"集中到一个纯代码层，所有委派都走同一条路径，限制、状态、文件交接、HITL 都在这里统一处理。</span></div>
+<div class="chap-row"><b>文件</b><span><code>mas/core/router.py</code>　（另：<code>board.py</code> 新增 <code>add_task</code>）</span></div>
+</div>
+<h3 class="sec">2.1 Router 是什么：结构与位置</h3>
+<p class="sub">Router 是纯代码（不调 LLM），负责"派任务、等结果、问人类、取消"。先看它里面存了什么，以及它和别人的关系。</p>
+<div class="nest">
+  <div class="name mono">Router <span class="what">— 纯代码；唯一往 StateTable 里写的人；拥有每个会话的看板</span></div>
+  <div class="glabel">属性（attribute）：它存着的数据</div>
+  <div class="fields">
+    <div class="field"><b class="mono">_task_waiters</b>task id → future<br><span class="mute">"我在等这个任务的结果"</span></div>
+    <div class="field"><b class="mono">_hitl_waiters</b>(session, "h1") → future<br><span class="mute">"我在等人类回答 h1"</span></div>
+    <div class="field"><b class="mono">_boards</b>session → SessionBoard<br><span class="mute">每个会话一块看板</span></div>
+    <div class="field"><b class="mono">_attempts / _delegations</b><br><span class="mute">记次数，用来检查限制</span></div>
+    <div class="field"><b class="mono">_cancelled_roots</b>{R1, ...}<br><span class="mute">已取消的 root，新调用会被拒绝</span></div>
+    <div class="field"><b class="mono">_hitl_counter / _root_counter</b><br><span class="mute">生成 h1、h2、R1、R2</span></div>
+  </div>
+  <div class="glabel">方法（method）：它能做的事</div>
+  <div class="fields">
+    <div class="field meth"><b class="mono">dispatch(...)</b>派一个任务并等结果<br><span class="mute">async，会"睡着"等待</span></div>
+    <div class="field meth"><b class="mono">request_human(...)</b>向人类请求并等回答<br><span class="mute">async，会"睡着"等待</span></div>
+    <div class="field meth"><b class="mono">open_direct_task(...)</b>登记人类直接交给某个 agent 的任务</div>
+    <div class="field meth"><b class="mono">cancel_root(root_id)</b>取消一个 root（<code>/cancel</code>）</div>
+    <div class="field meth"><b class="mono">board / session_of / new_root_id</b>取看板、频道换成会话、生成 root 编号</div>
+    <div class="field meth"><b class="mono">_on_message(msg)</b>bus observer：更新状态、唤醒等待者、转发给看板<br><span class="mute">由 bus 自动调用，没人手动调</span></div>
+  </div>
+</div>
+<div class="outside">
+  <div class="o"><b class="mono">Orchestrator、Worker、Agent 基类</b><br><span class="mute">在外面，调用 Router 的方法。具体谁调用哪个，见下面的表。</span></div>
+  <div class="o"><b class="mono">InMemoryBus、StateTable、Sandbox</b><br><span class="mute">也在外面，被 Router 使用：用 bus 发消息、写 StateTable、用 Sandbox 拷文件。Router 还把自己登记成 bus 的 observer，所以能看到所有消息，并把每条消息转发给它所属会话的 SessionBoard（看板自己不登记 observer，因为它不该看到别的会话的消息）。</span></div>
+</div>
+<p style="margin:14px 0 4px"><b>谁调用 Router 的哪个方法</b>（agent 不直接碰 Router，而是通过 Agent 基类里的包装方法）：</p>
+<div class="scroll"><table class="cmp" style="display:table">
+<tr><th>Router 的方法</th><th>Orchestrator</th><th>Worker</th><th>怎么调到</th></tr>
+<tr><td><code>dispatch</code></td><td>✓ 主要用法：<code>call_coder</code> 等工具，<code>parent=None</code></td><td>✓ 再委派：<code>call_researcher</code> 等，<code>parent</code> 是自己正在做的任务</td><td>Worker 走 <code>Agent.call_agent</code></td></tr>
+<tr><td><code>request_human</code></td><td>✓ 澄清：<code>ask_human</code> 工具（不需要 Task，<code>task_id=None</code>）</td><td>✓ 主要用法：需批准的工具、同一工具连续失败求助</td><td>走 <code>Agent.ask_human</code></td></tr>
+<tr><td><code>open_direct_task</code></td><td>—</td><td>✓ 人类私聊它或 @ 它时登记任务</td><td>Agent 的 <code>handle_chat</code></td></tr>
+<tr><td><code>cancel_root</code></td><td>✓ 处理 <code>/cancel</code></td><td>—</td><td>Orchestrator 的 <code>handle_chat</code></td></tr>
+<tr><td><code>board / new_root_id</code></td><td>✓ 开 root、写计划、结束 root</td><td>✓ 读看板文字</td><td><code>Agent.board_text</code> 等</td></tr>
+</table></div>
+<div class="concept"><b>future 是什么？</b> 一张"空回执条"。<code>dispatch</code> 把它放进 <code>_task_waiters</code> 之后就 <code>await</code>（睡着等待）；结果消息到达时，observer 把结果填进回执条，<code>dispatch</code> 就醒来返回。下面 2.2 会一步步演示。</div>
+
+<h3 class="sec">2.2 dispatch：派任务并等结果</h3>
+<p class="sub">下面用同一份代码演示两种情况：正常完成，和被限制拒绝。注意看右边的 <code>_task_waiters</code>（回执条）和 StateTable 怎么变化。</p>
+<div id="st6"></div>
+
+<h3 class="sec">2.3 request_human：向人类请求（HITL）</h3>
+<p class="sub">和 dispatch 同样的"回执条"机制，只不过等的是人类的回答。编号 h1、h2 是按会话各自计数的。</p>
+<div id="st7"></div>
+
+<h3 class="sec">2.4 /cancel：取消之后，运行中的 agent 怎么办</h3>
+<p class="sub">有"方案 A（旧做法）"和"方案 B（已采用）"两个方案，点上面的标签切换对比。对应 2.6 的决定 4。</p>
+<div id="st8a"></div>
+
+<h3 class="sec">2.5 超时：任务在等人类的时候</h3>
+<p class="sub">同样有"方案 A（旧做法）"和"方案 B（已采用）"两个方案。对应 2.6 的决定 5。</p>
+<div id="st8b"></div>
+
+<h3 class="sec">2.6 步骤 2 的 6 个决定（已全部决定并落实）</h3>
+
+
+<div class="scroll"><table class="cmp" style="display:table">
+<tr><th>决定</th><th>你的选择</th><th>落实情况</th></tr>
+<tr><td>1 <code>Task.chain</code></td><td>A 不含执行者</td><td>代码不变；根目录 <code>README.md</code> 顶部已向 LI Heyang 说明</td></tr>
+<tr><td>2 重试次数</td><td>A 共 3 次</td><td>代码不变</td></tr>
+<tr><td>3 被拒绝的调用</td><td><b>B 登记为 failed</b></td><td>已改：拒绝的调用现在会在状态表里登记成 FAILED 任务（不占重试和委派次数，看板里不显示）</td></tr>
+<tr><td>4 取消后的 agent</td><td><b>B 协作式取消</b></td><td>已加 <code>CANCELLED_ANSWER</code> 和 <code>Agent.is_cancelled</code>；<b>LI 的 Worker 要照 README 每步检查</b></td></tr>
+<tr><td>5 等人类时的超时</td><td><b>B 不算超时</b></td><td>已改：任务在 <code>waiting_human</code> 时 <code>dispatch</code> 不再超时</td></tr>
+<tr><td>6 <code>ask_human</code> 没有 Task</td><td><b>B 改参数</b></td><td>已改：<code>request_human</code> 改成关键字参数，<code>Agent.ask_human</code> 对 Worker 不变；<b>LI 的桩 Router 要改签名</b></td></tr>
+</table></div>
+<p class="sub">提交 <code>b8011b9</code>，79 个测试全部通过。下面保留了各决定当时的选项和影响，作为记录。</p>
+<div class="dec" data-id="D1">
+  <div class="dt">决定 1　<code>Task.chain</code> 包不包含执行者<span class="badge mid">涉及 LI Heyang</span><span class="badge ok2">✓ 已决定：A</span></div>
+  <div class="why" style="margin:0 0 6px">原来的注释和 <code>depth</code> 的说明互相矛盾，必须选一种。看同一条委派链在两种约定下的值：</div>
+  <table class="cmp"><tr><th>任务</th><th>A. 不含执行者（当前）</th><th>B. 含执行者</th></tr>
+  <tr><td>t1：orchestrator → coder</td><td><code>["orchestrator"]</code>　depth 0</td><td><code>["orchestrator","coder"]</code>　depth 1</td></tr>
+  <tr><td>t2：coder → researcher</td><td><code>["orchestrator","coder"]</code>　depth 1</td><td><code>[…,"researcher"]</code>　depth 2</td></tr>
+  <tr><td>t3：researcher → writer</td><td><code>[…,"researcher"]</code>　depth 2</td><td><code>[…,"writer"]</code>　depth 3</td></tr>
+  <tr><td>默认 <code>max_delegation_depth=2</code></td><td>t1、t2、t3 都允许</td><td>只允许到 t2；要保持同样效果要把上限改成 3</td></tr></table>
+  <div class="why" style="color:var(--ok)">已落实：不改代码；README 已说明</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="D1" value="A" checked><b>A. 不含执行者</b><span class="rec">推荐</span><ul><li>与 <code>Task.depth</code> 原说明"Orchestrator 派的是 0"一致</li><li>LI 的 Worker 如果读 <code>task.chain</code>，最后一项是"谁委派给我"，不是我自己</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="D1" value="B"><b>B. 含执行者</b><ul><li>符合原注释的例子</li><li>要改 <code>task.py</code> 里 <code>depth</code> 的说明、Router 的深度判断和对应测试</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="D2">
+  <div class="dt">决定 2　同一目标最多尝试几次<span class="badge lo">一般</span><span class="badge ok2">✓ 已决定：A</span></div>
+  <div class="why" style="margin:0 0 6px">设计文档写"同一个目标最多重试 2 次"，可以读成总共 3 次，也可以读成总共 2 次。</div>
+  <table class="cmp"><tr><th></th><th>第 1 次</th><th>重试 1</th><th>重试 2</th></tr>
+  <tr><td>A（当前）</td><td>✓ 允许</td><td>✓ 允许</td><td>✓ 允许，第 4 次被拒绝</td></tr>
+  <tr><td>B</td><td>✓ 允许</td><td>✓ 允许</td><td>✗ 第 3 次被拒绝</td></tr></table>
+  <div class="why" style="color:var(--ok)">已落实：不改代码</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="D2" value="A" checked><b>A. 共 3 次</b><span class="rec">推荐</span><ul><li>字面符合"重试 2 次"</li><li>偶发失败更容易救回来，但卡住的任务多花两次调用</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="D2" value="B"><b>B. 共 2 次</b><ul><li>更省时间和费用</li><li>评测里完成率可能略降；改一个数字即可</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="D3">
+  <div class="dt">决定 3　被拒绝的调用要不要登记到状态表<span class="badge lo">影响评测统计</span><span class="badge ok2">✓ 已决定：B</span></div>
+  <div class="why" style="margin:0 0 6px">超限、未知 agent、文件找不到、root 已取消，这几种情况现在不登记任务（见 2.2 的场景 2）。</div>
+  <table class="cmp"><tr><th></th><th>StateTable / /status</th><th>看板</th><th>评测统计</th></tr>
+  <tr><td>A 不登记（当前）</td><td>没有这些行</td><td>不出现</td><td>看不到"撞了几次限制"</td></tr>
+  <tr><td>B 登记为 failed</td><td>多出 failed 行</td><td>"失败/拒绝"里多条目，prompt 变长</td><td>失败原因分类更完整</td></tr></table>
+  <div class="why" style="color:var(--ok)">已落实：拒绝的调用登记为 FAILED，不占重试/委派次数，看板不显示</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="D3" value="A"><b>A. 不登记</b><span class="rec">推荐</span><ul><li>信息更干净；评测需要时到第 6 步再加一个"拒绝计数器"</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="D3" value="B" checked><b>B. 登记为 failed</b><ul><li>统计更全，但要决定它们占不占重试次数</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="D4">
+  <div class="dt">决定 4　/cancel 之后，正在运行的 agent 怎么办<span class="badge hi">重要：有副作用风险</span><span class="badge ok2">✓ 已决定：B</span></div>
+  <div class="why" style="margin:0 0 6px">看 2.4 的两个场景。</div>
+  <div class="why" style="color:var(--ok)">已落实：已加 CANCELLED_ANSWER 和 Agent.is_cancelled；Worker 需按 README 检查</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="D4" value="A"><b>A. 只做软取消（当前）</b><ul><li>被取消的 coder 继续跑完最多 12 步，<b>取消之后仍可能 git push</b></li><li>浪费 LLM 调用；不需要 LI 改动</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="D4" value="B" checked><b>B. 协作式取消</b><span class="rec">推荐</span><ul><li>Worker 每步开始前、执行需批准的工具前检查任务是否已取消</li><li>把 <code>request_human</code> 返回的 <code>"cancelled"</code> 当作中止信号，不当成 yes</li><li><b>LI Heyang 要在 <code>WorkerAgent</code> 里加几行</b>；我在 Agent 基类提供 <code>is_cancelled(task)</code></li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="D5">
+  <div class="dt">决定 5　任务等人类回答时，dispatch 的超时还计不计时<span class="badge hi">重要：会重复执行</span><span class="badge ok2">✓ 已决定：B</span></div>
+  <div class="why" style="margin:0 0 6px">看 2.5 的两个场景。评测里 AutoResponder 秒回，不受影响；只有交互式 CLI 会碰到。</div>
+  <div class="why" style="color:var(--ok)">已落实：dispatch 在任务 waiting_human 时不再超时</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="D5" value="A"><b>A. 保持现状（含等人类的时间）</b><ul><li>人类 3 分钟没答，dispatch 就 TIMEOUT，Orchestrator 可能重试，造成重复执行</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="D5" value="B" checked><b>B. 任务在 waiting_human 时不算超时</b><span class="rec">推荐</span><ul><li>超时到了若任务正在等人类，就重新计时继续等</li><li>改动很小，只在 Router 内部；代价：人类一直不回会一直挂着，直到 /cancel</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="D6">
+  <div class="dt">决定 6（预告）　Orchestrator 的 ask_human 没有 Task 怎么办<span class="badge lo">步骤 5 前定即可</span><span class="badge ok2">✓ 已决定：B</span></div>
+  <div class="why" style="margin:0 0 6px"><code>request_human</code> 现在要一个 <code>Task</code>，但 Orchestrator 向人类澄清时还没有任何子任务。</div>
+  <div class="why" style="color:var(--ok)">已落实：request_human 改关键字参数；Agent.ask_human 不变</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="D6" value="A"><b>A. 给 root 建一个"伪任务"</b><ul><li>不改接口，但 /status 和评测统计里会多出一个不存在的任务，需要过滤</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="D6" value="B" checked><b>B. 改 request_human 的参数</b><span class="rec">推荐</span><ul><li>不传 Task，改传 session_id、root_id、origin_channel、提问者、task_id（可为空）</li><li><code>Agent.ask_human</code> 对 Worker 保持原样，所以 LI 不受影响</li></ul></label>
+  </div>
+</div>
+
+
+
+<h2 id="chap3">步骤 3：Agent 基类</h2>
+<div class="chap"><div class="chap-top"><span class="pill ok">已完成 · 提交 1e2a3be · 新增 14 个测试 · 4 个决定已落实</span></div>
+<div class="chap-row"><b>目标</b><span>写出 Orchestrator 和 Worker 共用的基类：收消息、回结果、上报状态、异常兜底，并让 Worker 能直接接人类私聊的任务。Worker 的循环里完全不用碰 bus。</span></div>
+<div class="chap-row"><b>文件</b><span><code>mas/agents/base.py</code>　（另：<code>Task.channel</code>）</span></div>
+</div>
+<p class="sub">先看谁继承谁，再看 Worker 是什么，最后看一个任务（或一条人类消息）怎么经过基类。</p>
+
+<h3 class="sec">3.1 继承关系：谁继承谁</h3>
+<div class="nest">
+  <div class="name mono">Agent <span class="what">— 基类（abstract class）：Orchestrator 和 Worker 共用的部分，我写</span></div>
+  <div class="glabel">方法（method）：共用的功能</div>
+  <div class="fields">
+    <div class="field"><b class="mono">run()</b>订阅自己的 inbox，不停取消息<br><span class="mute">每条消息开一个独立的 asyncio 任务；被取消时在途的也一并取消</span></div>
+    <div class="field"><b class="mono">should_handle(msg)</b><br><span class="mute">这条消息是不是给我的（已实现）</span></div>
+    <div class="field"><b class="mono">on_message(msg)</b><br><span class="mute">任务 → 调 handle_task → 发 TASK_RESULT；人类的聊天 → handle_chat；异常兜底</span></div>
+    <div class="field"><b class="mono">handle_chat(msg)</b><br><span class="mute">默认：把人类的私聊或 @ 当作直接任务（Worker 直接用，Orchestrator 重写）</span></div>
+    <div class="field"><b class="mono">report_status(...)</b><br><span class="mute">发 STATUS 消息；public 时聊天里才看得到</span></div>
+    <div class="field"><b class="mono">ask_human / call_agent / board_text</b><br><span class="mute">转给 Router（已实现）</span></div>
+    <div class="field meth"><b class="mono">is_cancelled(task)</b><br><span class="mute">任务是否已被 /cancel；Worker 每步前检查（已实现）</span></div>
+  </div>
+  <div class="nest">
+    <div class="name mono">Orchestrator <span class="what">— 继承 Agent，我写</span></div>
+    <div class="mute" style="font-size:13.5px">自己的部分：<code>handle_chat</code>、<code>run_root</code>（多轮 LLM 决策循环）。永远不会被分配任务，所以它的 <code>handle_task</code> 直接抛异常。</div>
+  </div>
+  <div class="nest">
+    <div class="name mono">WorkerAgent <span class="what">— 继承 Agent，LI Heyang 写</span></div>
+    <div class="mute" style="font-size:13.5px">自己的部分：<code>handle_task</code>（ReAct 循环，调用工具）。实例有三个：<b>researcher、coder、writer</b>，是同一个类，只是 <code>RoleConfig</code>（角色提示词、能用的工具）不同。</div>
+  </div>
+</div>
+<p class="legend">嵌套 = "继承自"：Orchestrator 和 WorkerAgent 都拥有外层 Agent 的全部方法，再加上自己特有的。这样 Worker 的循环里完全不用碰 bus。</p>
+
+<h3 class="sec">3.2 Worker 是什么：和 Orchestrator 对比</h3>
+<div class="scroll"><table class="cmp" style="display:table">
+<tr><th></th><th>Orchestrator</th><th>Worker</th></tr>
+<tr><td>数量</td><td>1 个</td><td>3 个实例：researcher、coder、writer</td></tr>
+<tr><td>做什么</td><td>理解人类的请求，拆成几步，决定调用哪个 Worker，最后汇报</td><td>接到一个具体任务，自己动手完成</td></tr>
+<tr><td>手里的工具</td><td><code>call_&lt;agent&gt;</code>、<code>ask_human</code>、<code>finish</code>（都是"指挥"类）</td><td>真实工具（搜索、读写文件、运行 Python、git…）+ <code>call_&lt;agent&gt;</code>（可再委派）+ <code>decline</code> + <code>read_group</code></td></tr>
+<tr><td>谁写</td><td>JIAN Yimin</td><td>LI Heyang</td></tr></table></div>
+
+<p><b>Worker 的 ReAct 循环</b>（<code>handle_task</code> 里，反复"想一步 → 调一个工具 → 看结果"）：</p>
+<ol style="margin:4px 0 10px;padding-left:22px">
+  <li>先从记忆里召回相关经验，再把会话看板的文字放进 prompt。</li>
+  <li>判断任务是否超出自己的能力，是就 <code>decline</code> 拒绝，不开始做。</li>
+  <li>循环最多 12 步，每步由 LLM 决定调用哪个工具。</li>
+  <li>遇到需要批准的工具（删除文件、<code>git push</code>）先问人类；同一工具连续失败 2 次也向人类求助。</li>
+  <li>做完后返回 <code>TaskResult</code>：摘要，加上写过哪些文件和提交 hash（由代码根据工具调用记录自动补全）。</li>
+  <li>把这次的经验写进记忆；失败时异步反思一次。</li>
+</ol>
+
+<h3 class="sec">3.3 任务如何经过 Agent 基类</h3>
+<div id="st9"></div>
+
+<h3 class="sec">3.4 步骤 3 的 4 个决定（已全部决定并落实）</h3>
+<div class="scroll"><table class="cmp" style="display:table">
+<tr><th>决定</th><th>你的选择</th><th>落实情况</th></tr>
+<tr><td>1 基类修正结果</td><td>A 统一修正</td><td>代码不变（提交 <code>1e2a3be</code>）：基类修正 task id、截断摘要到 1500 字、补耗时</td></tr>
+<tr><td>2 开始前已取消的任务</td><td>A 不运行</td><td>代码不变：直接返回 <code>error="cancelled"</code></td></tr>
+<tr><td>3 公开 STATUS</td><td>A 只有"收到"</td><td>代码不变；步骤 4 的 CLI 要显示 <code>public=True</code> 的 STATUS、CHAT、<code>TASK_RESULT</code>、<code>HITL_REQUEST</code></td></tr>
+<tr><td>4 私聊或 @ 的默认处理</td><td>A 一律当任务</td><td>代码不变；以后若闲聊也开任务确实碍事，再改成 C（只涉及 Worker 的 <code>handle_chat</code>）</td></tr>
+</table></div>
+<p class="sub">四个都选了当前做法，所以没有代码改动。下面保留了各决定当时的选项和影响，作为记录。</p>
+
+<div class="dec" data-id="T1">
+  <h3 class="dt">决定 1　基类要不要替 Worker 修正结果<span class="badge lo">一般</span><span class="badge ok2">✓ 已决定：A</span></h3>
+  <div class="why" style="margin:0 0 6px">发出 <code>TASK_RESULT</code> 之前，基类现在会：把结果里的 task id 改成真实任务的 id、摘要超过 1500 字就截断、没填耗时就补上。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="T1" value="A" checked><b>A. 基类统一修正（当前）</b><span class="rec">推荐</span><ul><li>Worker 少操心；Orchestrator 的上下文长度有保证</li><li>Worker 如果写了很长的摘要，超出部分会被截掉。完整内容应该写进文件（<code>artifacts</code>），摘要只放要点</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="T1" value="B"><b>B. 不修正，原样发出</b><ul><li>Worker 返回什么就是什么，行为更透明</li><li>摘要过长要由 Orchestrator 自己截断，每个使用结果的地方都得记得做；task id 填错会让 Router 找不到任务</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="T2">
+  <h3 class="dt">决定 2　任务在开始前就已被取消，还要不要运行<span class="badge lo">配合决定 4</span><span class="badge ok2">✓ 已决定：A</span></h3>
+  <div class="why" style="margin:0 0 6px">例如任务刚发出去，人类就 <code>/cancel</code> 了，agent 才从 inbox 里取到它。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="T2" value="A" checked><b>A. 不运行，直接返回 cancelled（当前）</b><span class="rec">推荐</span><ul><li>不浪费一次 LLM 调用，也不会做出取消之后的副作用</li><li>这是基类给 Worker 的第一道保险，Worker 自己每步检查仍然需要</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="T2" value="B"><b>B. 照常运行，只靠 Worker 自己检查</b><ul><li>基类更简单</li><li>刚启动的任务会先多做一步（至少一次 LLM 调用）才发现被取消</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="T3">
+  <h3 class="dt">决定 3　哪些状态变化发"公开"STATUS<span class="badge lo">影响步骤 4 的 CLI</span><span class="badge ok2">✓ 已决定：A</span></h3>
+  <div class="why" style="margin:0 0 6px">公开的 STATUS 会显示在聊天里。设计里允许"收到、完成、失败、等待人类"四种。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="T3" value="A" checked><b>A. 只有"收到"是公开的（当前）</b><span class="rec">推荐</span><ul><li>完成和失败本来就有 <code>TASK_RESULT</code> 显示，等待人类有 <code>HITL_REQUEST</code> 显示，再发 STATUS 会重复</li><li>步骤 4 的 CLI 规则：显示 <code>public=True</code> 的 STATUS，加上 CHAT、<code>TASK_RESULT</code>、<code>HITL_REQUEST</code></li></ul></label>
+    <label class="opt"><input type="radio" disabled name="T3" value="B"><b>B. 收到、完成、失败都发公开 STATUS</b><ul><li>每个任务聊天里多 2 条，和 <code>TASK_RESULT</code> 内容重叠</li><li>CLI 要自己去重，否则同一件事显示两遍</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="T4">
+  <h3 class="dt">决定 4　人类私聊或 @ 一个 agent，默认当作什么<span class="badge mid">涉及 LI Heyang</span><span class="badge ok2">✓ 已决定：A</span></h3>
+  <div class="why" style="margin:0 0 6px">设计文档只说"下任务就直接执行，问问题就直接回答"，没说怎么区分。目前基类的默认实现是：一律当作任务。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="T4" value="A" checked><b>A. 一律当作任务（当前）</b><span class="rec">推荐</span><ul><li>简单，可预测，Worker 不用改</li><li>人类问一句"你好"也会开一个 root、跑一遍 ReAct 循环（多一次 LLM 调用）</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="T4" value="B"><b>B. 用简单规则区分（以问号结尾、很短 → 直接回答）</b><ul><li>不需要 LLM，省调用</li><li>规则容易误判，比如"能把 X 改成 Y 吗？"其实是任务</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="T4" value="C"><b>C. 让 Worker 的 LLM 在第一步判断</b><ul><li>最准确</li><li>每条私聊多一次 LLM 调用；<b>LI Heyang 要重写 <code>handle_chat</code></b></li></ul></label>
+  </div>
+  <div class="why">我的理由：先用 A 把流程跑通；如果评测或演示里发现"闲聊也开任务"确实碍事，再改成 C，只涉及 Worker 的 <code>handle_chat</code>，不影响别的地方。</div>
+</div>
+
+
+
+<h2 id="chap4">步骤 4：人类端（命令行 CliHumanIO）</h2>
+<div class="chap"><div class="chap-top"><span class="pill ok">已完成 · 提交 57a6328、9f35c2d · 新增 41 个测试 · 4 个决定已落实</span></div>
+<div class="chap-row"><b>目标</b><span>让人类能在命令行里和系统对话：打字发消息、<code>/dm</code> 私聊、<code>/status</code>、<code>/cancel</code>、<code>/reply</code> 回答 agent 的请求，同时实时看到 agent 们的消息。</span></div>
+<div class="chap-row"><b>文件</b><span><code>mas/core/human.py</code>　（<code>CliHumanIO</code> 和 <code>HumanIO</code> 的共用方法；<code>AutoResponder</code> 仍是 LI Heyang 的）</span></div>
+</div>
+
+<h3 class="sec">4.1 HumanIO 与 CliHumanIO：谁包含谁</h3>
+<p class="sub">人类也是 bus 上的一个成员（id 是 <code>human</code>），和 agent 一样有自己的 inbox。<code>HumanIO</code> 把"人类这一侧"抽象成接口，命令行和评测用的自动回答是它的两种实现。</p>
+<div class="nest">
+  <div class="name mono">HumanIO <span class="what">— abstract class（抽象类）：人类这一侧的接口</span></div>
+  <div class="glabel">方法（method）：子类必须实现</div>
+  <div class="fields">
+    <div class="field meth"><b class="mono">run(bus)</b>主循环：显示收到的消息、处理人类的输入</div>
+    <div class="field meth"><b class="mono">show(msg)</b>怎么把一条消息展示给人类</div>
+    <div class="field meth"><b class="mono">answer(req)</b>怎么得到对一个请求的回答</div>
+  </div>
+  <div class="glabel">方法（method）：共用，已实现</div>
+  <div class="fields">
+    <div class="field meth"><b class="mono">request_from(msg)</b>把 HITL_REQUEST 消息还原成 HitlRequest</div>
+    <div class="field meth"><b class="mono">handle_incoming(bus, msg)</b>跳过自己的消息 → show → 遇到请求就在后台 answer，并发回 HITL_RESPONSE</div>
+  </div>
+  <div class="nest">
+    <div class="name mono">CliHumanIO <span class="what">— 命令行实现，我写</span></div>
+    <div class="glabel">属性（attribute）：它存着的数据</div>
+    <div class="fields">
+      <div class="field"><b class="mono">_pending</b>(频道, "h1") → (future, 请求)<br><span class="mute">还没回答的请求，每个一张"回执条"</span></div>
+      <div class="field"><b class="mono">_read_line / _write</b><br><span class="mute">读一行输入 / 输出一段文字；可替换，测试就是靠这个</span></div>
+    </div>
+    <div class="glabel">方法（method）：它能做的事</div>
+    <div class="fields">
+      <div class="field meth"><b class="mono">run(bus)</b>同时读输入和显示消息，直到 /quit</div>
+      <div class="field meth"><b class="mono">handle_input(line)</b>处理人类输入的一行（4.2）</div>
+      <div class="field meth"><b class="mono">handle_incoming(bus, msg)</b>重写：显示后，若是"已取消"通知就清掉残留请求（4.3 场景 4）</div>
+      <div class="field meth"><b class="mono">answer(req)</b>登记到 _pending 并等待 /reply（4.3）</div>
+      <div class="field meth"><b class="mono">format(msg)</b>一条消息显示成什么样（4.4）</div>
+    </div>
+  </div>
+  <div class="nest">
+    <div class="name mono">AutoResponder <span class="what">— 评测用，LI Heyang 写</span></div>
+    <div class="mute" style="font-size:13.5px">立刻回答每个请求（<code>answer</code> 直接返回默认答案），不读键盘。它可以直接用 <code>handle_incoming</code>，不用自己拼 HITL_RESPONSE。</div>
+  </div>
+</div>
+<p class="legend">嵌套 = "继承自"。CliHumanIO 和 AutoResponder 共用外层 HumanIO 的方法，所以"收到请求 → 回答 → 发回 HITL_RESPONSE"这条路只写了一遍。</p>
+
+<h3 class="sec">4.2 输入的一行去哪了</h3>
+<p class="sub">人类每输入一行，<code>handle_input</code> 判断它是命令还是聊天，然后在 bus 上发出对应的消息。三个场景分别是：直接打字、<code>/dm</code>、<code>/status</code>。</p>
+<div id="st10"></div>
+
+<h3 class="sec">4.3 请求怎么回答：/reply</h3>
+<p class="sub">agent 请求批准时，CLI 要在<b>不阻塞</b>输入和显示的前提下等人类回答，并且支持同时有好几个请求。关键还是那张"回执条"：<code>answer</code> 登记一张，<code>/reply</code> 填上它。</p>
+<div id="st11"></div>
+
+<h3 class="sec">4.4 屏幕上显示什么</h3>
+<div class="scroll"><table class="cmp" style="display:table">
+<tr><th>消息</th><th>显示？</th><th>样子</th></tr>
+<tr><td><code>CHAT</code>（agent 发的）</td><td>✓</td><td><code>[orchestrator] 好的，我来安排</code></td></tr>
+<tr><td><code>TASK_ASSIGN</code></td><td>✓（协作过程对人类可见）</td><td><code>[orchestrator] @coder 写脚本</code></td></tr>
+<tr><td><code>TASK_RESULT</code></td><td>✓</td><td><code>[coder] @orchestrator 完成：脚本写好了（文件：a.py）</code></td></tr>
+<tr><td><code>STATUS</code></td><td>只有 <code>public=True</code> 的</td><td><code>· coder：收到 t1：写脚本</code></td></tr>
+<tr><td><code>HITL_REQUEST</code></td><td>✓，并提示怎么回复</td><td><code>? [h1] coder 请求批准：git push 吗？　可选：yes / no</code><br><code>　　回复：/reply h1 &lt;回答&gt;</code></td></tr>
+<tr><td>"已取消"通知（CHAT，带 <code>cancelled_roots</code>）</td><td>✓，并清掉那些 root 的待回答请求</td><td><code>[orchestrator] 已取消 R1</code></td></tr>
+<tr><td>私聊里的消息</td><td>✓，带标签</td><td><code>(私聊·coder) [coder] @human 完成：修好了</code>；请求写成 <code>/reply coder:h1</code></td></tr>
+<tr><td>人类自己发的、<code>HITL_RESPONSE</code>、非公开 <code>STATUS</code></td><td>✗</td><td>—　你自己发的话，终端在你敲的时候就已经显示了，回车后留在屏幕上，所以 CLI 不再重复显示。（bus 会把消息也投递给发送者自己，所以要主动跳过。）</td></tr>
+</table></div>
+
+<h3 class="sec">4.5 步骤 4 的 4 个决定（已全部决定并落实）</h3>
+<div class="scroll"><table class="cmp" style="display:table">
+<tr><th>决定</th><th>你的选择</th><th>落实情况</th></tr>
+<tr><td>1 私聊任务怎么取消</td><td><b>B 加 <code>/cancel &lt;agent&gt;</code></b></td><td>已做：CLI 发 <code>/cancel</code> 到私聊；<code>Agent.handle_chat</code> 调新增的 <code>Router.cancel_session</code> 取消该会话里的任务并发通知（4.3 场景 4）</td></tr>
+<tr><td>2 输入提示符</td><td><b>B 用 prompt_toolkit</b></td><td>已做：真实终端里用 <code>PromptReader</code> + <code>patch_stdout</code>，没装或不是终端时退回 <code>input()</code>；<code>pyproject.toml</code> 已加依赖。已在新建的 <code>~/.virtualenvs/agents</code> 里验证：用伪终端跑通，打字中途 agent 发来的消息显示在提示符上方，已敲的字没丢</td></tr>
+<tr><td>3 显示 TASK_ASSIGN</td><td>A 显示</td><td>代码不变</td></tr>
+<tr><td>4 取消后残留的请求</td><td><b>B 发"已取消"通知</b></td><td>CLI 一侧已做（收到通知就清掉）；Orchestrator 一侧在步骤 5 发通知，格式已定：CHAT，<code>payload={"cancelled_roots": [...]}</code></td></tr>
+</table></div>
+<p class="sub">提交 <code>9f35c2d</code>，135 个测试全部通过（在 <code>agents</code> 环境的 Python 3.11 下，含需要 prompt_toolkit 的那个；没装 prompt_toolkit 时那 1 个会跳过）。另外做决定 1 时发现并修了一个隐患：root id 原来是每个会话各自从 R1 开始，而状态表和 <code>cancel_root</code> 只按 root id 区分，取消群里的 R1 会连带取消私聊里的 R1。现在 root id 在所有会话里全局唯一（R1、R2、R3……）。下面保留了各决定当时的选项和影响，作为记录。</p>
+<div class="dec" data-id="C1">
+  <h3 class="dt">决定 1　私聊里发起的任务，怎么取消<span class="badge mid">要加一点代码</span><span class="badge ok2">✓ 已决定：B</span></h3>
+  <div class="why" style="margin:0 0 6px">现在 <code>/cancel</code> 只发给 Orchestrator，取消的是它的当前请求。人类用 <code>/dm coder ...</code> 直接交给 coder 的任务有自己的 root，Orchestrator 管不到，也就取消不了。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="C1" value="A"><b>A. 先不管（当前）</b><ul><li>私聊任务跑起来后，只能等它做完</li><li>代码不用动</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="C1" value="B" checked><b>B. 加 <code>/cancel &lt;agent&gt;</code></b><span class="rec">推荐</span><ul><li>CLI 把 <code>/cancel</code> 发到那个私聊；Agent 基类的默认 <code>handle_chat</code> 认出它，取消这个私聊会话里还没结束的任务</li><li>改动：CLI 一个命令、Agent 基类几行、Router 一个"取消某个会话的任务"的小方法，都在我这边，LI 不受影响</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="C2">
+  <h3 class="dt">决定 2　消息到达时，输入提示符怎么办<span class="badge lo">界面细节</span><span class="badge ok2">✓ 已决定：B</span></h3>
+  <div class="why" style="margin:0 0 6px">人类在敲字时，agent 的消息可能同时到达。普通的 <code>print</code> 会直接打在提示符那一行上。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="C2" value="A"><b>A. 简单 print（当前）</b><span class="rec">推荐</span><ul><li>零依赖。消息到达时提示符可能被冲到上面，但已经敲的字不会丢，回车照常提交</li><li>README 写明前端不加分，够用即可</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="C2" value="B" checked><b>B. 用 prompt_toolkit</b><ul><li>提示符始终固定在底部，消息从上面滚出来，体验好</li><li>要新增一个依赖（改 <code>pyproject.toml</code>），也要多写和测试一层</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="C3">
+  <h3 class="dt">决定 3　要不要在屏幕上显示"派活"（TASK_ASSIGN）<span class="badge lo">界面细节</span><span class="badge ok2">✓ 已决定：A</span></h3>
+  <div class="why" style="margin:0 0 6px">步骤 3 的决定 3 里我只列了 CHAT、TASK_RESULT、HITL_REQUEST 和公开 STATUS，这里补上一个我实际加了的：TASK_ASSIGN。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="C3" value="A" checked><b>A. 显示（当前）</b><span class="rec">推荐</span><ul><li>符合设计里"协作过程对人类完全可见"：能看到谁把什么交给了谁</li><li>每个任务多一行</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="C3" value="B"><b>B. 不显示</b><ul><li>屏幕更干净，只剩"收到"和结果</li><li>看不到 Orchestrator 具体把什么目标交给了 agent，排查问题时要翻日志</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="C4">
+  <h3 class="dt">决定 4　<code>/cancel</code> 之后，CLI 里残留的请求怎么办<span class="badge lo">留给步骤 5</span><span class="badge ok2">✓ 已决定：B</span></h3>
+  <div class="why" style="margin:0 0 6px">Router 取消时会放开等待的 agent，但 CLI 不知道。已取消任务的请求还留在"待回答"列表里，<code>/reply</code> 提示的"等待中"也会显示它们（回复无害，但会让人困惑）。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="C4" value="A"><b>A. 保持（当前）</b><ul><li>不用改</li><li>残留的请求只在列表里碍眼，回复它们不会有任何效果</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="C4" value="B" checked><b>B. 步骤 5 里让 Orchestrator 在 /cancel 后发一条带 root 的"已取消"通知</b><span class="rec">推荐</span><ul><li>CLI 看到后，清掉属于那个 root 的待回答请求</li><li>现在不动代码，等做 Orchestrator 时一起做（HITL_REQUEST 的 payload 里已经有 <code>root_id</code>）</li></ul></label>
+  </div>
+</div>
+
+
+
+<h2 id="chap5">步骤 5：Orchestrator（调度员）</h2>
+<div class="chap"><div class="chap-top"><span class="pill ok">已完成 · 提交 430971c、d0438c1 · 新增 39 个测试 · 5 个决定已落实</span></div>
+<div class="chap-row"><b>目标</b><span>处理人类的一个请求：用 LLM 决定把活交给哪些 agent，并行派出，收集结果，直到完成并汇报；同时支持 <code>/status</code>、<code>/cancel</code> 和中途插话。</span></div>
+<div class="chap-row"><b>文件</b><span><code>mas/agents/orchestrator.py</code>　（另：<code>StateTable.status_text</code> 新规则、<code>Router.locate_file</code>）</span></div>
+</div>
+
+<h3 class="sec">5.1 Orchestrator 是什么：结构与位置</h3>
+<p class="sub">Orchestrator 继承 Agent 基类（步骤 3），所以收消息、发结果这些事基类都做好了。它自己的特别之处只有一件：<b>它是整个系统里唯一一个"想办法"的角色</b>，其他一切（路由、限制、状态、取消）都是普通代码。</p>
+<div class="nest">
+  <div class="name mono">Orchestrator <span class="what">— 继承 Agent；一个人类请求 = 一个 root，一个循环</span></div>
+  <div class="glabel">属性（attribute）：它存着的数据</div>
+  <div class="fields">
+    <div class="field"><b class="mono">llm</b>LLMClient<br><span class="mute">唯一会"思考"的部分（LI Heyang 写）</span></div>
+    <div class="field"><b class="mono">roles</b>{researcher, coder, writer}<br><span class="mute">每个 agent 的能力描述，变成 call_&lt;agent&gt; 工具</span></div>
+    <div class="field"><b class="mono">memories</b>{agent → Memory}<br><span class="mute">只读，用来生成能力档案（步骤 6）</span></div>
+    <div class="field"><b class="mono">_runs</b>session → 正在处理的 root<br><span class="mute">一个会话同时只有一个请求在跑</span></div>
+    <div class="field"><b class="mono">outcomes</b>root id → RootOutcome<br><span class="mute">每个请求怎么结束的，评测读它</span></div>
+  </div>
+  <div class="glabel">方法（method）：它能做的事</div>
+  <div class="fields">
+    <div class="field meth"><b class="mono">should_handle(msg)</b>发给我的，或群里没 @ 任何人的人类消息</div>
+    <div class="field meth"><b class="mono">handle_chat(msg)</b>/status、/cancel、插话，或开新请求（5.3）</div>
+    <div class="field meth"><b class="mono">run_root(msg)</b>一个请求的循环（5.2）</div>
+    <div class="field meth"><b class="mono">function_specs(session)</b>给 LLM 的工具列表：3 个 call_&lt;agent&gt; + ask_human + finish</div>
+    <div class="field meth"><b class="mono">system_prompt()</b>告诉 LLM 规则（5.4）</div>
+    <div class="field meth"><b class="mono">status_text(session)</b>/status 的回答，读状态表</div>
+  </div>
+</div>
+<div class="outside">
+  <div class="o"><b class="mono">Router</b><br><span class="mute">在外面。Orchestrator 每次 <code>call_&lt;agent&gt;</code> 都调用 <code>router.dispatch</code>（2.2）；澄清时调用 <code>request_human</code>（2.3）；取消时调用 <code>cancel_session</code> / <code>cancel_root</code>。</span></div>
+  <div class="o"><b class="mono">Worker（researcher / coder / writer）</b><br><span class="mute">在外面。Orchestrator 不直接找它们，只通过 Router 派任务、收结果。</span></div>
+</div>
+
+<h3 class="sec">5.2 run_root：一个请求，一轮一轮</h3>
+<p class="sub">右边 <b>messages</b> 就是每一轮发给 LLM 的对话。每轮 LLM 返回的"工具调用"被执行，结果以一条很短的 observation 追加进去，直到 LLM 调用 <code>finish</code>。</p>
+<div id="st12"></div>
+
+<h3 class="sec">5.3 /status、插话、/cancel：请求进行中人类还能做什么</h3>
+<p class="sub">这三种消息进来时，可能已经有一个请求在跑。<code>handle_chat</code> 先看有没有，决定是回答、追加，还是打断。</p>
+<div id="st13"></div>
+
+<h3 class="sec">5.4 LLM 看到什么</h3>
+<div class="scroll"><table class="cmp" style="display:table">
+<tr><th>消息</th><th>内容</th></tr>
+<tr><td><code>system</code></td><td>调度员的规则（9 条）：每次调用只交给一个 agent 它独立能完成的目标；互不依赖的调用放在同一轮；文件用 <code>files</code> 交接；每次发工具调用时在文字里写一行"剩余步骤：……"；agent 拒绝就改派，失败最多试 3 次；含糊到无法着手才提问；全部完成后<b>单独</b>调用 <code>finish</code>；"（人类补充）"要照着调整。</td></tr>
+<tr><td>第一条 <code>user</code></td><td><code>人类的请求：……</code> 加<b>会话看板</b>的文字（人类原话、已完成事项、早先的请求各占一行）。所以"把刚才的纪要翻译成英文"能找到是哪个文件。</td></tr>
+<tr><td>工具（<code>tools</code>）</td><td><code>call_researcher</code>、<code>call_coder</code>、<code>call_writer</code>（描述里有能力和<b>近期表现</b>）、<code>ask_human</code>、<code>finish</code>。</td></tr>
+<tr><td><code>assistant</code></td><td>LLM 的回复：文字部分是"剩余步骤"（存进看板），加上一个或多个工具调用。</td></tr>
+<tr><td><code>tool</code>（每个调用一条）</td><td>很短的 JSON，<b>不是全文</b>：<code>{"success": true, "summary": "…≤1500 字", "artifacts": ["a.py"], "refs": {…}}</code>；被拒绝时 <code>{"success": false, "declined": true, "reason": "…", "suggest": "coder"}</code>；出错时 <code>{"success": false, "error": "…"}</code>。</td></tr>
+<tr><td><code>user</code>（追加）</td><td><code>（人类补充）脚本用 Python 3.11</code>——请求进行中人类说的话，下一轮才让 LLM 看到。</td></tr>
+</table></div>
+
+<h3 class="sec">5.5 步骤 5 的 5 个决定（已全部决定并落实）</h3>
+<div class="scroll"><table class="cmp" style="display:table">
+<tr><th>决定</th><th>你的选择</th><th>落实情况</th></tr>
+<tr><td>1 finish 和别的调用同轮</td><td>A 拒绝，要求单独调用</td><td>代码不变</td></tr>
+<tr><td>2 只有文字、没有工具调用</td><td>A 当作最终回答</td><td>代码不变</td></tr>
+<tr><td>3 同一个 agent 的多个调用</td><td><b>B 排队</b></td><td>已改：同一轮里<b>同一个 agent</b> 的调用一个接一个，不同 agent 之间仍并行（<code>_call_agents</code>）</td></tr>
+<tr><td>4 交付物目录</td><td><b>B 加启动时间</b></td><td>已改：<code>data/output/R1-20261109-153012/</code>；同一秒启动的会再加 <code>-2</code>；完整路径在最终回复的 <code>payload["output_dir"]</code> 里</td></tr>
+<tr><td>5 <code>model</code> 参数</td><td>A 暂不支持</td><td>代码不变，不改 LI 的接口</td></tr>
+</table></div>
+<p class="sub">提交 <code>d0438c1</code>，174 个测试全部通过（含 Python 3.11）。下面保留了各决定当时的选项和影响，作为记录。</p>
+<div class="dec" data-id="E1">
+  <h3 class="dt">决定 1　LLM 把 finish 和别的调用放在同一轮发出，怎么办<span class="badge lo">一般</span><span class="badge ok2">✓ 已决定：A</span></h3>
+  <div class="why" style="margin:0 0 6px">例如它同时发出 <code>call_coder</code> 和 <code>finish</code>：finish 的总结是在看到结果之前写的，可能不准。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="E1" value="A" checked><b>A. 拒绝这次 finish，提示"要单独调用"（当前）</b><span class="rec">推荐</span><ul><li>总结一定是看到全部结果之后写的</li><li>代价：多一轮（8 轮上限里占一轮）</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="E1" value="B"><b>B. 先执行其他调用，再用它的 finish 收尾</b><ul><li>省一轮</li><li>finish 的总结没看过结果，可能写成"已完成"而实际失败了</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="E2">
+  <h3 class="dt">决定 2　LLM 只回了文字、没有调用任何工具，怎么办<span class="badge lo">一般</span><span class="badge ok2">✓ 已决定：A</span></h3>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="E2" value="A" checked><b>A. 把这段文字当作最终回答（当前）</b><span class="rec">推荐</span><ul><li>简单问题（"1+1 等于几"）不用绕一圈 finish</li><li>风险：LLM 如果只是在"边想边说"，会被误当成结束</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="E2" value="B"><b>B. 提醒它"请调用工具或 finish"，占一轮</b><ul><li>更严格，不会被半截话提前结束</li><li>每个简单问题都多一轮 LLM 调用</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="E3">
+  <h3 class="dt">决定 3　同一轮里对<b>同一个 agent</b> 发出多个调用，要不要并行<span class="badge mid">涉及 Worker 的 workspace</span><span class="badge ok2">✓ 已决定：B</span></h3>
+  <div class="why" style="margin:0 0 6px">例如同时 <code>call_coder</code> 写 a.py 和 <code>call_coder</code> 写 b.py。不同 agent 之间并行没有问题；同一个 agent 的两个任务会在<b>同一个 workspace</b> 里同时运行。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="E3" value="A"><b>A. 全部并行（当前）</b><ul><li>最快</li><li>两个任务可能同时改同一个文件、同时 git commit，互相覆盖或冲突</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="E3" value="B" checked><b>B. 同一个 agent 的调用排队，不同 agent 之间并行</b><span class="rec">推荐</span><ul><li>避免 workspace 里的冲突；不同 agent（比如 coder 和 writer）照样并行</li><li>代价：LLM 想让同一个 agent 做两件独立的事时，要等一件做完再做下一件</li><li>改动在 Orchestrator 里，十来行</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="E4">
+  <h3 class="dt">决定 4　交付物放在哪个目录<span class="badge lo">一般</span><span class="badge ok2">✓ 已决定：B</span></h3>
+  <div class="why" style="margin:0 0 6px">现在是 <code>data/output/R1/</code>。但 root 编号每次程序启动都从 R1 重新开始，重启之后的 R1 会写进同一个目录，和上次的文件混在一起。（设计文档写的是 <code>&lt;run_id&gt;</code>。）</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="E4" value="A"><b>A. <code>data/output/R1/</code>（当前）</b><ul><li>简单，路径好记</li><li>重启后会覆盖或混入上次的文件；评测每个用例用新的 <code>data_dir</code> 就没问题</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="E4" value="B" checked><b>B. <code>data/output/R1-20261109-153012/</code>（加上启动时间）</b><span class="rec">推荐</span><ul><li>每次运行互不干扰</li><li>路径里多了时间；最终回复的 <code>payload["output_dir"]</code> 里有完整路径，评测的检查器读它，不受影响</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="E5">
+  <h3 class="dt">决定 5　Orchestrator 要不要能用和 Worker 不同的模型<span class="badge mid">涉及 LI Heyang 的接口</span><span class="badge ok2">✓ 已决定：A</span></h3>
+  <div class="why" style="margin:0 0 6px"><code>Settings.orchestrator_model</code> 这个配置现在没用上，因为 <code>LLMClient.chat</code> 没有"指定模型"的参数。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="E5" value="A" checked><b>A. 暂时不支持，都用同一个模型（当前）</b><span class="rec">推荐</span><ul><li>设计里"模型选择"本来就是待验证项，先跑通再说</li><li>不改 LI 的接口</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="E5" value="B"><b>B. 给 <code>LLMClient.chat</code> 加一个 <code>model</code> 参数</b><ul><li>以后可以给调度员用更强的模型、给 Worker 用更便宜的</li><li><b>要改 LI 的 <code>LLMClient</code>、<code>DeepSeekClient</code>、<code>MockLLM</code></b>，需要两个人同意</li></ul></label>
+  </div>
+</div>
+
+
+
+<h2 id="chap6">步骤 6：记忆与进化（JsonlMemory）</h2>
+<div class="chap"><div class="chap-top"><span class="pill ok">已完成 · 提交 44e279c、17af624 · 新增 30 个测试 · 4 个决定已落实</span></div>
+<div class="chap-row"><b>目标</b><span>让每个 agent 记住自己做过什么：Worker 开始任务前能翻出相似任务的<b>教训</b>（改进"怎么做"），Orchestrator 派活时能看到每个 agent 的<b>近期表现</b>（改进"谁来做"）。全程不调 LLM。</span></div>
+<div class="chap-row"><b>文件</b><span><code>mas/memory/base.py</code>　（<code>JsonlMemory</code>、<code>tags_for_tools</code>、<code>keywords</code>）</span></div>
+</div>
+
+<h3 class="sec">6.1 Memory 是什么：结构与两种用途</h3>
+<p class="sub">同一批记录，两种用法。记录是一条条 <code>Experience</code>：一个子任务做完就记一条，包括目标、类型标签、成功与否、摘要，失败时还有一句教训。</p>
+<div class="nest">
+  <div class="name mono">Memory <span class="what">— abstract class（抽象类）：只规定有哪些方法</span></div>
+  <div class="glabel">方法（method）：子类必须实现</div>
+  <div class="fields">
+    <div class="field meth"><b class="mono">add(exp)</b>记一条经验</div>
+    <div class="field meth"><b class="mono">recall(query, k)</b>找出最相关的 k 条（给 Worker 看）</div>
+    <div class="field meth"><b class="mono">profile(max_chars)</b>生成能力档案（给 Orchestrator 看）</div>
+  </div>
+  <div class="nest">
+    <div class="name mono">JsonlMemory <span class="what">— 实现：每个 agent 一个文件 <code>data/memory/&lt;agent_id&gt;.jsonl</code>，一行一条</span></div>
+    <div class="glabel">属性（attribute）：它存着的数据</div>
+    <div class="fields">
+      <div class="field"><b class="mono">path</b>coder.jsonl<br><span class="mute">唯一的状态在文件里，每次调用都重新读（只有几十条）</span></div>
+    </div>
+    <div class="glabel">方法（method）：它能做的事</div>
+    <div class="fields">
+      <div class="field meth"><b class="mono">for_agent(dir, id)</b>得到某个 agent 的记忆</div>
+      <div class="field meth"><b class="mono">all()</b>读出全部记录（6.2）</div>
+      <div class="field meth"><b class="mono">clear()</b>忘掉一切（删文件），评测重置用</div>
+      <div class="field meth"><b class="mono">recall / profile</b>6.3、6.4</div>
+    </div>
+  </div>
+</div>
+<div class="outside">
+  <div class="o"><b class="mono">Experience</b>（数据）<br><span class="mute"><code>task_id</code>、<code>task_goal</code>、<code>tags</code>（如 <code>["code","git"]</code>）、<code>success</code>、<code>summary</code>、<code>lesson</code>（成功时为空）、<code>ts</code>。</span></div>
+  <div class="o"><b class="mono">tags_for_tools(tool_names, artifacts)</b>（现成函数）<br><span class="mute">Worker 打标签用：<code>run_python</code>→code、<code>git</code>→git、搜索→search、文件→file、写了 .md/.txt→doc。</span></div>
+</div>
+<table class="cmp" style="display:table">
+<tr><th>用途</th><th>谁用</th><th>用的方法</th><th>改进什么</th></tr>
+<tr><td>召回教训</td><td>Worker，开始任务前</td><td><code>recall(目标, 3)</code></td><td>"怎么做"：翻出过去相似任务的教训，注入 prompt，避免再踩同样的坑</td></tr>
+<tr><td>能力档案</td><td>Orchestrator，每个请求开始时</td><td><code>profile(300)</code></td><td>"谁来做"：每个 agent 近期的成功率和已知短板，写在 <code>call_&lt;agent&gt;</code> 的描述里</td></tr>
+</table>
+
+<h3 class="sec">6.2 一条记忆怎么写、怎么读</h3>
+<p class="sub">写很简单：往文件末尾追加一行。有意思的是读：同一个任务可以写两次（先记失败，等反思出教训再补一次），读的时候后写的算数；坏掉的行跳过。</p>
+<div id="st14"></div>
+
+<h3 class="sec">6.3 recall：怎么找出相关的经验</h3>
+<p class="sub">没有向量数据库，用最朴素的<b>关键词重合</b>：把查询和每条记录都拆成关键词，数重合的个数当分数。对中文，拆成相邻两个字（"爬虫脚本" → 爬虫、虫脚、脚本）。</p>
+<div id="st15"></div>
+
+<h3 class="sec">6.4 profile：能力档案怎么来</h3>
+<p class="sub">纯统计：最近 20 条里每种类型成功了几个，加上最近几次失败的教训，拼成一两句话。Orchestrator 把它读进工具描述，LLM 选人时就能参考。</p>
+<div id="st16"></div>
+
+<h3 class="sec">6.5 步骤 6 的 4 个决定（已全部决定并落实）</h3>
+<div class="scroll"><table class="cmp" style="display:table">
+<tr><th>决定</th><th>你的选择</th><th>落实情况</th></tr>
+<tr><td>1 档案统计窗口</td><td>A 最近 20 条</td><td>代码不变（<code>PROFILE_WINDOW = 20</code>）</td></tr>
+<tr><td>2 被拒绝 / 被取消的任务</td><td>A 不记</td><td>代码不变；这是给 LI 的 Worker 定的约定，已写进根目录 README 第 10 条</td></tr>
+<tr><td>3 记忆文件清理</td><td>A 不清理</td><td>代码不变</td></tr>
+<tr><td>4 评测时重置记忆</td><td><b>B 加 <code>clear()</code></b></td><td>已加：<code>JsonlMemory.clear()</code> 删掉该 agent 的记忆文件（没有文件也不报错，不影响别的 agent）</td></tr>
+</table></div>
+<p class="sub">提交 <code>17af624</code>，205 个测试全部通过。下面保留了各决定当时的选项和影响，作为记录。</p>
+<div class="dec" data-id="S1">
+  <h3 class="dt">决定 1　能力档案统计多少条记录<span class="badge lo">一般</span><span class="badge ok2">✓ 已决定：A</span></h3>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="S1" value="A" checked><b>A. 最近 20 条（当前）</b><span class="rec">推荐</span><ul><li>反映"近期表现"：做对几次之后，档案很快就变好，报告里"第一次失败、第二次成功"的对照看得见</li><li>老的失败会滚出窗口，不再拖累</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="S1" value="B"><b>B. 全部历史</b><ul><li>统计更稳定</li><li>用久了之后，改进的效果被大量旧记录稀释，看不出变化</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="S2">
+  <h3 class="dt">决定 2　被拒绝（decline）和被取消的任务，要不要记进记忆<span class="badge mid">涉及 LI Heyang 的 Worker</span><span class="badge ok2">✓ 已决定：A</span></h3>
+  <div class="why" style="margin:0 0 6px">记录是 Worker 写的，这里是给 Worker 定一个约定。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="S2" value="A" checked><b>A. 不记</b><span class="rec">推荐</span><ul><li>它们不是"试了一下失败了"：被拒绝说明任务不该交给它，被取消是人类的决定</li><li>记进去会拉低成功率，污染能力档案（比如 writer 被错派了代码任务，档案里 code 却显示 0 成功）</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="S2" value="B"><b>B. 记成失败</b><ul><li>记录更完整</li><li>档案会误导 Orchestrator；Worker 需要多写判断</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="S3">
+  <h3 class="dt">决定 3　记忆文件一直增长，要不要清理<span class="badge lo">一般</span><span class="badge ok2">✓ 已决定：A</span></h3>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="S3" value="A" checked><b>A. 不清理（当前）</b><span class="rec">推荐</span><ul><li>每个任务一行，几百个任务也只有几十 KB，每次读一遍没有可感知的耗时</li><li>旧教训一直能被 <code>recall</code> 找到</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="S3" value="B"><b>B. 每个 agent 只留最近 200 条</b><ul><li>文件大小有上限</li><li>要在 <code>add</code> 里重写文件；很久以前的教训会丢（<code>profile</code> 本来就只看最近 20 条，不受影响）</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="S4">
+  <h3 class="dt">决定 4　评测时怎么把记忆重置为空<span class="badge lo">评测要用</span><span class="badge ok2">✓ 已决定：B</span></h3>
+  <div class="why" style="margin:0 0 6px">设计里"用例之间只保留记忆"，但要做"有记忆 vs 没有记忆"的对比实验时，需要从空记忆重新开始。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="S4" value="A"><b>A. 不提供，手动删 <code>data/memory/</code></b><ul><li>代码不变</li><li>评测脚本里要自己删文件，容易忘</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="S4" value="B" checked><b>B. 加 <code>JsonlMemory.clear()</code></b><span class="rec">推荐</span><ul><li>三行：删掉文件。评测框架一行就能重置</li><li>在我这边加，LI 的评测框架直接用</li></ul></label>
+  </div>
+</div>
+
+
+
+<h2 id="chap7">步骤 7：系统入口（把零件接起来）</h2>
+<div class="chap"><div class="chap-top"><span class="pill ok">已完成 · 提交 a2c9fb5、ff96b80 · 新增 33 个测试 · 2 个决定已落实</span></div>
+<div class="chap-row"><b>目标</b><span>前面 6 步做出了各个零件，这一步把它们接成一个能运行的程序：<code>python -m mas --demo</code> 不需要 API key，也不需要 LI Heyang 的部分，就能把整个流程跑一遍。</span></div>
+<div class="chap-row"><b>文件</b><span><code>mas/app.py</code>（组装）　<code>mas/demo.py</code>（演示用的替身）　<code>mas/__main__.py</code>（命令行入口）</span></div>
+</div>
+
+<h3 class="sec">7.1 组装：build_system 接了什么</h3>
+<p class="sub"><code>build_system</code> 是唯一知道"各个零件怎么接在一起"的地方。别人还没写好的零件，都留成了有默认值的<b>接口点</b>：测试、演示、真实系统走的是同一份组装代码，只是传进去的东西不同。</p>
+<div class="nest">
+  <div class="name mono">build_system(settings, llm, human, …) <span class="what">— 创建并接好一切，返回 System</span></div>
+  <div class="glabel">它创建的东西（每样只有一份，除非写明"每个角色"）</div>
+  <div class="fields">
+    <div class="field"><b class="mono">InMemoryBus</b>消息总线（步骤 1）</div>
+    <div class="field"><b class="mono">StateTable</b>任务状态表（步骤 1）</div>
+    <div class="field"><b class="mono">Router</b>路由层（步骤 2），登记成 bus 的 observer</div>
+    <div class="field"><b class="mono">workspace</b>每个角色一个：<code>workspaces/&lt;agent&gt;</code></div>
+    <div class="field"><b class="mono">memory</b>每个角色一份：<code>data/memory/&lt;agent&gt;.jsonl</code>（步骤 6）</div>
+    <div class="field"><b class="mono">Orchestrator</b>调度员（步骤 5），拿到所有角色的记忆来读能力档案</div>
+    <div class="field"><b class="mono">Worker × 3</b>researcher / coder / writer（<b>用 worker_factory 建</b>）</div>
+  </div>
+  <div class="glabel">最后：让 human、orchestrator 和所有 Worker 加入 group:main（Router 只会把活派给群里的成员）</div>
+</div>
+<p style="margin:14px 0 4px"><b>接口点：</b>别人负责的、或者每种运行方式不同的部分，都是 <code>build_system</code> 的参数，各有默认值。</p>
+<div class="scroll"><table class="cmp" style="display:table">
+<tr><th>接口点</th><th>默认值</th><th>谁来接</th><th>演示里换成了什么</th></tr>
+<tr><td><code>llm</code></td><td><code>make_llm(settings)</code>：DeepSeek；没有 key 就退出并告诉你怎么办</td><td>LI Heyang（<code>DeepSeekClient</code>）</td><td><code>MockLLM(responder=demo_brain)</code></td></tr>
+<tr><td><code>worker_factory</code></td><td><code>WorkerAgent(…, build_tools(role), …)</code></td><td>LI Heyang（<code>WorkerAgent</code>、<code>build_tools</code> 要返回真实工具，现在返回空列表）</td><td><code>DemoWorker</code></td></tr>
+<tr><td><code>sandbox_factory</code></td><td><code>LocalSandbox</code> 或 <code>DockerSandbox</code>（按 <code>sandbox_backend</code>）</td><td>LI Heyang</td><td><code>DemoSandbox</code>（只能读写文件）</td></tr>
+<tr><td><code>human</code></td><td><code>make_human(settings)</code>：<code>auto_hitl</code> 为真用 <code>AutoResponder</code>，否则命令行</td><td>我（命令行）/ LI（AutoResponder）</td><td><code>CliHumanIO</code></td></tr>
+</table></div>
+
+<h3 class="sec">7.2 整个系统跑一遍</h3>
+<p class="sub">下面把前面所有章节串起来：从 <code>python -m mas --demo</code> 启动，到一个请求出结果。每一步的说明里写了它在哪一章讲过。</p>
+<div id="st17"></div>
+
+<h3 class="sec">7.3 演示模式：三个替身，其余都是真的</h3>
+<div class="scroll"><table class="cmp" style="display:table">
+<tr><th>替身</th><th>代替谁</th><th>它做什么</th></tr>
+<tr><td><code>demo_brain</code></td><td>Orchestrator 的 LLM</td><td>按关键词决定：提到研究 → researcher，提到脚本 → coder，提到文档 → writer，都没提到 → writer；一轮里的多个调用并行；收到拒绝和建议就改派；没有任务可派时调用 <code>finish</code>，把产出的文件列为交付物。是一个函数，交给 <code>MockLLM(responder=…)</code>。</td></tr>
+<tr><td><code>DemoWorker</code></td><td><code>WorkerAgent</code>（LI）</td><td>假装工作三步，写一个文件。但<b>一个 Worker 该做的事它都做</b>：拒绝自己做不了的（writer 不能运行代码，建议 coder）；做危险的事（push、删除）之前 <code>ask_human</code>；每步检查 <code>is_cancelled</code>；开始前 <code>recall</code> 过去的教训，结束时 <code>add</code> 一条经验（被人类拒绝时记下教训）。LI 写真的 Worker 时可以把它当例子。</td></tr>
+<tr><td><code>DemoSandbox</code></td><td><code>LocalSandbox</code>（LI）</td><td>只能读写文件，不能运行命令，出不了 workspace。</td></tr>
+</table></div>
+<p>真实的部分：bus、Router、状态表、看板、Agent 基类、Orchestrator、命令行、记忆。所以在演示里试到的行为（<code>/status</code>、<code>/cancel</code>、批准、记忆、并行、改派），就是真系统的行为。</p>
+<p class="mute">试试：<code>write a python script and a document</code>　→　<code>run the tests</code>（writer 拒绝，改派给 coder）　→　<code>write a script and push it</code>（要你批准）<code>/reply no</code>　→　在同一次运行里再做一次同样的事，看它记得刚才的教训。（演示每次启动都是干净的；想保留上次的记忆加 <code>--keep</code>。）</p>
+
+<h3 class="sec">7.4 步骤 7 的 2 个决定（已全部决定并落实）</h3>
+<div class="scroll"><table class="cmp" style="display:table">
+<tr><th>决定</th><th>你的选择</th><th>落实情况</th></tr>
+<tr><td>1 演示数据下次运行时</td><td><b>B 每次启动都清空</b></td><td>已改：演示每次启动先删掉 <code>&lt;data-dir&gt;/demo/</code>；想保留上次的记忆和文件加 <code>--keep</code>（取代原来的 <code>--fresh</code>）。记忆仍然在<b>同一次运行里</b>起作用（拒绝批准之后再做同样的事，会看到"remembering"）</td></tr>
+<tr><td>2 日志打到哪里</td><td><b>B 写到文件</b></td><td>已改：日志写到 <code>&lt;data-dir&gt;/mas.log</code>（INFO 及以上，内部错误有完整堆栈），不打到屏幕，聊天里只有一行 "internal error"；加 <code>-v</code> 才同时打到屏幕。日志放在 <code>demo/</code> 外面，所以清空演示数据不会删掉它；日志文件写不了时退回屏幕</td></tr>
+</table></div>
+<p class="sub">提交 <code>ff96b80</code>，238 个测试全部通过（含 Python 3.11）。下面保留了各决定当时的选项和影响，作为记录。</p>
+<div class="dec" data-id="N1">
+  <h3 class="dt">决定 1　演示的数据，下次运行时保留还是清空<span class="badge lo">一般</span><span class="badge ok2">✓ 已决定：B</span></h3>
+  <div class="why" style="margin:0 0 6px">演示把记忆、产物和 workspace 放在 <code>&lt;data-dir&gt;/demo/</code>。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="N1" value="A"><b>A. 默认保留，想清空加 <code>--fresh</code>（当前）</b><span class="rec">推荐</span><ul><li>记忆跨次运行保留，才能演示"进化"：这次拒绝批准，下次启动还记得</li><li>代价：想重新开始要记得加 <code>--fresh</code></li></ul></label>
+    <label class="opt"><input type="radio" disabled name="N1" value="B" checked><b>B. 每次启动都清空</b><ul><li>每次都是干净的</li><li>记忆演示做不了跨次的对照；要保留得加参数</li></ul></label>
+  </div>
+</div>
+
+<div class="dec" data-id="N2">
+  <h3 class="dt">决定 2　日志（警告和错误）打到哪里<span class="badge lo">界面细节</span><span class="badge ok2">✓ 已决定：B</span></h3>
+  <div class="why" style="margin:0 0 6px">现在日志只有 WARNING 以上，打到屏幕（stderr）。agent 出内部错误时，堆栈会直接出现在聊天界面里。聊天里本来就会有一行 "internal error"。</div>
+  <div class="opts">
+    <label class="opt"><input type="radio" disabled name="N2" value="A"><b>A. 打到屏幕（当前）</b><ul><li>出错时马上看得到堆栈</li><li>堆栈会把聊天界面冲乱</li></ul></label>
+    <label class="opt"><input type="radio" disabled name="N2" value="B" checked><b>B. 写到 <code>data/mas.log</code>，屏幕上不显示（<code>-v</code> 时才打到屏幕）</b><span class="rec">推荐</span><ul><li>聊天界面干净，出错时聊天里仍有一行提示，细节去日志里看</li><li>改动很小，只在入口里配置日志</li></ul></label>
+  </div>
+</div>
+
+
+
+</main>
+
+<script>
+const AG = ['human', 'coder', 'writer'];
+const CODE_B = [
+  'async def publish(self, msg):',
+  '    # 1. store in history',
+  '    self._history[msg.channel].append(msg)',
+  '    # 2. call every observer, right now',
+  '    for fn in self._observers:',
+  '        fn(msg)',
+  '    # 3. put msg into every member\'s inbox',
+  '    for member in self.members(msg.channel):',
+  '        self.subscribe(member).put_nowait(msg)',
+  '',
+  'def subscribe(self, agent_id):',
+  '    if agent_id not in self._inboxes:',
+  '        self._inboxes[agent_id] = asyncio.Queue()   # create on demand',
+  '    return self._inboxes[agent_id]',
+  '',
+  '# coder\'s own loop (agent side):',
+  'inbox = bus.subscribe("coder")',
+  'msg = await inbox.get()      # takes msg OUT of the inbox',
+];
+const CODE_A = [
+  'async def publish(self, msg):',
+  '    # 1. store in history',
+  '    self._history[msg.channel].append(msg)',
+  '    # 2. call every observer, right now',
+  '    for fn in self._observers:',
+  '        fn(msg)',
+  '    # 3. put msg into every member\'s inbox',
+  '    for member in self.members(msg.channel):',
+  '        inbox = self._inboxes.get(member)',
+  '        if inbox is None:',
+  '            continue            # no inbox yet -> message dropped',
+  '        inbox.put_nowait(msg)',
+  '',
+  'def subscribe(self, agent_id):  # the ONLY place that creates an inbox',
+  '    if agent_id not in self._inboxes:',
+  '        self._inboxes[agent_id] = asyncio.Queue()',
+  '    return self._inboxes[agent_id]',
+  '',
+  '# coder\'s own loop (agent side):',
+  'inbox = bus.subscribe("coder")',
+  'msg = await inbox.get()      # takes msg OUT of the inbox',
+];
+const FLOW = ['publish(msg)', '1 存入历史', '2 通知 observer（Router）', '3 放进 inbox', 'agent：inbox.get()'];
+
+const init = (coderInbox) => ({
+  history: [], router: '', board: '', lost: false, took: '',
+  inbox: { human: [], coder: coderInbox ? [] : null, writer: [] },
+});
+const push = (s, n) => { s.inbox[n].push({ t: 'CHAT: write a script', fresh: true }); };
+const obsBoth = s => { s.router = '是 CHAT，不是任务结果 → 自己忽略'; s.board = 'Router 转发来的：人类的话 → 记入"人类原话"'; };
+
+const SCEN = [
+  { name: '场景 1：正常流程', code: CODE_B, coder: true, steps: [
+    { ti: '开始', tx: 'group:main 里有 3 个成员：human、coder、writer，每个人都已经有自己的 inbox（一个 asyncio.Queue）。Router 已经登记成 observer，它会把每条消息再转发给所属会话的 SessionBoard。', stage: -1, line: null, f: ['inboxes'], ap: s => {} },
+    { ti: 'human 调用 publish(msg)', tx: 'msg 是一条 CHAT 消息，内容 "write a script"，频道是 group:main。下面所有动作都发生在这一次 publish 调用里面。', stage: 0, line: 0, f: [], ap: s => {} },
+    { ti: '① 存入历史', tx: 'msg 被追加到 _history["group:main"]。这只是一条记录，此时还没有通知任何人。', stage: 1, line: 2, f: ['history'], ap: s => { s.history.push('human: write a script'); } },
+    { ti: '②a observer Router', tx: 'bus 直接调用 Router 登记的函数：fn(msg)。Router 先处理自己关心的事（任务状态、等待者）：这是人类的闲聊，不是任务相关消息，所以没什么要做的。注意此时 inbox 还是空的：observer 在投递之前先执行。', stage: 2, line: 5, f: ['obs0'], ap: s => { s.router = '是 CHAT，不是任务结果 → 自己忽略'; } },
+    { ti: '②b Router 转发给 SessionBoard', tx: 'Router 接着把这条消息交给"这条消息所属会话"的 SessionBoard（Router 拥有每个会话的看板），看板把人类说的话记下来。从这一刻起，任何 agent 读看板都能看到这句话。', stage: 2, line: 5, f: ['obs1'], ap: s => { s.board = 'Router 转发来的：人类的话 → 记入"人类原话"'; } },
+    { ti: '③a 投递给 human', tx: '遍历 group:main 的成员。第一个是 human：subscribe("human") 返回它的 inbox，put_nowait(msg) 把消息放进去。', stage: 3, line: 8, f: ['inbox:human'], ap: s => push(s, 'human') },
+    { ti: '③b 投递给 coder', tx: '对 coder 做同样的事。', stage: 3, line: 8, f: ['inbox:coder'], ap: s => push(s, 'coder') },
+    { ti: '③c 投递给 writer', tx: '最后是 writer。publish() 到此结束。投递只是"放进 inbox"，很轻量，到现在还没有任何 agent 真正开始处理。', stage: 3, line: 8, f: ['inbox:writer'], ap: s => push(s, 'writer') },
+    { ti: 'agent 这一侧：inbox.get()', tx: '稍后，coder 自己的循环调用 inbox.get()。get() 会把消息从 inbox 里取走并交给 coder，所以 inbox 又变空了，但 coder 手里已经拿着这条消息（绿字）。coder 要不要处理它，由 Agent.should_handle 决定，bus 不管。', stage: 4, line: 17, f: ['inbox:coder'], ap: s => { s.inbox.coder.shift(); s.took = 'CHAT: write a script'; } },
+  ]},
+  { name: '场景 2：消息丢失（有 bug 的写法）', code: CODE_A, coder: false, steps: [
+    { ti: '开始', tx: 'coder 是 group:main 的成员，但还没有调用 subscribe()，所以 _inboxes 里没有 coder 的条目。在这个版本里，inbox 只会在 subscribe() 里创建。', stage: -1, line: null, f: ['inbox:coder'], ap: s => {} },
+    { ti: 'human 调用 publish(msg)', tx: '和上一个场景是同一条消息。', stage: 0, line: 0, f: [], ap: s => {} },
+    { ti: '① 存入历史', tx: '消息记入 _history。即使之后投递失败，历史里也一直保留着这条消息。', stage: 1, line: 2, f: ['history'], ap: s => { s.history.push('human: write a script'); } },
+    { ti: '② observer', tx: 'Router 被 bus 调用，并把消息转给 SessionBoard，两者都作出反应（和场景 1 一样）。', stage: 2, line: 5, f: ['obs0', 'obs1'], ap: s => obsBoth(s) },
+    { ti: '③a 投递给 human', tx: 'human 有 inbox，put_nowait 成功。', stage: 3, line: 11, f: ['inbox:human'], ap: s => push(s, 'human') },
+    { ti: '③b 投递给 coder  ✗', tx: '_inboxes.get("coder") 得到 None，代码执行 continue，直接跳过 coder。这条消息就这样被丢掉了。', stage: 3, line: 10, bad: true, f: ['inbox:coder'], ap: s => { s.lost = true; } },
+    { ti: '③c 投递给 writer', tx: 'writer 有 inbox，投递成功。publish() 结束。', stage: 3, line: 11, f: ['inbox:writer'], ap: s => push(s, 'writer') },
+    { ti: 'coder 启动：subscribe("coder")', tx: '现在 coder 才调用 subscribe()，它创建了一个全新的、空的 inbox。', stage: 4, line: 15, f: ['inbox:coder'], ap: s => { s.inbox.coder = []; } },
+    { ti: 'coder：inbox.get()', tx: '什么都没有。coder 永远看不到这个请求，会一直等下去。（消息还在 _history 里，但 coder 不会去读历史。）', stage: 4, line: 20, f: ['inbox:coder'], ap: s => {} },
+  ]},
+  { name: '场景 3：修复，投递时创建 inbox', code: CODE_B, coder: false, steps: [
+    { ti: '开始', tx: '同样的情况：coder 还没有调用 subscribe()。但现在 publish() 取 inbox 也是通过 subscribe()，而 subscribe() 发现没有就会当场创建一个。', stage: -1, line: null, f: ['inbox:coder'], ap: s => {} },
+    { ti: 'human 调用 publish(msg)', tx: '同一条消息。', stage: 0, line: 0, f: [], ap: s => {} },
+    { ti: '① 存入历史', tx: '记入历史。', stage: 1, line: 2, f: ['history'], ap: s => { s.history.push('human: write a script'); } },
+    { ti: '② observer', tx: 'Router 被调用并转发给 SessionBoard，两者都作出反应。', stage: 2, line: 5, f: ['obs0', 'obs1'], ap: s => obsBoth(s) },
+    { ti: '③a 投递给 human', tx: 'human 有 inbox，放进去。', stage: 3, line: 8, f: ['inbox:human'], ap: s => push(s, 'human') },
+    { ti: '③b 投递给 coder  ✓', tx: 'publish() 调用 self.subscribe("coder")。第 11 行发现 "coder" 不在 _inboxes 里，第 12 行当场创建一个 inbox，然后 put_nowait 把消息放进去。', stage: 3, line: 12, f: ['inbox:coder'], ap: s => { s.inbox.coder = []; push(s, 'coder'); } },
+    { ti: '③c 投递给 writer', tx: 'writer 照常收到。', stage: 3, line: 8, f: ['inbox:writer'], ap: s => push(s, 'writer') },
+    { ti: 'coder 启动：subscribe("coder")', tx: 'coder 调用 subscribe()。"coder" 已经在 _inboxes 里了，所以直接返回那个现成的 inbox，里面已经有这条消息。', stage: 4, line: 16, f: ['inbox:coder'], ap: s => {} },
+    { ti: 'coder：inbox.get()', tx: 'get() 把消息从 inbox 里取出来，所以 inbox 又变空了，但 coder 已经拿到了消息（绿字）。不管谁先启动，都不会丢消息。', stage: 4, line: 17, f: ['inbox:coder'], ap: s => { s.inbox.coder.shift(); s.took = 'CHAT: write a script'; } },
+  ]},
+];
+
+let sc = 0, idx = 0, states = [], timer = null;
+const $ = id => document.getElementById(id);
+const clone = o => JSON.parse(JSON.stringify(o));
+
+function build() {
+  const S = SCEN[sc];
+  states = [clone(init(S.coder))];
+  S.steps.forEach(st => { const s = clone(states[states.length - 1]); s.history = s.history.slice(); Object.values(s.inbox).forEach(q => q && q.forEach(e => e.fresh = false)); st.ap(s); states.push(s); });
+  idx = 0; draw();
+}
+
+function draw() {
+  const S = SCEN[sc], st = S.steps[idx], s = states[idx + 1];
+  $('tabs').innerHTML = SCEN.map((x, i) => `<button class="tab ${i === sc ? 'on' : ''}" data-i="${i}">${x.name}</button>`).join('');
+  $('flow').innerHTML = FLOW.map((x, i) => `<span class="st ${st.stage + 1 === i ? 'on' : ''}">${x}</span>`).join('<span class="ar">→</span>');
+  $('code').innerHTML = S.code.map((l, i) => `<div class="ln ${i === st.line ? 'on' : ''} ${st.bad && i === st.line ? 'bad' : ''}">${l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/(#.*)$/, '<span class="cm">$1</span>') || ' '}</div>`).join('');
+  const hl = k => st.f.includes(k) ? 'hl' : '';
+  const env = e => `<span class="env ${e.fresh ? 'new' : ''}">${e.t}</span>`;
+  $('stage').innerHTML = `<div class="bus"><div class="t mono">InMemoryBus</div>
+    <div class="slot"><span class="st2">_members["group:main"] = [human, coder, writer]</span></div>
+    <div class="slot ${hl('history')}"><span class="st2">_history["group:main"]</span><br>${s.history.length ? s.history.map(h => `<span class="env">${h}</span>`).join('') : '<span class="none">(empty)</span>'}</div>
+    <div class="slot"><span class="st2">_observers（只有 Router 一个，它再转发给看板）</span>
+      <div class="row ${hl('obs0')}"><span class="nm">Router</span><span>${s.router || '<span class="none">（还没被调用）</span>'}</span></div>
+      <div class="row ${hl('obs1')}"><span class="nm">↳ SessionBoard</span><span>${s.board || '<span class="none">（还没被调用）</span>'}</span></div></div>
+    <div class="slot ${hl('inboxes')}"><span class="st2">_inboxes</span>
+      ${AG.map(n => `<div class="row ${hl('inbox:' + n)}"><span class="nm">${n}</span>${s.inbox[n] === null ? '<span class="none">还没有 inbox</span>' : (s.inbox[n].length ? s.inbox[n].map(env).join('') : '<span class="none">(empty)</span>')}${n === 'coder' && s.took ? '<span class="took">✓ coder 已把它取出：' + s.took + '</span>' : ''}${n === 'coder' && s.lost ? '<span class="lostmark">✗ 消息丢失</span>' : ''}</div>`).join('')}
+    </div></div>`;
+  $('ti').textContent = st.ti; $('tx').textContent = st.tx;
+  $('prog').textContent = `Step ${idx + 1} / ${S.steps.length}`;
+  $('prev').disabled = idx === 0; $('next').disabled = idx === S.steps.length - 1;
+}
+
+const go = d => { const n = idx + d; if (n >= 0 && n < SCEN[sc].steps.length) { idx = n; draw(); } else stop(); };
+const stop = () => { clearInterval(timer); timer = null; $('auto').textContent = 'Auto play (3s / step)'; };
+$('next').onclick = () => { stop(); go(1); };
+$('prev').onclick = () => { stop(); go(-1); };
+$('restart').onclick = () => { stop(); idx = 0; draw(); };
+$('auto').onclick = () => { if (timer) return stop(); $('auto').textContent = 'Pause'; timer = setInterval(() => go(1), 3000); };
+$('tabs').onclick = e => { const i = e.target.dataset.i; if (i === undefined) return; stop(); sc = +i; build(); };
+build();
+</script>
+
+<script>
+const CODE_N = [
+  'def on_message(self, msg):          # forwarded by the Router',
+  '    if msg is a human CHAT:',
+  '        root = self._current_root()',
+  '        if root:',
+  '            root.human_messages.append(text)',
+  '        # no root yet: do nothing',
+  '    elif msg is TASK_ASSIGN:',
+  '        if root_id unknown:',
+  '            self.roots[root_id] = RootRecord(human_messages=[])',
+  '',
+  'def start_root(self, root_id, text): # called by Orchestrator',
+  '    self.roots[root_id] = RootRecord(human_messages=[text])',
+];
+const CODE_P = [
+  'def on_message(self, msg):          # forwarded by the Router',
+  '    if msg is a human CHAT:',
+  '        root = self._current_root()',
+  '        if root and not root.finished:',
+  '            root.human_messages.append(text)   # interjection',
+  '        else:',
+  '            self._pending_human.append(text)   # no root yet: park it',
+  '    elif msg is TASK_ASSIGN:',
+  '        self._ensure_root(task.root_id)',
+  '',
+  'def start_root(self, root_id, text): # called by Orchestrator',
+  '    if text in self._pending_human:',
+  '        self._pending_human.remove(text)       # claim it',
+  '    self.roots[root_id] = RootRecord(human_messages=[text])',
+  '',
+  'def _ensure_root(self, root_id):    # a root nobody start_root-ed',
+  '    if root_id not in self.roots:',
+  '        text = self._pending_human.pop()       # adopt the parked text',
+  '        self.roots[root_id] = RootRecord(human_messages=[text])',
+];
+const FLOW2 = ['human 发消息', 'Router 转发：board.on_message', 'Orchestrator / Router 行动', 'board.start_root / _ensure_root'];
+const init2 = () => ({ pending: [], roots: [], bad: false });
+const SC2 = [
+  { name: '场景 1：没有 buffer（看为什么需要它）', code: CODE_N, steps: [
+    { ti: '开始', tx: '看板是空的，也没有 buffer。人类要直接私聊 coder，所以 Orchestrator 不参与，start_root 永远不会被调用。', stage: -1, line: null, ap: s => {} },
+    { ti: 'human 私聊 coder："fix the bug"', tx: 'bus 发布这条消息，第一站是 observer 列表（里面只有 Router），Router 会把消息转发给所属会话的看板。', stage: 0, line: null, ap: s => {} },
+    { ti: 'Router 转发：board.on_message', tx: '此时还没有 root，第 5 行写的是"什么都不做"，这句话就被丢掉了。', stage: 1, line: 5, ap: s => {} },
+    { ti: 'Router 登记任务，发出 TASK_ASSIGN（root 是 R7）', tx: 'Router 为 coder 开了一个任务，归在新的 root R7 下，并发布 TASK_ASSIGN。', stage: 2, line: null, ap: s => {} },
+    { ti: 'Router 转发：board.on_message 看到 TASK_ASSIGN', tx: 'R7 是看板不认识的 root，于是建一个。但它手里没有文字可放，因为那句话两步之前已经被丢了。', stage: 3, line: 8, ap: s => { s.roots.push({ id: 'R7', msgs: [] }); } },
+    { ti: '结果 ✗', tx: 'R7 里没有人类的话。coder 读看板时不知道人类要它做什么。这就是 buffer 要解决的问题：在 root 出现之前，先把文字存在某个地方。', stage: 3, line: 8, bad: true, ap: s => { s.bad = true; } },
+  ]},
+  { name: '场景 2：有 buffer，经过 Orchestrator', code: CODE_P, steps: [
+    { ti: '开始', tx: '看板是空的。_pending_human 是一个"临时停车场"，专门存放还没有 root 可归属的人类文字。', stage: -1, line: null, ap: s => {} },
+    { ti: 'human 在群里说 "write a script"', tx: 'bus 发布这条消息，先交给 observer（Router），Router 再转发给看板。', stage: 0, line: null, ap: s => {} },
+    { ti: 'Router 转发：board.on_message', tx: '此时没有 root（或者上一个 root 已经结束），所以第 6 行把文字存进 _pending_human，而不是丢掉。', stage: 1, line: 6, ap: s => { s.pending.push('write a script'); } },
+    { ti: 'Orchestrator 决定开一个新 root：R1', tx: 'Orchestrator 从自己的 inbox 收到这条消息，决定开始处理一个新请求。看板上暂时没有变化。', stage: 2, line: null, ap: s => {} },
+    { ti: 'start_root：认领停车场里的文字', tx: 'Orchestrator 调用 start_root("R1", "write a script")。第 11 行发现同一句话在 _pending_human 里，第 12 行把它删掉。如果不删，这句话会被记两次。', stage: 3, line: 12, ap: s => { s.pending = []; } },
+    { ti: 'start_root：创建 R1', tx: 'R1 创建完成，里面只有一份这句话。结果：只记录了一次。', stage: 3, line: 13, ap: s => { s.roots.push({ id: 'R1', msgs: ['write a script'] }); } },
+  ]},
+  { name: '场景 3：有 buffer，直接私聊', code: CODE_P, steps: [
+    { ti: '开始', tx: '看板是空的。这次人类直接私聊 coder，所以 Orchestrator 不会调用 start_root。', stage: -1, line: null, ap: s => {} },
+    { ti: 'human 私聊 coder："fix the bug"', tx: 'bus 在这个私聊频道发布消息。observer 能看到所有频道，包括这个私聊。', stage: 0, line: null, ap: s => {} },
+    { ti: 'Router 转发：board.on_message', tx: '还没有 root，所以文字被存进 _pending_human（和场景 2 一样）。', stage: 1, line: 6, ap: s => { s.pending.push('fix the bug'); } },
+    { ti: 'Router：open_direct_task，发出 TASK_ASSIGN（root 是 R7）', tx: 'Router 为 coder 登记一个任务，归在新的 root id R7 下，并发布 TASK_ASSIGN。observer 也会看到这条消息。', stage: 2, line: 7, ap: s => {} },
+    { ti: 'on_message → _ensure_root("R7")', tx: 'R7 是没有人调用过 start_root 的 root。第 17 行把停车场里的文字取出来，认领为自己的。', stage: 3, line: 17, ap: s => { s.pending = []; } },
+    { ti: 'R7 创建完成，带着这句话', tx: 'R7 里有 "fix the bug"。coder 读看板时就能看到人类要它做什么。', stage: 3, line: 18, ap: s => { s.roots.push({ id: 'R7', msgs: ['fix the bug'] }); } },
+  ]},
+];
+let sc2 = 0, i2 = 0, st2 = [];
+function build2() { st2 = [clone(init2())]; SC2[sc2].steps.forEach(st => { const s = clone(st2[st2.length - 1]); st.ap(s); st2.push(s); }); i2 = 0; draw2(); }
+function draw2() {
+  const S = SC2[sc2], st = S.steps[i2], s = st2[i2 + 1];
+  $('tabs2').innerHTML = SC2.map((x, i) => `<button class="tab ${i === sc2 ? 'on' : ''}" data-i="${i}">${x.name}</button>`).join('');
+  $('flow2').innerHTML = FLOW2.map((x, i) => `<span class="st ${st.stage === i ? 'on' : ''}">${x}</span>`).join('<span class="ar">→</span>');
+  $('code2').innerHTML = S.code.map((l, i) => `<div class="ln ${i === st.line ? 'on' : ''} ${st.bad && i === st.line ? 'bad' : ''}">${l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/(#.*)$/, '<span class="cm">$1</span>') || ' '}</div>`).join('');
+  const usesPending = S.code === CODE_P;
+  $('stage2').innerHTML = `<div class="bus"><div class="t mono">SessionBoard</div>
+    ${usesPending ? `<div class="slot ${st.line === 6 || st.line === 12 || st.line === 17 ? 'hl' : ''}"><span class="st2">_pending_human (parking lot)</span><br>${s.pending.length ? s.pending.map(t => `<span class="env">"${t}"</span>`).join('') : '<span class="none">(empty)</span>'}</div>` : ''}
+    <div class="slot"><span class="st2">roots</span>
+      ${s.roots.length ? s.roots.map(r => `<div class="row"><span class="nm">${r.id}</span><span class="st2">human_messages =</span> ${r.msgs.length ? r.msgs.map(t => `<span class="env new">"${t}"</span>`).join('') : '<span class="lostmark">[ ] empty ✗</span>'}</div>`).join('') : '<div class="none">(no roots)</div>'}
+    </div></div>`;
+  $('ti2').textContent = st.ti; $('tx2').textContent = st.tx;
+  $('prog2').textContent = `Step ${i2 + 1} / ${S.steps.length}`;
+  $('prev2').disabled = i2 === 0; $('next2').disabled = i2 === S.steps.length - 1;
+}
+$('next2').onclick = () => { if (i2 < SC2[sc2].steps.length - 1) { i2++; draw2(); } };
+$('prev2').onclick = () => { if (i2 > 0) { i2--; draw2(); } };
+$('restart2').onclick = () => { i2 = 0; draw2(); };
+$('tabs2').onclick = e => { const i = e.target.dataset.i; if (i === undefined) return; sc2 = +i; build2(); };
+build2();
+</script>
+
+<script>
+const CODE_S = [
+  'def register(self, task):',
+  '    self._tasks[task.id] = task          # one row per task',
+  '',
+  'def update(self, task_id, status, note=""):',
+  '    self.get(task_id).status = status',
+  '',
+  'def finish(self, result):',
+  '    task = self.get(result.task_id)',
+  '    self._results[task.id] = result',
+  '    if task.status == CANCELLED: return  # keep CANCELLED',
+  '    task.status = DECLINED if result.declined else DONE if result.success else FAILED',
+  '',
+  'def status_text(self, session_id):       # /status, no LLM',
+  '    return one line per task of the session',
+];
+const FLOW3 = ['Router 派任务', 'Agent 执行', 'Router 更新状态', '有人读表 /status'];
+const row = (id, who, goal, status, note = '', res = false) => ({ id, who, goal, status, note, res });
+const SC3 = [
+  { name: '场景 1：一个任务的一生', init: { rows: [], out: '' }, steps: [
+    { ti: '开始', tx: '表是空的。写表的只有 Router（通过 register / update / finish），其他组件只读。', stage: -1, line: null, f: '', ap: s => {} },
+    { ti: 'Router 派出任务 → register', tx: 'Orchestrator 调用 call_coder，Router 创建任务 t1 并登记。刚登记时状态是 assigned（已分配，还没开始做）。', stage: 0, line: 1, f: 't1', ap: s => { s.rows.push(row('t1', 'coder', '写示例脚本并推送', 'assigned')); } },
+    { ti: 'coder 开始执行 → update running', tx: 'coder 收到任务后，Agent 基类上报状态，Router 把 t1 更新为 running。', stage: 2, line: 4, f: 't1', ap: s => { s.rows[0].status = 'running'; } },
+    { ti: '需要人类批准 → update waiting_human', tx: 'coder 要执行 git push，属于需要批准的操作。任务进入 waiting_human，note 里写明在等什么。', stage: 2, line: 4, f: 't1', ap: s => { s.rows[0].status = 'waiting_human'; s.rows[0].note = '等待确认 git push'; } },
+    { ti: '人类回答 yes → update running', tx: '人类批准后，任务回到 running，coder 继续执行。', stage: 2, line: 4, f: 't1', ap: s => { s.rows[0].status = 'running'; s.rows[0].note = ''; } },
+    { ti: '人类在群里发 /status', tx: 'Orchestrator 调用 status_text，直接读这张表，拼成一行行文字回答。整个过程不调用 LLM，所以又快又准。', stage: 3, line: 13, f: 't1', ap: s => { s.out = '任务 1 个，进行中 1 个：\nt1 coder [running]「写示例脚本并推送」'; } },
+    { ti: 'coder 完成 → finish(result)', tx: 'coder 返回 TaskResult(success=True)，Router 调用 finish：结果存起来，状态变成 done。', stage: 2, line: 10, f: 't1', ap: s => { s.rows[0].status = 'done'; s.rows[0].res = true; s.out = ''; } },
+  ]},
+  { name: '场景 2：/cancel 和迟到的结果', init: { rows: [row('t1', 'coder', '写示例脚本', 'running'), row('t2', 'researcher', '调研 X', 'running')], out: '' }, steps: [
+    { ti: '开始', tx: 'root R1 下有两个任务都在 running。人类马上要取消这个请求。', stage: -1, line: null, f: '', ap: s => {} },
+    { ti: '人类发 /cancel → cancel_root', tx: 'Router 找出 R1 下所有没结束的任务（这正是表按 root 查询的用处），逐个 update 为 cancelled。', stage: 2, line: 4, f: 't1,t2', ap: s => { s.rows.forEach(r => r.status = 'cancelled'); } },
+    { ti: 't1 的结果迟到了', tx: 'coder 当时正在等 LLM 返回，没法立刻中断。过一会儿它交出了成功的结果。Router 调用 finish(result)。', stage: 1, line: 8, f: 't1', ap: s => { s.rows[0].res = true; } },
+    { ti: 'finish 保持 cancelled', tx: '第 9 行发现状态已经是 cancelled，直接返回，不再改成 done。结果仍然保存了（评测要用），但状态不变。否则 /status 会显示"一个被取消的任务完成了"，让人困惑。', stage: 2, line: 9, f: 't1', ap: s => {} },
+  ]},
+];
+let sc3 = 0, i3 = 0, st3 = [];
+function build3() { st3 = [clone(SC3[sc3].init)]; SC3[sc3].steps.forEach(st => { const s = clone(st3[st3.length - 1]); st.ap(s); st3.push(s); }); i3 = 0; draw3(); }
+function draw3() {
+  const S = SC3[sc3], st = S.steps[i3], s = st3[i3 + 1];
+  $('tabs3').innerHTML = SC3.map((x, i) => `<button class="tab ${i === sc3 ? 'on' : ''}" data-i="${i}">${x.name}</button>`).join('');
+  $('flow3').innerHTML = FLOW3.map((x, i) => `<span class="st ${st.stage === i ? 'on' : ''}">${x}</span>`).join('<span class="ar">→</span>');
+  $('code3').innerHTML = CODE_S.map((l, i) => `<div class="ln ${i === st.line ? 'on' : ''}">${l.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/(#.*)$/, '<span class="cm">$1</span>') || ' '}</div>`).join('');
+  const hi = st.f.split(',');
+  $('stage3').innerHTML = `<div class="bus"><div class="t mono">StateTable</div>
+    <div class="slot"><span class="st2">_tasks / _results</span>
+      ${s.rows.length ? s.rows.map(r => `<div class="row ${hi.includes(r.id) ? 'hl' : ''}"><span class="nm">${r.id}</span><span>${r.who}</span><span class="env">${r.status}</span><span class="mute">${r.goal}${r.note ? '：' + r.note : ''}</span>${r.res ? '<span class="took">result 已保存</span>' : ''}</div>`).join('') : '<div class="none">(no tasks)</div>'}
+    </div>
+    ${s.out ? `<div class="slot hl"><span class="st2">/status 的回答（读表得到，不调 LLM）</span><div style="white-space:pre-wrap">${s.out}</div></div>` : ''}</div>`;
+  $('ti3').textContent = st.ti; $('tx3').textContent = st.tx;
+  $('prog3').textContent = `Step ${i3 + 1} / ${S.steps.length}`;
+  $('prev3').disabled = i3 === 0; $('next3').disabled = i3 === S.steps.length - 1;
+}
+$('next3').onclick = () => { if (i3 < SC3[sc3].steps.length - 1) { i3++; draw3(); } };
+$('prev3').onclick = () => { if (i3 > 0) { i3--; draw3(); } };
+$('restart3').onclick = () => { i3 = 0; draw3(); };
+$('tabs3').onclick = e => { const i = e.target.dataset.i; if (i === undefined) return; sc3 = +i; build3(); };
+build3();
+</script>
+<script>
+/* ---------- generic stepper for the Router sections ---------- */
+const E0 = () => ({ rows: [], waiters: [], msgs: [], caller: '（空闲）', agent: '（空闲）', cancelled: null });
+const addRow = (s, id, who, goal, status) => s.rows.push({ id, who, goal, status });
+const setSt = (s, id, status) => { s.rows.find(r => r.id === id).status = status; };
+const STC = { done: 'ok', failed: 'bad', cancelled: 'bad', declined: 'bad', waiting_human: 'warn' };
+const esc = t => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+function mkStepper(id, flow, SCS) {
+  const root = document.getElementById(id);
+  root.innerHTML = `<div class="tabs" data-r="tabs"></div><div class="flow" data-r="flow"></div>
+    <div class="panel"><div><div class="codebox mono" data-r="code"></div></div><div data-r="stage"></div></div>
+    <div class="say"><div class="ti" data-r="ti"></div><div data-r="tx"></div></div>
+    <div class="ctl"><button data-r="prev">← Prev</button><button class="p" data-r="next">Next →</button><button data-r="restart">Restart</button><span class="prog" data-r="prog"></span></div>`;
+  const $r = k => root.querySelector(`[data-r=${k}]`);
+  let sc = 0, i = 0, states = [];
+  const build = () => {
+    states = [clone(SCS[sc].init)];
+    SCS[sc].steps.forEach(st => { const s = clone(states[states.length - 1]); st.ap(s); states.push(s); });
+    i = 0; draw();
+  };
+  const draw = () => {
+    const S = SCS[sc], st = S.steps[i], s = states[i + 1], hi = st.f || [], T = S.titles || {};
+    $r('tabs').innerHTML = SCS.map((x, k) => `<button class="tab ${k === sc ? 'on' : ''}" data-i="${k}">${x.name}</button>`).join('');
+    $r('flow').innerHTML = flow.map((x, k) => `<span class="st ${st.stage === k ? 'on' : ''}">${x}</span>`).join('<span class="ar">→</span>');
+    $r('code').innerHTML = S.code.map((l, k) => `<div class="ln ${k === st.line ? 'on' : ''} ${st.bad && k === st.line ? 'bad' : ''}">${esc(l).replace(/(#.*)$/, '<span class="cm">$1</span>') || ' '}</div>`).join('');
+    const h = k => hi.includes(k) ? 'hl' : '';
+    $r('stage').innerHTML = `
+      <div class="who"><span class="nm">${S.callerName || 'Orchestrator'}</span><span class="tx ${h('caller')} ${st.badWho === 'caller' ? 'bad' : ''}">${s.caller}</span>
+        <span class="nm">${S.agentName || 'coder'}</span><span class="tx ${h('agent')} ${st.badWho === 'agent' ? 'bad' : ''}">${s.agent}</span></div>
+      <div class="bus"><div class="t mono">${T.box || 'Router 和它周围的数据'}</div>
+        ${T.rows === false ? '' : `<div class="slot ${h('rows')}"><span class="st2">${T.rows || 'StateTable（Router 写，别人读）'}</span>
+          ${s.rows.length ? s.rows.map(r => `<div class="row"><span class="nm">${r.id}</span><span>${r.who}</span><span class="env ${STC[r.status] || ''}">${r.status}</span><span class="mute">${r.goal || ''}</span></div>`).join('') : `<div class="none">${T.rowsEmpty || '(no tasks)'}</div>`}</div>`}
+        ${T.waiters === false ? '' : `<div class="slot ${h('waiters')}"><span class="st2">${T.waiters || 'Router 里的等待者（future，"回执条"）'}</span><br>
+          ${s.waiters.length ? s.waiters.map(w => `<span class="env warn">${w}</span>`).join('') : '<span class="none">(empty)</span>'}</div>`}
+        ${s.screen ? `<div class="slot ${h('screen')}"><span class="st2">${T.screen || '屏幕上显示'}</span>${s.screen.length ? s.screen.slice(-7).map(m => `<div class="msgline">${esc(m)}</div>`).join('') : '<div class="none">(空)</div>'}</div>` : ''}
+        ${s.cancelled ? `<div class="slot ${h('cancelled')}"><span class="st2">_cancelled_roots</span><br>${s.cancelled.length ? s.cancelled.map(w => `<span class="env bad">${w}</span>`).join('') : '<span class="none">(empty)</span>'}</div>` : ''}
+        ${T.msgs === false ? '' : `<div class="slot ${h('msgs')}"><span class="st2">${T.msgs || 'bus 上的消息（最近几条）'}</span>
+          ${s.msgs.length ? s.msgs.slice(-6).map(m => `<div class="msgline">${esc(m)}</div>`).join('') : '<div class="none">(none)</div>'}</div>`}
+      </div>`;
+    $r('ti').textContent = st.ti; $r('tx').textContent = st.tx;
+    $r('prog').textContent = `Step ${i + 1} / ${S.steps.length}`;
+    $r('prev').disabled = i === 0; $r('next').disabled = i === S.steps.length - 1;
+  };
+  $r('next').onclick = () => { if (i < SCS[sc].steps.length - 1) { i++; draw(); } };
+  $r('prev').onclick = () => { if (i > 0) { i--; draw(); } };
+  $r('restart').onclick = () => { i = 0; draw(); };
+  $r('tabs').onclick = e => { const k = e.target.dataset.i; if (k === undefined) return; sc = +k; build(); };
+  build();
+}
+
+/* ---------- 6. dispatch ---------- */
+const CODE_D = [
+  'async def dispatch(self, *, requester, target, goal, ...):',
+  '    denied = self._check_limits(...)      # depth, cycle, retries ...',
+  '    if denied: return self._refuse(task, denied)  # record as FAILED; target never contacted',
+  '    task = Task(goal=goal, assignee=target, ...)',
+  '    self.state.register(task)             # StateTable: assigned',
+  '    fut = loop.create_future()            # an empty "receipt slip"',
+  '    self._task_waiters[task.id] = fut',
+  '    await self.bus.publish(TASK_ASSIGN)   # tell the target',
+  '    return await wait_with_timeout(fut)   # sleep until filled; clock pauses while WAITING_HUMAN',
+  '',
+  'def _on_message(self, msg):              # bus observer: sees every message',
+  '    if msg is STATUS: self._set_state(task_id, status)',
+  '    elif msg is TASK_RESULT:',
+  '        if task already finished: return     # late result: ignore',
+  '        self.state.finish(result)',
+  '        self._task_waiters[task_id].set_result(result)   # wake dispatch up',
+];
+const RETRY_ROWS = s => { ['t1', 't2', 't3'].forEach(id => addRow(s, id, 'coder', '写脚本', 'failed')); };
+mkStepper('st6', ['调用 dispatch', '① 检查限制', '② 登记 + 发任务', '③ 等待', '④ observer 收到结果'], [
+  { name: '场景 1：正常，派给 coder 并拿到结果', code: CODE_D, init: E0(), steps: [
+    { ti: '开始', tx: 'Orchestrator 想把"写脚本"交给 coder。目前状态表是空的，没有人在等任何东西。', stage: -1, line: null, f: [], ap: s => {} },
+    { ti: 'Orchestrator 调用 router.dispatch(target="coder", goal="写脚本")', tx: '从这一刻起，Orchestrator 的这个调用要一直等到有结果为止。', stage: 0, line: 0, f: ['caller'], ap: s => { s.caller = '调用 dispatch，等待结果…'; } },
+    { ti: '① 检查限制', tx: '深度 0、链上没有 coder、同一目标第 1 次尝试，全部通过。（这些规则在下一场景里会被触发。）', stage: 1, line: 1, f: [], ap: s => {} },
+    { ti: '② 登记任务', tx: 'Router 创建 Task t1，写进 StateTable，状态是 assigned（已分配，还没开始）。', stage: 2, line: 4, f: ['rows'], ap: s => { addRow(s, 't1', 'coder', '写脚本', 'assigned'); } },
+    { ti: '创建 future，放进 _task_waiters', tx: 'future 就是一张"空回执条"：现在是空的，等 t1 的结果到了才会被填上。Router 把它登记成"我在等 t1"。', stage: 2, line: 6, f: ['waiters'], ap: s => { s.waiters.push('t1 ← dispatch 在等结果'); } },
+    { ti: '发布 TASK_ASSIGN', tx: '通过 bus 把任务发给 coder（群聊任务发在 group:main，receiver = coder）。', stage: 2, line: 7, f: ['msgs'], ap: s => { s.msgs.push('TASK_ASSIGN  orchestrator → coder  "写脚本"'); } },
+    { ti: 'dispatch 开始等待', tx: '这一行 await 让 dispatch 睡着。Orchestrator 的这次调用会一直停在这里，但整个系统并没有卡住，别的 agent 照常运行。', stage: 3, line: 8, f: ['caller'], ap: s => { s.caller = '睡着了：await 回执条（最长 180 秒）'; } },
+    { ti: 'coder 开始执行，发 STATUS', tx: 'coder 收到任务，上报状态。Router 作为 observer 看到这条消息，把 StateTable 里 t1 改成 running。', stage: 4, line: 11, f: ['agent', 'msgs', 'rows'], ap: s => { s.agent = '执行中…'; s.msgs.push('STATUS  coder: t1 running'); setSt(s, 't1', 'running'); } },
+    { ti: 'coder 做完，发 TASK_RESULT', tx: 'Router 的 observer 又看到这条消息，StateTable 把 t1 结束成 done（结果也一并存起来）。', stage: 4, line: 14, f: ['agent', 'msgs', 'rows'], ap: s => { s.agent = '完成，已交结果'; s.msgs.push('TASK_RESULT  coder → orchestrator  成功'); setSt(s, 't1', 'done'); } },
+    { ti: '把结果填进回执条', tx: 'observer 调用 set_result(result)：回执条被填上了，睡着的 dispatch 因此被唤醒。', stage: 4, line: 15, f: ['waiters'], ap: s => { s.waiters[0] = 't1 ✓ 已填上结果'; } },
+    { ti: 'dispatch 返回结果', tx: 'dispatch 醒来，把 TaskResult 返回给 Orchestrator，回执条也被清掉。整个过程中 Orchestrator 不需要知道 bus 和 observer 的存在。', stage: 4, line: 8, f: ['caller', 'waiters'], ap: s => { s.waiters = []; s.caller = '拿到 TaskResult：成功'; } },
+  ]},
+  { name: '场景 2：被限制拒绝（同一目标试了 3 次）', code: CODE_D, init: (() => { const s = E0(); RETRY_ROWS(s); s.msgs = ['（前三次的消息略）']; return s; })(), steps: [
+    { ti: '开始', tx: 'Orchestrator 已经让 coder 做过 3 次"写脚本"，3 次都失败了。状态表里有 t1、t2、t3 三行 failed。', stage: -1, line: null, f: ['rows'], ap: s => {} },
+    { ti: 'Orchestrator 第 4 次调用 dispatch，目标相同', tx: '它的 LLM 又想重试一遍同一个目标。', stage: 0, line: 0, f: ['caller'], ap: s => { s.caller = '调用 dispatch，等待结果…'; } },
+    { ti: '① 检查限制：不通过 ✗', tx: '同一 root、同一 agent、同一目标已经试了 3 次，超过"首次 + 2 次重试"。_check_limits 返回一条拒绝原因。', stage: 1, line: 1, bad: true, f: [], ap: s => {} },
+    { ti: '登记成一个 failed 任务，然后返回', tx: '第 2 行把这次调用登记到状态表，状态直接是 failed（方便 /status 和调试时看到"撞了几次限制"），并返回失败结果 "refused: same goal already tried 3 times"。但是没有创建回执条、没有发 TASK_ASSIGN，coder 完全不知道这次调用；这条记录也不会占用重试次数和委派次数。Orchestrator 的 LLM 看到错误，自己决定换目标或放弃。', stage: 1, line: 2, f: ['caller', 'rows', 'waiters', 'msgs'], ap: s => { addRow(s, 't4', 'coder', '写脚本（被拒绝）', 'failed'); s.caller = '拿到 refused: same goal already tried 3 times'; s.agent = '（从未被联系）'; } },
+    { ti: '其他会被同样拒绝的情况', tx: '同一个出口（第 2 行）还处理：这个 root 已被 /cancel、目标 agent 不存在、委派形成循环（coder 又委派给 coder）、委派深度超过上限、一个任务委派次数超过 2 次、要交接的文件找不到。它们都会登记成 failed 任务。', stage: 1, line: 2, f: [], ap: s => {} },
+  ]},
+]);
+
+/* ---------- 7. request_human ---------- */
+const CODE_H = [
+  'async def request_human(self, *, session_id, root_id, origin_channel, requester, kind, question, task_id=None):',
+  '    request_id = f"h{n}"                  # n counts per session',
+  '    fut = loop.create_future()',
+  '    self._hitl_waiters[(session_id, request_id)] = fut',
+  '    if task_id: self._set_state(task_id, WAITING_HUMAN)',
+  '    await self.bus.publish(HITL_REQUEST)  # in origin_channel',
+  '    answer = await fut                    # sleep until the human answers',
+  '    if task_id: self._set_state(task_id, RUNNING)',
+  '    return answer',
+  '',
+  'def _on_message(self, msg):              # bus observer',
+  '    if msg is HITL_RESPONSE:',
+  '        key = (session_of(msg.channel), msg.payload["request_id"])',
+  '        self._hitl_waiters[key].set_result(answer)   # wake the waiting agent',
+];
+const H0 = () => { const s = E0(); s.callerName = 'human'; s.caller = '（看着聊天窗口）'; return s; };
+mkStepper('st7', ['agent 需要人类', 'Router 发请求', '等待', '人类回答', 'agent 继续'], [
+  { name: '场景 1：一个请求，确认 git push', code: CODE_H, callerName: 'human', init: (() => { const s = H0(); addRow(s, 't1', 'coder', '写脚本并推送', 'running'); s.agent = '执行中，下一步是 git push（需要批准）'; return s; })(), steps: [
+    { ti: '开始', tx: 'coder 正在做 t1，下一步要 git push。这属于"需要人类批准"的工具，所以先要问人类。', stage: -1, line: null, f: ['agent'], ap: s => {} },
+    { ti: 'coder 调用 request_human', tx: 'Worker 通过 Agent 基类的 ask_human，基类从 task 里取出 session、root、频道等字段，转给 router.request_human。（Orchestrator 澄清时没有 task，task_id 传 None，其余一样。）', stage: 0, line: 0, f: [], ap: s => {} },
+    { ti: '生成编号 h1', tx: '编号在同一个会话内递增（h1、h2…），人类回复时用它指明回答的是哪个请求。', stage: 1, line: 1, f: [], ap: s => {} },
+    { ti: '创建 future，放进 _hitl_waiters', tx: '和 dispatch 同样的"回执条"，只是 key 是（会话，h1）。登记成"coder 在等人类的回答"。', stage: 1, line: 3, f: ['waiters'], ap: s => { s.waiters.push('(group:main, h1) ← coder 在等人类'); } },
+    { ti: '任务状态 → waiting_human', tx: '/status 因此能显示"t1 在等人类"。', stage: 1, line: 4, f: ['rows'], ap: s => { setSt(s, 't1', 'waiting_human'); } },
+    { ti: '在 origin_channel 发 HITL_REQUEST', tx: '这个任务从群里发起，所以请求弹在群里（私聊发起的任务就弹在那个私聊里）。', stage: 1, line: 5, f: ['msgs', 'caller'], ap: s => { s.msgs.push('HITL_REQUEST  coder → human  h1: 要 git push 吗？ [yes / no]'); s.caller = '看到：h1 要 git push 吗？'; s.agent = '挂起，等 h1 的回答'; } },
+    { ti: '等待人类', tx: 'request_human 在 await fut 上睡着了。其他 agent 不受影响，继续工作。', stage: 2, line: 6, f: ['agent'], ap: s => {} },
+    { ti: '人类回复 /reply h1 yes', tx: 'CLI 把它变成一条 HITL_RESPONSE 消息发到 bus 上。', stage: 3, line: null, f: ['msgs', 'caller'], ap: s => { s.msgs.push('HITL_RESPONSE  human  h1: yes'); s.caller = '回复：/reply h1 yes'; } },
+    { ti: 'observer 填回执条', tx: 'Router 看到 HITL_RESPONSE，用（会话，h1）找到那张回执条，填上 "yes"。', stage: 3, line: 13, f: ['waiters'], ap: s => { s.waiters = []; } },
+    { ti: 'request_human 醒来并返回', tx: '任务状态回到 running，答案 "yes" 返回给 coder。', stage: 4, line: 7, f: ['rows', 'agent'], ap: s => { setSt(s, 't1', 'running'); s.agent = '拿到 yes，继续 git push'; } },
+  ]},
+  { name: '场景 2：两个请求同时在等', code: CODE_H, callerName: 'human', agentName: 'coder / writer', init: (() => { const s = H0(); addRow(s, 't1', 'coder', '写脚本并推送', 'running'); addRow(s, 't2', 'writer', '删除旧文档', 'running'); s.agent = '都在执行中'; return s; })(), steps: [
+    { ti: '开始', tx: 'coder 要 git push，writer 要删除文件，两件事都需要人类批准，并且几乎同时发生。', stage: -1, line: null, f: [], ap: s => {} },
+    { ti: 'coder 发出 h1', tx: '编号 h1，任务 t1 变成 waiting_human。', stage: 1, line: 3, f: ['waiters', 'rows'], ap: s => { s.waiters.push('(group:main, h1) ← coder'); setSt(s, 't1', 'waiting_human'); s.msgs.push('HITL_REQUEST  coder  h1: 要 git push 吗？'); } },
+    { ti: 'writer 发出 h2', tx: '同一个会话里编号继续递增，是 h2。现在有两张回执条，两个 agent 各睡各的。', stage: 1, line: 3, f: ['waiters', 'rows'], ap: s => { s.waiters.push('(group:main, h2) ← writer'); setSt(s, 't2', 'waiting_human'); s.msgs.push('HITL_REQUEST  writer  h2: 要删除 old.md 吗？'); s.agent = 'coder 等 h1，writer 等 h2'; } },
+    { ti: '人类先回答 h2', tx: '人类用 /reply h2 no。observer 只填 (group:main, h2) 那张回执条。', stage: 3, line: 13, f: ['waiters', 'msgs'], ap: s => { s.msgs.push('HITL_RESPONSE  human  h2: no'); s.waiters = ['(group:main, h1) ← coder']; s.caller = '回复：/reply h2 no'; } },
+    { ti: 'writer 继续，coder 仍在等', tx: 'writer 拿到 "no" 回到 running；coder 的 h1 没有被影响，继续挂着。互不阻塞。', stage: 4, line: 7, f: ['rows', 'agent'], ap: s => { setSt(s, 't2', 'running'); s.agent = 'writer 继续；coder 仍在等 h1'; } },
+    { ti: '人类再回答 h1', tx: 'coder 也被唤醒。', stage: 4, line: 13, f: ['waiters', 'rows'], ap: s => { s.msgs.push('HITL_RESPONSE  human  h1: yes'); s.waiters = []; setSt(s, 't1', 'running'); s.agent = '都已继续'; s.caller = '回复：/reply h1 yes'; } },
+  ]},
+  { name: '场景 3：群聊和私聊各自编号', code: CODE_H, callerName: 'human', init: (() => { const s = H0(); addRow(s, 't1', 'coder', '群里的任务', 'running'); addRow(s, 't2', 'coder', '私聊里的任务', 'running'); s.agent = '同时做两个任务'; return s; })(), steps: [
+    { ti: '开始', tx: '同一个 coder，同时在做群里发起的 t1，和人类私聊它发起的 t2。群聊是一个会话，这个私聊是另一个会话。', stage: -1, line: null, f: ['rows'], ap: s => {} },
+    { ti: '两个任务各发一个请求', tx: '编号是按会话分开计数的，所以群里和私聊里都有自己的 h1。请求各自弹在发起任务的频道里：群里的 h1 在 group:main，私聊的 h1 在 dm:coder:human。', stage: 1, line: 1, f: ['waiters', 'msgs', 'rows'], ap: s => { s.waiters = ['(group:main, h1) ← t1', '(dm:coder:human, h1) ← t2']; s.msgs.push('[group:main]  HITL_REQUEST  h1: 群里的问题'); s.msgs.push('[dm:coder:human]  HITL_REQUEST  h1: 私聊里的问题'); setSt(s, 't1', 'waiting_human'); setSt(s, 't2', 'waiting_human'); } },
+    { ti: '人类在私聊里回复 h1', tx: '回复发在私聊频道里，observer 拼出 key = (dm:coder:human, h1)。', stage: 3, line: 12, f: ['msgs'], ap: s => { s.msgs.push('[dm:coder:human]  HITL_RESPONSE  h1: 私聊答'); } },
+    { ti: '只有私聊那一个被唤醒', tx: '(group:main, h1) 是另一个 key，所以群里的 t1 继续等着，不会被误唤醒。这就是为什么 key 要带会话。', stage: 4, line: 13, f: ['waiters', 'rows'], ap: s => { s.waiters = ['(group:main, h1) ← t1']; setSt(s, 't2', 'running'); } },
+  ]},
+]);
+
+/* ---------- 8a. cancel ---------- */
+const CODE_C = [
+  'def cancel_root(self, root_id):',
+  '    self._cancelled_roots.add(root_id)       # later calls are refused',
+  '    for task in unfinished tasks of root_id:',
+  '        self.state.update(task.id, CANCELLED)',
+  '        self._task_waiters[task.id].set_result("cancelled")  # wake dispatch',
+  '',
+  '# Worker side. Only in option B (LI Heyang writes it):',
+  'async def react_step(self, task):',
+  '    if self.is_cancelled(task): return        # check BEFORE every step',
+  '    run the tool (e.g. git push)',
+  '',
+  'def _on_message(self, msg):',
+  '    elif msg is TASK_RESULT:',
+  '        self.state.finish(result)   # a CANCELLED task keeps CANCELLED',
+];
+const C0 = () => { const s = E0(); s.cancelled = []; addRow(s, 't1', 'coder', '写脚本并推送', 'running'); s.waiters = ['t1 ← dispatch 在等结果']; s.caller = '睡着了：await dispatch 的回执条'; s.agent = 'ReAct 第 4 步，下一步是 git push'; return s; };
+const cancelCommon = [
+  { ti: '开始', tx: 'coder 正在做 t1，下一步是 git push。Orchestrator 的 dispatch 正在等它。', stage: -1, line: null, f: [], ap: s => {} },
+  { ti: '人类发 /cancel', tx: 'CLI 调用 router.cancel_root("R1")。', stage: 0, line: 0, f: ['msgs'], ap: s => { s.msgs.push('CHAT  human: /cancel'); } },
+  { ti: '记下 R1 已取消', tx: '之后 Orchestrator 再对 R1 发新的 dispatch 会被直接拒绝。', stage: 1, line: 1, f: ['cancelled'], ap: s => { s.cancelled = ['R1']; } },
+  { ti: 'R1 下未结束的任务 → cancelled', tx: 'StateTable 里 t1 变成 cancelled。', stage: 1, line: 3, f: ['rows'], ap: s => { setSt(s, 't1', 'cancelled'); } },
+  { ti: '唤醒正在等的 dispatch', tx: '回执条被填上 "cancelled"，Orchestrator 的 dispatch 立刻返回，不再傻等。', stage: 1, line: 4, f: ['waiters', 'caller'], ap: s => { s.waiters = []; s.caller = '拿到 error="cancelled"'; } },
+];
+mkStepper('st8a', ['/cancel', 'cancel_root', 'agent 还在跑', '之后'], [
+  { name: '方案 A：只做软取消（旧做法）', code: CODE_C, init: C0(), steps: cancelCommon.concat([
+    { ti: '但是 coder 并不知道', tx: 'Router 只能改状态表、唤醒等待者，它没有办法停止别人的协程。coder 还在它的 ReAct 循环里，没有任何东西通知它。', stage: 2, line: null, f: ['agent'], ap: s => { s.agent = '仍在 ReAct 第 4 步，毫不知情'; } },
+    { ti: 'coder 继续执行 git push ✗', tx: '代码已经被推送到了远程。这一步在取消之后发生，已经无法撤回。', stage: 2, line: null, bad: true, badWho: 'agent', f: ['agent'], ap: s => { s.agent = '已执行 git push ✗（取消之后！）'; } },
+    { ti: 'coder 交结果，状态保持 cancelled', tx: '迟到的结果被保存下来，但状态仍是 cancelled，/status 看起来一切正常。而实际上副作用已经发生。', stage: 3, line: 13, f: ['msgs', 'rows'], ap: s => { s.msgs.push('TASK_RESULT  coder → orchestrator  成功（迟到）'); } },
+  ]) },
+  { name: '方案 B：Worker 每步先检查（已采用）', code: CODE_C, init: C0(), steps: cancelCommon.concat([
+    { ti: 'coder 在下一步开始前检查', tx: 'Worker 每一步 ReAct 开始前，调用 is_cancelled(task) 看 StateTable 里自己的任务是不是 cancelled。执行 git push 这类需要批准的工具之前也检查一次。', stage: 2, line: 8, f: ['agent'], ap: s => { s.agent = '准备下一步，先检查 is_cancelled → 是'; } },
+    { ti: 'coder 直接中止，不执行 git push ✓', tx: '没有任何副作用发生。代价是：LI Heyang 要在 WorkerAgent 的循环里加这几行检查，并把 request_human 返回的 "cancelled" 当作中止信号，不能当成 "yes"。', stage: 2, line: 8, f: ['agent'], ap: s => { s.agent = '已中止，没有 git push ✓'; } },
+    { ti: 'coder 返回一个已取消的结果', tx: '状态保持 cancelled，没有多余的工作和副作用。', stage: 3, line: 13, f: ['msgs', 'rows'], ap: s => { s.msgs.push('TASK_RESULT  coder → orchestrator  cancelled'); } },
+  ]) },
+]);
+
+/* ---------- 8b. timeout while waiting for a human ---------- */
+const CODE_TA = [
+  'async def dispatch(self, ...):',
+  '    ...',
+  '    try:',
+  '        return await asyncio.wait_for(fut, 180)   # 180s covers EVERYTHING',
+  '    except TimeoutError:',
+  '        self.state.finish(TIMEOUT result)         # task -> failed',
+  '        return that result',
+];
+const CODE_TB = [
+  'async def dispatch(self, ...):',
+  '    ...',
+  '    while True:',
+  '        try: return await asyncio.wait_for(fut, 180)',
+  '        except TimeoutError:',
+  '            if state.get(task.id).status == WAITING_HUMAN:',
+  '                continue                  # human is thinking: keep waiting',
+  '            self.state.finish(TIMEOUT result); return that result',
+];
+const T0 = () => { const s = E0(); addRow(s, 't1', 'coder', '写脚本并推送', 'waiting_human'); s.waiters = ['t1 ← dispatch 在等结果', '(group:main, h1) ← coder 在等人类']; s.msgs = ['HITL_REQUEST  coder  h1: 要 git push 吗？']; s.caller = '睡着了：await 回执条（计时 0 秒）'; s.agent = 'waiting_human，等人类回答 h1'; return s; };
+mkStepper('st8b', ['dispatch 在等', '超时到了', '超时处理', '之后'], [
+  { name: '方案 A：等人类的时间也计入（旧做法）', code: CODE_TA, init: T0(), steps: [
+    { ti: '开始', tx: 'coder 问人类"要 git push 吗"，人类正在考虑。同时 Orchestrator 的 dispatch 在等 t1 的结果，计时已经开始。', stage: 0, line: 3, f: ['caller', 'agent'], ap: s => {} },
+    { ti: '180 秒到了，人类还没回答', tx: 'wait_for 不管任务为什么还没完成，时间到了就抛 TimeoutError。', stage: 1, line: 4, f: ['caller'], ap: s => { s.caller = '计时 180 秒到了'; } },
+    { ti: 'dispatch 判定超时，任务标为 failed', tx: 'Router 结束 t1：failed（TIMEOUT）。但是 coder 其实还活着，仍在等人类，它对此一无所知。', stage: 2, line: 5, f: ['rows', 'waiters', 'caller'], ap: s => { setSt(s, 't1', 'failed'); s.waiters = ['(group:main, h1) ← coder 还在等人类']; s.caller = '拿到 TIMEOUT 失败'; } },
+    { ti: 'Orchestrator 看到失败，重新派同一个目标', tx: '它的 LLM 认为这个任务失败了，于是新建 t2 重做一遍。', stage: 3, line: null, f: ['rows', 'msgs', 'caller'], ap: s => { addRow(s, 't2', 'coder', '写脚本并推送', 'assigned'); s.msgs.push('TASK_ASSIGN  orchestrator → coder  "写脚本并推送"（重试）'); s.caller = '重试，等待 t2'; } },
+    { ti: '人类终于回答 yes', tx: '人类回答的是 t1 的 h1。coder（t1）醒来，继续 git push。', stage: 3, line: null, f: ['msgs', 'agent'], ap: s => { s.msgs.push('HITL_RESPONSE  human  h1: yes'); s.waiters = []; s.agent = 't1 继续 → 执行 git push'; } },
+    { ti: '同一件事被做了两遍 ✗', tx: '最坏情况：t1 和 t2 都完成 git push；或者人类被同样的问题又问了一遍。t1 的结果因为任务已经 failed 而被忽略，所以 Orchestrator 根本不知道 t1 其实成功了。', stage: 3, line: null, bad: true, badWho: 'agent', f: ['agent'], ap: s => { s.agent = 't1、t2 都执行了 git push ✗'; } },
+  ] },
+  { name: '方案 B：等人类时不算超时（已采用）', code: CODE_TB, init: T0(), steps: [
+    { ti: '开始', tx: '和上一个场景完全相同的起点。', stage: 0, line: 3, f: ['caller', 'agent'], ap: s => {} },
+    { ti: '180 秒到了，人类还没回答', tx: 'wait_for 照样抛 TimeoutError，但这次进入的是一个循环。', stage: 1, line: 4, f: ['caller'], ap: s => { s.caller = '计时 180 秒到了'; } },
+    { ti: '检查：任务状态是 waiting_human', tx: '任务不是卡住了，而是在等人类，所以 continue，重新开始计时。人类要想多久都可以，期间随时可以 /cancel 终止。', stage: 2, line: 6, f: ['rows', 'caller'], ap: s => { s.caller = '重新计时，继续等'; } },
+    { ti: '人类回答 yes', tx: 'coder 醒来，任务回到 running，继续 git push。', stage: 3, line: null, f: ['msgs', 'rows', 'agent'], ap: s => { s.msgs.push('HITL_RESPONSE  human  h1: yes'); s.waiters = ['t1 ← dispatch 在等结果']; setSt(s, 't1', 'running'); s.agent = '拿到 yes，继续 git push'; } },
+    { ti: 'coder 完成，dispatch 正常拿到结果 ✓', tx: '只做了一次，状态是 done。代价是：如果人类一直不回，这个任务会一直挂着，直到 /cancel。这个改动只在 Router 内部，不影响别人。', stage: 3, line: 3, f: ['rows', 'waiters', 'caller', 'agent'], ap: s => { setSt(s, 't1', 'done'); s.waiters = []; s.caller = '拿到 TaskResult：成功'; s.agent = '完成，只 push 了一次 ✓'; } },
+  ] },
+]);
+
+/* ---------- 3.3 Agent base ---------- */
+const CODE_AG = [
+  'async def run(self):                       # started once per agent',
+  '    inbox = self.bus.subscribe(self.agent_id)',
+  '    while True:',
+  '        msg = await inbox.get()',
+  '        if self.should_handle(msg):',
+  '            asyncio.create_task(self.on_message(msg))   # one task per message',
+  '',
+  'async def on_message(self, msg):',
+  '    if msg is TASK_ASSIGN:',
+  '        task = Task.from_dict(msg.payload["task"])',
+  '        await self._execute(task, reply_to=msg.id, receiver=msg.sender)',
+  '    elif msg is a human CHAT:',
+  '        await self.handle_chat(msg)',
+  '',
+  'async def _execute(self, task, *, reply_to, receiver):',
+  '    if self.is_cancelled(task): result = TaskResult(error="cancelled")',
+  '    else:',
+  '        await self.report_status(task, RUNNING, "收到…", public=True)',
+  '        try: result = await self.handle_task(task)   # <- the subclass writes this',
+  '        except Exception: result = TaskResult(success=False, failure_mode=CRASH)',
+  '    result.task_id = task.id; clip the summary to 1500 chars',
+  '    await self.bus.publish(TASK_RESULT, channel=task.channel, reply_to=reply_to)',
+  '',
+  'async def handle_chat(self, msg):           # default: a human DM = a direct task',
+  '    task = self.router.open_direct_task(msg, self.agent_id)',
+  '    await self._execute(task, reply_to=msg.id, receiver=HUMAN)',
+];
+const AG0 = () => { const s = E0(); s.callerName = 'Router'; s.caller = '（空闲）'; s.agent = 'run() 循环在等 inbox 里的消息'; return s; };
+const agFromRouter = [
+  { ti: '开始', tx: 'coder 已经启动，它的 run() 循环一直停在 inbox.get() 上等消息。Router 这边没有任何任务。', stage: -1, line: 3, f: ['agent'], ap: s => {} },
+  { ti: 'Router 派任务：publish(TASK_ASSIGN)', tx: 'Router 登记了任务 t1，创建回执条，并把 TASK_ASSIGN 发到 bus 上。消息被投递进 coder 的 inbox。', stage: 0, line: null, f: ['msgs', 'rows', 'waiters', 'caller'], ap: s => { addRow(s, 't1', 'coder', '写脚本', 'assigned'); s.waiters.push('t1 ← dispatch 在等结果'); s.msgs.push('TASK_ASSIGN  orchestrator → coder  "写脚本"'); s.caller = '已发出任务，在等结果'; } },
+  { ti: 'run()：inbox.get() 取到消息', tx: 'coder 的循环被唤醒，拿到这条消息。', stage: 1, line: 3, f: ['agent'], ap: s => { s.agent = '从 inbox 取到 TASK_ASSIGN'; } },
+  { ti: 'should_handle：是给我的吗？', tx: 'msg.receiver == "coder"，是给我的，所以开一个独立的 asyncio 任务去处理它，run() 立刻回去等下一条消息。因此同一个 agent 可以同时处理多个任务；不是给我的消息，什么都不做，也不调用 LLM。', stage: 1, line: 5, f: ['agent'], ap: s => { s.agent = '是给我的 → 开独立任务处理，run() 继续等下一条'; } },
+  { ti: 'on_message：这是任务，交给 _execute', tx: '确认是 TASK_ASSIGN 后，把 payload 还原成 Task，交给 _execute 去跑。（人类发来的聊天消息走另一条路，见场景 3。）', stage: 2, line: 10, f: ['agent'], ap: s => {} },
+  { ti: '_execute：先上报"收到"', tx: '先确认任务没被取消（取消了就不跑），然后上报一条公开的 STATUS："收到 t1：写脚本"，聊天里能看到。Router 的 observer 看到后把状态表里的 t1 改成 running。', stage: 2, line: 17, f: ['msgs', 'rows'], ap: s => { s.msgs.push('STATUS  coder: 收到 t1：写脚本'); setSt(s, 't1', 'running'); } },
+  { ti: 'handle_task：子类写的部分', tx: '基类调用 self.handle_task(task)，具体做什么由子类决定。对 coder（WorkerAgent）来说，这里就是上面的 ReAct 循环：召回记忆、读看板、最多 12 步调用工具……这一段是 LI Heyang 写的，基类完全不管细节。', stage: 3, line: 18, f: ['agent'], ap: s => { s.agent = '执行中：ReAct 循环（调工具、最多 12 步）…'; } },
+];
+mkStepper('st9', ['Router 发任务 / 人类发消息', 'run() 取消息', 'on_message', 'handle_task（子类）', '回 TASK_RESULT'], [
+  { name: '场景 1：正常完成', code: CODE_AG, callerName: 'Router', init: AG0(), steps: agFromRouter.concat([
+    { ti: 'handle_task 返回 TaskResult', tx: '子类做完了，返回一个成功的 TaskResult（摘要、写过的文件等）。', stage: 3, line: 18, f: ['agent'], ap: s => { s.agent = '完成，拿到 TaskResult(success)'; } },
+    { ti: '_execute 把结果发回去', tx: '基类先做几件小事：把 result.task_id 改成真实任务的 id、摘要超过 1500 字就截断、没填耗时就补上。然后包成 TASK_RESULT 发在 task.channel 里（reply_to 指向那条 TASK_ASSIGN）。Router 的 observer 看到后结束 t1，并唤醒等待的 dispatch。子类完全不用碰 bus。', stage: 4, line: 21, f: ['msgs', 'rows', 'waiters', 'caller'], ap: s => { s.msgs.push('TASK_RESULT  coder → orchestrator  完成：脚本写好了'); setSt(s, 't1', 'done'); s.waiters = []; s.caller = '拿到 TaskResult：成功'; } },
+  ]) },
+  { name: '场景 2：子类出 bug 抛异常', code: CODE_AG, callerName: 'Router', init: AG0(), steps: agFromRouter.concat([
+    { ti: 'handle_task 抛出了异常', tx: '假设 Worker 里有个程序 bug，handle_task 里抛出一个没处理的异常。', stage: 3, line: 18, bad: true, badWho: 'agent', f: ['agent'], ap: s => { s.agent = 'handle_task 抛出异常 ✗'; } },
+    { ti: '_execute 兜底：转成 CRASH 结果', tx: '第 19 行的 except 接住异常，把它变成一个 success=False、failure_mode=CRASH 的结果。这样一个 agent 的 bug 不会让整个系统崩溃。', stage: 4, line: 19, f: ['agent'], ap: s => { s.agent = '异常已接住 → 生成 CRASH 结果'; } },
+    { ti: '照样发出 TASK_RESULT', tx: 'Router 看到的是一个正常的"失败"结果：t1 标成 failed，dispatch 被唤醒并返回失败，Orchestrator 可以决定重试或改派。系统继续运行，coder 还能接下一个任务。', stage: 4, line: 21, f: ['msgs', 'rows', 'waiters', 'caller'], ap: s => { s.msgs.push('TASK_RESULT  coder → orchestrator  失败：ValueError…'); setSt(s, 't1', 'failed'); s.waiters = []; s.caller = '拿到失败结果（CRASH）'; s.agent = '仍然存活，可继续接下一个任务'; } },
+  ]) },
+  { name: '场景 3：人类直接私聊 coder', code: CODE_AG, callerName: 'human', init: (() => { const s = E0(); s.callerName = 'human'; s.caller = '（看着私聊窗口）'; s.agent = 'run() 循环在等 inbox 里的消息'; return s; })(), steps: [
+    { ti: '开始', tx: '人类打开和 coder 的私聊，想直接让它干活，不经过 Orchestrator。', stage: -1, line: null, f: [], ap: s => {} },
+    { ti: 'human 发消息："修一下这个 bug"', tx: '这是一条 CHAT 消息，发在私聊频道 dm:coder:human，receiver 是 coder，投递进 coder 的 inbox。注意：这里没有 TASK_ASSIGN，因为没有人调用 Router.dispatch。', stage: 0, line: null, f: ['msgs', 'caller'], ap: s => { s.msgs.push('CHAT  human → coder  "修一下这个 bug"'); s.caller = '发出：修一下这个 bug'; } },
+    { ti: 'run() 取到消息，should_handle 通过', tx: 'receiver 是 coder，所以开独立任务处理，run() 继续等下一条。', stage: 1, line: 5, f: ['agent'], ap: s => { s.agent = '从 inbox 取到人类的 CHAT → 开独立任务处理'; } },
+    { ti: 'on_message：这是人类的聊天，交给 handle_chat', tx: '消息类型是 CHAT 且来自人类，走 elif 这一支（别的 agent 发来的聊天会被忽略，防止 agent 之间互相聊个没完）。', stage: 2, line: 12, f: ['agent'], ap: s => {} },
+    { ti: 'handle_chat（默认实现）：登记成直接任务', tx: '默认当作"人类直接交给我的任务"：调用 Router.open_direct_task，Router 在状态表里登记 t1（requester 是 human），开一个新的 root，并让看板认领这句话。以 / 开头的命令会被忽略，它们归 CLI 和 Orchestrator。', stage: 2, line: 24, f: ['rows', 'agent'], ap: s => { addRow(s, 't1', 'coder', '修一下这个 bug', 'assigned'); s.agent = '登记了直接任务 t1（新的 root）'; } },
+    { ti: '_execute：和 Router 派来的任务走同一条路', tx: '上报"收到"（状态表 t1 → running），调用 handle_task 执行。之后的流程和场景 1 完全一样，这就是把它做成基类的好处。', stage: 3, line: 17, f: ['msgs', 'rows', 'agent'], ap: s => { s.msgs.push('STATUS  coder: 收到 t1：修一下这个 bug'); setSt(s, 't1', 'running'); s.agent = '执行中：ReAct 循环…'; } },
+    { ti: '结果直接回给人类', tx: '结果发在同一个私聊频道里，receiver 是 human（不是 orchestrator），所以人类直接看到"@human 完成：…"。没有 dispatch 在等，Router 的 observer 仍然结束 t1。', stage: 4, line: 21, f: ['msgs', 'rows', 'caller'], ap: s => { s.msgs.push('TASK_RESULT  coder → human  完成：已修复'); setSt(s, 't1', 'done'); s.caller = '看到：@human 完成：已修复'; s.agent = '完成，结果已发给人类'; } },
+  ]},
+]);
+
+/* ---------- 4.2 / 4.3 CLI ---------- */
+const CODE_IN = [
+  'async def handle_input(self, line):',
+  '    text = line.strip()',
+  '    if not text.startswith("/"):',
+  '        await self._send(GROUP_MAIN, text, self._single_mention(text))   # plain text -> the group',
+  '        return True',
+  '    cmd, _, rest = text.partition(" ")',
+  '    if cmd == "/dm":',
+  '        await self._dm(rest)                  # -> dm:coder:human, receiver = coder',
+  '    elif cmd == "/cancel" and rest in self._agents():',
+  '        await self._send(dm_channel(HUMAN, rest), "/cancel", rest)   # that agent cancels its DM tasks',
+  '    elif cmd in ("/status", "/cancel"):',
+  '        await self._send(GROUP_MAIN, text, ORCHESTRATOR)   # the Orchestrator answers these',
+  '    elif cmd == "/reply":',
+  '        self._reply(rest)                     # answers a request, see 4.3',
+  '    elif cmd in ("/quit", "/exit"):',
+  '        return False',
+];
+const CLI0 = () => { const s = E0(); s.callerName = 'human（键盘）'; s.caller = '（等着输入）'; s.agent = '（空闲）'; return s; };
+const inTitles = { box: 'bus 与它周围的数据', rows: false, waiters: false };
+mkStepper('st10', ['人类输入一行', 'handle_input 判断', '_send 发消息', '对方收到'], [
+  { name: '场景 1：直接打字', code: CODE_IN, titles: inTitles, callerName: 'human（键盘）', agentName: '收到的人', init: CLI0(), steps: [
+    { ti: '开始', tx: 'CLI 的 run() 同时在做两件事：等人类输入一行，以及显示 bus 上发来的消息。现在没有任何消息。', stage: -1, line: null, f: ['caller'], ap: s => {} },
+    { ti: '人类输入："@coder 写个脚本"', tx: '键盘输入的一行交给 handle_input。', stage: 0, line: 0, f: ['caller'], ap: s => { s.caller = '输入：@coder 写个脚本'; } },
+    { ti: '不是以 / 开头：当作聊天', tx: '第 2 行判断不是命令，所以是发在群里的一句话（命令走下面的分支）。', stage: 1, line: 2, f: [], ap: s => {} },
+    { ti: '_single_mention：找出 @ 了谁', tx: '用正则找出 @名字，只认群里真实存在的 agent（@nobody 这种会被忽略）。恰好 @ 了一个人，所以 receiver 就是 coder；@ 了两个或没 @，receiver 为空。', stage: 1, line: 3, f: [], ap: s => {} },
+    { ti: '_send：在群里发出 CHAT 消息', tx: 'publish 一条 CHAT：sender=human，channel=group:main，receiver=coder，mentions=["coder"]。', stage: 2, line: 3, f: ['msgs'], ap: s => { s.msgs.push('CHAT  human → coder  (group:main)  "@coder 写个脚本"'); } },
+    { ti: 'coder 收到，当作直接任务', tx: 'receiver 是 coder，所以 coder 的 should_handle 通过，走步骤 3 里的默认 handle_chat：登记成直接任务并执行。如果刚才没有 @ 任何人，receiver 为空，就由 Orchestrator 接手（步骤 5）。', stage: 3, line: null, f: ['agent'], ap: s => { s.agent = '收到 → 当作直接任务执行'; } },
+  ]},
+  { name: '场景 2：/dm 私聊', code: CODE_IN, titles: inTitles, callerName: 'human（键盘）', agentName: '收到的人', init: CLI0(), steps: [
+    { ti: '开始', tx: '人类想把一件事直接交给 coder，不经过 Orchestrator。', stage: -1, line: null, f: [], ap: s => {} },
+    { ti: '人类输入："/dm coder 修一下这个 bug"', tx: '以 / 开头，是命令。', stage: 0, line: 0, f: ['caller'], ap: s => { s.caller = '输入：/dm coder 修一下这个 bug'; } },
+    { ti: '识别命令 /dm', tx: 'partition 把第一个词当命令，剩下的是参数："coder 修一下这个 bug"。', stage: 1, line: 6, f: [], ap: s => {} },
+    { ti: '_dm：检查 agent 存在，发到私聊频道', tx: '先检查 coder 是群里的成员（不存在就提示可选的名字，什么都不发）。然后在 dm:coder:human 这个私聊频道里发 CHAT，receiver=coder。私聊频道在第一次发消息时自动把双方加入。', stage: 2, line: 7, f: ['msgs'], ap: s => { s.msgs.push('CHAT  human → coder  (dm:coder:human)  "修一下这个 bug"'); } },
+    { ti: '只有 coder 收到，群里看不到', tx: '这条消息只投递给私聊频道的两个成员。coder 同样走默认 handle_chat，登记成直接任务；结果会发回这个私聊，屏幕上带"(私聊·coder)"标签。', stage: 3, line: null, f: ['agent'], ap: s => { s.agent = '收到 → 当作直接任务执行'; } },
+  ]},
+  { name: '场景 3：/status', code: CODE_IN, titles: inTitles, callerName: 'human（键盘）', agentName: 'orchestrator', init: CLI0(), steps: [
+    { ti: '开始', tx: '任务正在进行，人类想知道做到哪了。', stage: -1, line: null, f: [], ap: s => {} },
+    { ti: '人类输入："/status"', tx: '以 / 开头，是命令。', stage: 0, line: 0, f: ['caller'], ap: s => { s.caller = '输入：/status'; } },
+    { ti: '识别命令 /status（/cancel 同理）', tx: '这两个命令 CLI 自己不处理，因为它不掌握任务状态；状态表在 Router 里，取消也要 Router 来做。（/cancel 后面跟 agent 名字时是另一条路，见 4.3 场景 4。）', stage: 1, line: 10, f: [], ap: s => {} },
+    { ti: '_send：在群里发给 Orchestrator', tx: '原样把 "/status" 作为 CHAT 发到 group:main，receiver=orchestrator。', stage: 2, line: 11, f: ['msgs'], ap: s => { s.msgs.push('CHAT  human → orchestrator  (group:main)  "/status"'); } },
+    { ti: 'Orchestrator 收到并回答', tx: '由 Orchestrator 读状态表，拼出文字回答，不调用 LLM。/cancel 则由它调用 router.cancel_root。这部分在步骤 5 实现。', stage: 3, line: null, f: ['agent'], ap: s => { s.agent = '（步骤 5）读状态表，回答进度'; } },
+  ]},
+]);
+
+const CODE_RP = [
+  'async def handle_incoming(self, bus, msg):',
+  '    if msg.sender == HUMAN: return           # own messages are not shown',
+  '    await self.show(msg)',
+  '    if msg.type == HITL_REQUEST:',
+  '        asyncio.create_task(self._respond(bus, msg, self.request_from(msg)))',
+  '',
+  'async def _respond(self, bus, request, req):',
+  '    answer = await self.answer(req)          # waits until the human types /reply',
+  '    await bus.publish(HITL_RESPONSE, channel=req.channel, reply_to=request.id)',
+  '',
+  'async def answer(self, req):                 # CliHumanIO',
+  '    fut = loop.create_future()',
+  '    self._pending[(req.channel, req.request_id)] = (fut, req)',
+  '    return await fut                         # sleeps until _reply fills it',
+  '',
+  'def _reply(self, rest):                      # /reply h1 yes',
+  '    key = self._find_request(token)          # "h1" = the group\'s, "coder:h1" = the DM\'s',
+  '    fut.set_result(answer)                   # wakes answer() up',
+  '',
+  'async def handle_incoming(self, bus, msg):   # CliHumanIO overrides it',
+  '    await super().handle_incoming(bus, msg)',
+  '    if msg is a CHAT with payload["cancelled_roots"]:',
+  '        self._drop_requests(msg.channel, roots)   # forget their open requests',
+];
+const RP0 = () => { const s = E0(); s.callerName = 'human（键盘）'; s.caller = '（看着屏幕）'; s.agentName = 'coder'; s.agent = '执行中，下一步是 git push'; s.screen = []; return s; };
+const rpTitles = { box: 'CLI 与它周围的数据', rows: 'CLI 里等待回答的请求（_pending）', rowsEmpty: '（没有等待中的请求）', waiters: false };
+mkStepper('st11', ['请求到达', '显示并登记', '等待', '/reply', 'agent 继续'], [
+  { name: '场景 1：一个请求', code: CODE_RP, titles: rpTitles, callerName: 'human（键盘）', agentName: 'coder', init: RP0(), steps: [
+    { ti: '开始', tx: 'coder 要执行 git push，属于需要批准的操作，所以向人类请求（步骤 2 的 request_human）。', stage: -1, line: null, f: [], ap: s => {} },
+    { ti: 'HITL_REQUEST 到达人类的 inbox', tx: 'Router 在 group:main 发出请求，编号 h1。CLI 的显示循环从 inbox 里取到它，交给 handle_incoming。', stage: 0, line: 0, f: ['msgs', 'agent'], ap: s => { s.msgs.push('HITL_REQUEST  coder → human  h1: git push 吗？'); s.agent = '挂起，等 h1 的回答'; } },
+    { ti: 'show：把请求显示在屏幕上', tx: '显示请求的内容，并提示怎么回复。别人发的消息才显示，自己发的会被第 1 行跳过。', stage: 1, line: 2, f: ['screen', 'caller'], ap: s => { s.screen.push('? [h1] coder 请求批准：git push 吗？　可选：yes / no'); s.screen.push('   回复：/reply h1 <回答>'); s.caller = '看到请求 h1'; } },
+    { ti: '在后台开一个任务去等回答', tx: '用 create_task 启动 _respond，而不是直接 await。这样显示循环不会被卡住，还能继续显示别的消息，也能同时有好几个请求在等。', stage: 1, line: 4, f: [], ap: s => {} },
+    { ti: 'answer：登记一张"回执条"', tx: 'answer 创建一个 future，放进 _pending，key 是（频道，h1），然后 await 它，睡着等待。', stage: 2, line: 12, f: ['rows'], ap: s => { addRow(s, 'h1', 'coder', 'git push 吗？', 'waiting_human'); } },
+    { ti: '人类输入："/reply h1 yes"', tx: 'handle_input 识别出 /reply，交给 _reply。', stage: 3, line: 15, f: ['caller'], ap: s => { s.caller = '输入：/reply h1 yes'; } },
+    { ti: '_reply：找到请求，填上回执条', tx: '_find_request 用 "h1" 找到 _pending 里对应的请求，set_result("yes")：回执条被填上，answer 醒来，_pending 里的这一项被清掉。屏幕提示"已回复 h1：yes"。', stage: 3, line: 17, f: ['rows', 'screen'], ap: s => { s.rows = []; s.screen.push('已回复 h1：yes'); } },
+    { ti: '_respond 发出 HITL_RESPONSE', tx: '_respond 拿到答案，在请求所在的频道里发 HITL_RESPONSE（reply_to 指向那条请求）。Router 的 observer 看到后填上它那边的回执条（2.3），coder 的 request_human 醒来。', stage: 4, line: 8, f: ['msgs', 'agent'], ap: s => { s.msgs.push('HITL_RESPONSE  human → coder  h1: yes'); s.agent = '拿到 yes，继续 git push'; } },
+  ]},
+  { name: '场景 2：群聊和私聊的 h1', code: CODE_RP, titles: rpTitles, callerName: 'human（键盘）', agentName: 'coder', init: (() => { const s = RP0(); addRow(s, 'h1', 'coder', '群里的问题', 'waiting_human'); addRow(s, 'coder:h1', 'coder', '私聊里的问题', 'waiting_human'); s.screen = ['? [h1] coder 请求批准：群里的问题', '(私聊·coder) ? [h1] coder 请求批准：私聊里的问题', '   回复：/reply coder:h1 <回答>']; return s; })(), steps: [
+    { ti: '开始', tx: '编号是按会话分开计数的，所以群里和私聊里都有自己的 h1。屏幕上两个请求都叫 h1，但私聊那个的提示写的是 coder:h1。', stage: -1, line: null, f: ['rows'], ap: s => {} },
+    { ti: '人类输入："/reply h1 群答"', tx: '没有写 agent 名，所以"h1"指的是群里的 h1（群里有就优先用群里的）。', stage: 3, line: 16, f: ['caller'], ap: s => { s.caller = '输入：/reply h1 群答'; } },
+    { ti: '只填群里那张回执条', tx: '私聊的 coder:h1 没有被动。', stage: 3, line: 17, f: ['rows', 'screen', 'msgs'], ap: s => { s.rows = s.rows.filter(r => r.id !== 'h1'); s.screen.push('已回复 h1：群答'); s.msgs.push('[group:main]  HITL_RESPONSE  h1: 群答'); } },
+    { ti: '人类输入："/reply coder:h1 私答"', tx: '加上 agent 名，明确指的是和 coder 的私聊里的 h1。key 里的频道是 dm:coder:human。', stage: 3, line: 16, f: ['caller'], ap: s => { s.caller = '输入：/reply coder:h1 私答'; } },
+    { ti: '填私聊那张回执条', tx: '答案发在私聊频道里，Router 按（会话，h1）找到对应的等待者，不会误唤醒群里的。', stage: 4, line: 8, f: ['rows', 'screen', 'msgs'], ap: s => { s.rows = []; s.screen.push('已回复 coder:h1：私答'); s.msgs.push('[dm:coder:human]  HITL_RESPONSE  h1: 私答'); } },
+  ]},
+  { name: '场景 3：多个请求没写编号', code: CODE_RP, titles: rpTitles, callerName: 'human（键盘）', agentName: 'coder / writer', init: (() => { const s = RP0(); addRow(s, 'h1', 'coder', 'git push 吗？', 'waiting_human'); addRow(s, 'h2', 'writer', '删除 old.md 吗？', 'waiting_human'); s.screen = ['? [h1] coder 请求批准：git push 吗？', '? [h2] writer 请求批准：删除 old.md 吗？']; s.agent = 'coder 等 h1，writer 等 h2'; return s; })(), steps: [
+    { ti: '开始', tx: '两个请求同时在等：coder 的 h1 和 writer 的 h2。', stage: -1, line: null, f: ['rows'], ap: s => {} },
+    { ti: '人类输入："/reply no"', tx: '没有写编号。如果只有一个请求在等，可以省略编号，那个"no"就是答案；但现在有两个，CLI 没法猜 no 是回答谁的。', stage: 3, line: 15, f: ['caller'], ap: s => { s.caller = '输入：/reply no'; } },
+    { ti: 'CLI 提示要写编号，什么都不发', tx: '提示"有多个请求在等待，请写上编号"，并列出等待中的请求。没有发任何 HITL_RESPONSE，两个请求都还在等，不会误答。', stage: 3, line: 16, f: ['screen', 'rows'], ap: s => { s.screen.push('有多个请求在等待，请写上编号：/reply <编号> <回答>。等待中：h1、h2'); } },
+    { ti: '人类输入："/reply h2 no"', tx: '这次写了编号。', stage: 3, line: 16, f: ['caller'], ap: s => { s.caller = '输入：/reply h2 no'; } },
+    { ti: '只放开 writer', tx: 'h2 的回执条被填上，writer 继续；h1 还在 _pending 里，coder 继续等，互不影响。', stage: 4, line: 17, f: ['rows', 'screen', 'msgs', 'agent'], ap: s => { s.rows = s.rows.filter(r => r.id !== 'h2'); s.screen.push('已回复 h2：no'); s.msgs.push('HITL_RESPONSE  human → writer  h2: no'); s.agent = 'writer 继续；coder 仍在等 h1'; } },
+  ]},
+  { name: '场景 4：/cancel 之后清掉残留请求', code: CODE_RP, titles: rpTitles, callerName: 'human（键盘）', agentName: 'coder', init: (() => { const s = RP0(); addRow(s, 'coder:h1', 'coder', '私聊任务里要 git push 吗？', 'waiting_human'); s.screen = ['(私聊·coder) ? [h1] coder 请求批准：要 git push 吗？', '   回复：/reply coder:h1 <回答>']; s.agent = 'waiting_human，在等 h1'; return s; })(), steps: [
+    { ti: '开始', tx: '人类用 /dm 把任务交给了 coder，coder 正在等人类批准 git push，但人类改主意了，不想做了。', stage: -1, line: null, f: ['rows'], ap: s => {} },
+    { ti: '人类输入："/cancel coder"', tx: '/cancel 后面跟的是 agent 名字，所以 CLI 把 "/cancel" 发到和 coder 的私聊里（不发给 Orchestrator，它管不到私聊任务）。', stage: 3, line: null, f: ['caller', 'msgs'], ap: s => { s.caller = '输入：/cancel coder'; s.msgs.push('CHAT  human → coder  (dm:coder:human)  "/cancel"'); } },
+    { ti: 'coder 的基类认出 /cancel', tx: 'Agent 基类的默认 handle_chat 看到 /cancel：调用 Router.cancel_session，把这个私聊会话里没结束的任务都标成 cancelled，并放开正在等回答的 coder（它得到的是 "cancelled"，不是 "yes"）。', stage: 4, line: null, f: ['agent'], ap: s => { s.agent = '任务已取消，request_human 返回 "cancelled"'; } },
+    { ti: 'coder 发出"已取消"通知', tx: '基类在私聊里发一条 CHAT："已取消 R1"，payload 里带 cancelled_roots=["R1"]。人类看到它，也让 CLI 知道哪些 root 被取消了。', stage: 4, line: null, f: ['msgs'], ap: s => { s.msgs.push('CHAT  coder → human  "已取消 R1"  payload: cancelled_roots=[R1]'); } },
+    { ti: 'CLI 显示通知，并清掉残留请求', tx: 'handle_incoming 先照常显示这条消息，再发现有 cancelled_roots：把同一频道里属于 R1 的待回答请求从 _pending 里删掉，对应的回执条被取消，不会再发 HITL_RESPONSE。之后再 /reply coder:h1 会提示"没有等待回答的请求"。', stage: 4, line: 22, f: ['rows', 'screen'], ap: s => { s.rows = []; s.screen.push('(私聊·coder) [coder] 已取消 R1'); } },
+  ]},
+]);
+
+/* ---------- 5.2 / 5.3 Orchestrator ---------- */
+const CODE_OR = [
+  'async def run_root(self, msg, run):',
+  '    messages = [system_prompt(), "人类的请求：…" + board.render()]',
+  '    for n in range(1, max_orchestrator_rounds + 1):',
+  '        resp = await self.llm.chat(messages, specs)          # the only LLM call',
+  '        board.set_plan(root, resp.text)                      # "剩余步骤：…"',
+  '        outs = await asyncio.gather(*(self._call_agent(tc) for tc in agent_calls))   # in parallel',
+  '        messages += [assistant(tool_calls), tool(observation) for each call]',
+  '        if finish was called (alone): return await self._conclude(...)',
+  '    return await self._conclude(MAX_ROUNDS, partial summary)   # rounds ran out',
+  '',
+  'async def _call_agent(self, tc):',
+  '    result = await self.router.dispatch(requester=ORCHESTRATOR, target=..., goal=...)   # see 2.2',
+  '    return json(success, summary, artifacts, refs, error)   # a short observation, not the full text',
+  '',
+  'async def _conclude(self, ...):',
+  '    copy the deliverables to data/output/<root>/; board.finish_root(...)',
+  '    publish the final CHAT (payload: success, rounds, failure_mode, output_dir)',
+];
+const OR0 = () => { const s = E0(); s.callerName = 'Orchestrator'; s.caller = '（等人类的消息）'; s.agentName = 'coder'; s.agent = '（空闲）'; s.screen = []; return s; };
+const orTitles = { box: 'Orchestrator 与它周围的数据', waiters: false, screen: 'messages（发给 LLM 的对话）' };
+const orStart = [
+  { ti: '开始', tx: 'Orchestrator 在群里等人类的消息。状态表是空的，还没有任何请求。', stage: -1, line: null, f: [], ap: s => {} },
+  { ti: '人类发来消息，开一个 root', tx: '群里一条没有 @ 任何人的消息：should_handle 通过，handle_chat 发现这个会话里没有请求在跑，就用 Router.new_root_id 得到 R1，让看板认领这句话，然后进入 run_root。第一条 user 消息是"人类的请求" + 会话看板。', stage: 0, line: 1, f: ['caller', 'screen', 'msgs'], ap: s => { s.msgs.push('CHAT  human → (group)  "写个脚本并运行"'); s.caller = '开 root R1，进入 run_root'; s.screen.push('system：调度员的规则（9 条）'); s.screen.push('user：人类的请求：写个脚本并运行　＋　会话看板'); } },
+];
+mkStepper('st12', ['人类发消息', '开 root', 'LLM 决策', '派任务（Router）', '结果回来', '结束'], [
+  { name: '场景 1：简单请求', code: CODE_OR, titles: orTitles, callerName: 'Orchestrator', agentName: 'coder', init: OR0(), steps: orStart.concat([
+    { ti: '第 1 轮：问 LLM', tx: '把 messages 和 5 个工具（3 个 call_<agent>、ask_human、finish）发给 LLM。LLM 回复：文字"剩余步骤：写脚本并运行"，外加一个工具调用 call_coder(goal="写脚本并运行")。文字被存进看板，作为"剩余计划"。', stage: 2, line: 3, f: ['screen', 'caller'], ap: s => { s.screen.push('assistant：剩余步骤：写脚本并运行　→ call_coder(goal=写脚本并运行)'); s.caller = '第 1 轮：LLM 要求 call_coder'; } },
+    { ti: '派给 coder：Router.dispatch', tx: '_call_agent 调用 router.dispatch（2.2 讲过的全部过程：检查限制、登记、发 TASK_ASSIGN、等结果）。Orchestrator 在这里等着，不阻塞别人。', stage: 3, line: 11, f: ['rows', 'msgs', 'agent'], ap: s => { addRow(s, 't1', 'coder', '写脚本并运行', 'running'); s.msgs.push('TASK_ASSIGN  orchestrator → coder  "写脚本并运行"'); s.agent = '执行中…'; } },
+    { ti: 'coder 做完，结果变成一条短 observation', tx: '结果回来后，只把 success、summary、artifacts 这些整理成一小段 JSON 作为 tool 消息追加进 messages，不是全文，这样 messages 不会越来越长。', stage: 4, line: 12, f: ['rows', 'screen', 'agent'], ap: s => { setSt(s, 't1', 'done'); s.agent = '完成'; s.screen.push('tool：{"success": true, "summary": "已写好并运行通过", "artifacts": ["a.py"]}'); } },
+    { ti: '第 2 轮：LLM 看到结果，调用 finish', tx: '再问一次 LLM。它认为都做完了，单独调用 finish(summary="脚本写好并运行通过", deliverables=["a.py"])。', stage: 2, line: 7, f: ['screen', 'caller'], ap: s => { s.screen.push('assistant：finish(summary=脚本写好并运行通过, deliverables=[a.py])'); s.caller = '第 2 轮：LLM 调用 finish'; } },
+    { ti: '_conclude：收集交付物，汇报', tx: '把 a.py 从 coder 的 workspace 拷到 data/output/R1-<启动时间>/，看板上把 R1 标成已完成，然后在群里发最终回复。回复的 payload 带上 success、轮数、失败模式、输出目录，评测框架读它。', stage: 5, line: 15, f: ['msgs', 'caller'], ap: s => { s.msgs.push('CHAT  orchestrator → human  "@human 脚本写好并运行通过　交付物：a.py"  payload: final, success, rounds=2'); s.caller = '已汇报，R1 结束'; } },
+  ])},
+  { name: '场景 2：一轮两个调用，一个拒绝后改派', code: CODE_OR, titles: orTitles, callerName: 'Orchestrator', agentName: 'coder / writer', init: OR0(), steps: orStart.concat([
+    { ti: '第 1 轮：LLM 一次发出两个调用', tx: '写文档和跑测试互不依赖，LLM 把它们放在同一轮：call_writer(整理文档) 和 call_writer(跑测试)——第二个它搞错了，跑测试应该交给 coder。', stage: 2, line: 3, f: ['screen'], ap: s => { s.screen.push('assistant：call_writer(整理文档)、call_writer(跑测试)'); } },
+    { ti: '两个调用并行执行', tx: 'asyncio.gather 同时调用两次 router.dispatch，两个任务同时在状态表里出现，同时在跑，不是一个做完再做另一个。（这里是两个不同的 agent，所以并行；如果 LLM 对<b>同一个</b> agent 同时发了两个调用，它们会排队一个接一个，因为共用同一个 workspace。）', stage: 3, line: 5, f: ['rows', 'msgs'], ap: s => { addRow(s, 't1', 'writer', '整理文档', 'running'); addRow(s, 't2', 'writer', '跑测试', 'running'); s.msgs.push('TASK_ASSIGN  → writer  "整理文档"'); s.msgs.push('TASK_ASSIGN  → writer  "跑测试"'); } },
+    { ti: 'writer 完成了一个，拒绝了另一个', tx: '"整理文档"成功；"跑测试"超出 writer 的能力（它不能运行代码），按步骤 2.2 里讲的，它直接拒绝并建议交给 coder。两个结果都作为 observation 追加进 messages。', stage: 4, line: 6, f: ['rows', 'screen'], ap: s => { setSt(s, 't1', 'done'); setSt(s, 't2', 'declined'); s.screen.push('tool：{"success": true, "summary": "文档整理好了"}'); s.screen.push('tool：{"success": false, "declined": true, "reason": "需要运行代码", "suggest": "coder"}'); } },
+    { ti: '第 2 轮：LLM 读到 suggest，改派给 coder', tx: '规则里写了"agent 拒绝并给了 suggest 时改派"。LLM 发出 call_coder(goal="跑测试")。这不是代码里写死的路由表，是 LLM 根据 observation 自己决定的（设计里的"协商"）。', stage: 2, line: 3, f: ['screen', 'rows', 'agent'], ap: s => { s.screen.push('assistant：call_coder(goal=跑测试)'); addRow(s, 't3', 'coder', '跑测试', 'done'); s.agent = '跑完了，全部通过'; s.screen.push('tool：{"success": true, "summary": "12 个测试全部通过"}'); } },
+    { ti: '第 3 轮：finish', tx: '拒绝不算失败，也不占重试次数。LLM 看到全部完成，调用 finish。最终回复和场景 1 一样发出。', stage: 5, line: 15, f: ['msgs'], ap: s => { s.msgs.push('CHAT  orchestrator → human  "@human 文档整理好，测试全部通过"  payload: final, success, rounds=3'); } },
+  ])},
+  { name: '场景 3：轮数用完', code: CODE_OR, titles: orTitles, callerName: 'Orchestrator', agentName: 'coder', init: (() => { const s = OR0(); s.screen = ['system：调度员的规则（9 条）', 'user：人类的请求：很大的任务　＋　会话看板']; s.caller = '开 root R1（最多 2 轮，演示用）'; return s; })(), steps: [
+    { ti: '开始', tx: '为了演示，把轮数上限设成 2（默认是 8）。任务很大，LLM 每轮都派一个新的子任务，一直没有调用 finish。', stage: -1, line: null, f: [], ap: s => {} },
+    { ti: '第 1、2 轮：LLM 一直在派任务', tx: '每轮派一个任务，都成功了，但 LLM 还觉得没做完。', stage: 3, line: 2, f: ['rows', 'screen'], ap: s => { addRow(s, 't1', 'coder', '步骤 1', 'done'); addRow(s, 't2', 'coder', '步骤 2', 'done'); s.screen.push('assistant：call_coder(步骤 1)'); s.screen.push('tool：{"success": true, "summary": "做了一部分", "artifacts": ["part1.md"]}'); s.screen.push('assistant：call_coder(步骤 2)'); s.screen.push('tool：{"success": true, "summary": "又做了一部分", "artifacts": ["part2.md"]}'); } },
+    { ti: '轮数用完：for 循环结束', tx: '第 8 行：不再问 LLM。', stage: 5, line: 8, f: ['caller'], ap: s => { s.caller = '2 轮用完，没等到 finish'; } },
+    { ti: '用代码拼一份"部分结果"的汇报', tx: '不调用 LLM：_partial_summary 把已完成和未完成的子任务拼成一段话，失败模式记为 max_rounds，已经成功的产物（part1.md、part2.md）也一并收集到输出目录。这样即使没做完，人类拿到的也是已有的成果，评测也能统计"完成了几个子任务"。', stage: 5, line: 15, f: ['msgs'], ap: s => { s.msgs.push('CHAT  orchestrator → human  "@human 已用完 2 轮，没能完成全部目标。已完成：coder「步骤 1」…；coder「步骤 2」…"  payload: final, success=false, failure_mode=max_rounds'); } },
+  ]},
+]);
+
+const CODE_CH = [
+  'async def handle_chat(self, msg):',
+  '    if text.startswith("/"):',
+  '        if cmd == "/status": await self._say(msg, self.status_text(session))   # state table, no LLM',
+  '        elif cmd == "/cancel": await self._cancel(msg, session)',
+  '        return',
+  '    run = self._runs.get(session)',
+  '    if run is not None:                       # a request is already running here',
+  '        run.interjections.append(text); return    # an addition, not a new request',
+  '    await self.run_root(msg, self._begin(msg, session))',
+  '',
+  'async def _cancel(self, msg, session):',
+  '    roots = self.router.cancel_session(session)     # every unfinished task of the session',
+  '    self.router.cancel_root(run.root_id)            # also refuses its further calls',
+  '    run.task.cancel()                               # stops the loop (the LLM call or the dispatch)',
+  '    await self.announce_cancelled(msg.channel, roots)   # "已取消 R1"; the CLI clears open requests',
+];
+const CH0 = () => { const s = E0(); s.callerName = 'human'; s.caller = '（看着屏幕）'; s.agentName = 'Orchestrator'; s.agent = 'R3 的循环在运行：正在等 coder'; s.screen = []; addRow(s, 't1', 'coder', '整理纪要', 'done'); addRow(s, 't2', 'writer', '写摘要', 'done'); addRow(s, 't3', 'coder', '翻译', 'done'); addRow(s, 't4', 'coder', '写脚本', 'running'); return s; };
+const chTitles = { box: '会话里的数据', waiters: false, screen: '屏幕上显示 / 发给 LLM 的对话' };
+mkStepper('st13', ['人类发消息', 'handle_chat 判断', '处理', '结果'], [
+  { name: '场景 1：/status', code: CODE_CH, titles: { ...chTitles, rows: 'StateTable（R1：t1 t2；R2：t3；R3：t4）' }, callerName: 'human', agentName: 'Orchestrator', init: CH0(), steps: [
+    { ti: '开始', tx: '会话里已经有三个请求：R1（两个任务，做完了）、R2（一个任务，做完了）、R3（正在做）。', stage: -1, line: null, f: ['rows'], ap: s => {} },
+    { ti: '人类输入 /status', tx: 'CLI 把它作为 CHAT 发给 orchestrator（4.2 场景 3）。handle_chat 发现是 / 开头的命令。', stage: 0, line: 1, f: ['caller'], ap: s => { s.caller = '输入：/status'; } },
+    { ti: '/status：读状态表，不调 LLM', tx: '调用 status_text，它直接读 StateTable。', stage: 2, line: 2, f: ['rows'], ap: s => {} },
+    { ti: '当前请求逐个列出，更早的请求一行一个', tx: '当前请求 R3 把每个任务列出来；R1、R2 已经做完，各压成一行。聊了很久之后 /status 也不会变得很长。', stage: 3, line: 2, f: ['screen'], ap: s => { s.screen.push('R3：任务 1 个，进行中 1 个：'); s.screen.push('  t4 coder [running]「写脚本」'); s.screen.push('更早的请求：'); s.screen.push('  R1：2 个任务，全部完成'); s.screen.push('  R2：1 个任务，全部完成'); } },
+  ]},
+  { name: '场景 2：请求进行中又说了一句', code: CODE_CH, titles: { ...chTitles, rows: 'StateTable' }, callerName: 'human', agentName: 'Orchestrator', init: (() => { const s = E0(); s.callerName = 'human'; s.caller = '（看着屏幕）'; s.agentName = 'Orchestrator'; s.agent = 'R1 在运行：coder 正在写脚本'; s.screen = ['user：人类的请求：写个脚本　＋　会话看板', 'assistant：剩余步骤：写脚本　→ call_coder(goal=写脚本)']; addRow(s, 't1', 'coder', '写脚本', 'running'); return s; })(), steps: [
+    { ti: '开始', tx: 'R1 正在运行，Orchestrator 在等 coder 的结果。', stage: -1, line: null, f: ['agent'], ap: s => {} },
+    { ti: '人类补充："脚本用 Python 3.11"', tx: '不是命令，所以走第 5 行：看这个会话里有没有请求在跑。', stage: 0, line: 5, f: ['caller'], ap: s => { s.caller = '输入：脚本用 Python 3.11'; } },
+    { ti: '有请求在跑：当作插话，不开新请求', tx: '把这句话放进 run.interjections 就返回。不会开 R2，也不会打断当前的循环。看板同时记下这句话，所以后面开始的 Worker 读看板也能看到。', stage: 2, line: 7, f: ['agent'], ap: s => { s.agent = 'R1 仍在运行；收到 1 条补充，等下一轮用'; } },
+    { ti: 'coder 做完，下一轮 LLM 才看到补充', tx: '循环进入下一轮时，先把积压的补充作为一条 user 消息追加进 messages："（人类补充）脚本用 Python 3.11"，再问 LLM，LLM 就能据此调整。', stage: 3, line: 7, f: ['screen', 'rows'], ap: s => { setSt(s, 't1', 'done'); s.screen.push('tool：{"success": true, "summary": "脚本写好了", "artifacts": ["a.py"]}'); s.screen.push('user：（人类补充）脚本用 Python 3.11'); } },
+  ]},
+  { name: '场景 3：/cancel', code: CODE_CH, titles: { ...chTitles, rows: 'StateTable' }, callerName: 'human', agentName: 'Orchestrator', init: (() => { const s = E0(); s.callerName = 'human'; s.caller = '（看着屏幕）'; s.agentName = 'Orchestrator'; s.agent = 'R1 在运行：coder 正在做'; s.screen = []; addRow(s, 't1', 'coder', '写脚本并推送', 'running'); return s; })(), steps: [
+    { ti: '开始', tx: 'R1 正在运行，coder 在执行。', stage: -1, line: null, f: [], ap: s => {} },
+    { ti: '人类输入 /cancel', tx: '命令分支，调用 _cancel。', stage: 0, line: 3, f: ['caller'], ap: s => { s.caller = '输入：/cancel'; } },
+    { ti: 'Router 取消这个会话里所有未结束的任务', tx: 'cancel_session 找出会话里还没结束的任务，标成 cancelled，并放开所有在等它们的人（dispatch 立刻返回 "cancelled"，等人类回答的请求得到 "cancelled"）。', stage: 2, line: 11, f: ['rows'], ap: s => { setSt(s, 't1', 'cancelled'); } },
+    { ti: '再把 root 记成已取消', tx: 'cancel_root 把 R1 记入"已取消"，所以哪怕 LLM 还想再派任务也会被拒绝。（这一步还能覆盖"LLM 正在思考、还没派出任何任务"的情况。）', stage: 2, line: 12, f: [], ap: s => {} },
+    { ti: '打断 Orchestrator 自己的循环', tx: 'run.task.cancel() 让它的循环立刻停下来，不管它当时是在等 LLM 还是在等 dispatch。看板上 R1 标成"已取消"。不会发"全部完成"的汇报。', stage: 2, line: 13, f: ['agent'], ap: s => { s.agent = '循环已打断，R1 标为已取消'; } },
+    { ti: '发"已取消 R1"的通知', tx: '通知的 payload 带 cancelled_roots=["R1"]，CLI 看到后会清掉 R1 里还在等你回答的请求（4.3 场景 4）。这就是步骤 4 决定 4 说好的、留给这一步的部分。', stage: 3, line: 14, f: ['screen'], ap: s => { s.screen.push('[orchestrator] 已取消 R1'); } },
+  ]},
+]);
+
+/* ---------- 6.2 - 6.4 Memory ---------- */
+const CODE_MW = [
+  'def add(self, exp):',
+  '    self.path.parent.mkdir(parents=True, exist_ok=True)',
+  '    with self.path.open("a") as f:',
+  '        f.write(json.dumps(asdict(exp), ensure_ascii=False) + "\\n")   # one line per experience',
+  '',
+  'def all(self):',
+  '    latest = {}',
+  '    for line in the file:',
+  '        try: exp = Experience(**json.loads(line))',
+  '        except (ValueError, TypeError): log.warning("skipped"); continue   # a bad line',
+  '        latest.pop(exp.task_id, None); latest[exp.task_id] = exp          # the later line wins',
+  '    return list(latest.values())',
+];
+const MW0 = () => { const s = E0(); s.callerName = 'Worker'; s.caller = '（任务进行中）'; s.agentName = 'JsonlMemory'; s.agent = '（空闲）'; s.screen = []; return s; };
+const mwTitles = { box: 'JsonlMemory 与它的文件', rows: 'all()：读出来的记录', rowsEmpty: '（还没有读）', waiters: false, msgs: false, screen: 'coder.jsonl（文件内容）' };
+mkStepper('st14', ['Worker 做完任务', 'add：追加一行', 'all()：读出', '使用'], [
+  { name: '场景 1：写入两条、读出', code: CODE_MW, titles: mwTitles, callerName: 'Worker', agentName: 'JsonlMemory', init: MW0(), steps: [
+    { ti: '开始', tx: 'coder 还没有任何记忆，文件 data/memory/coder.jsonl 甚至还不存在。', stage: -1, line: null, f: ['screen'], ap: s => {} },
+    { ti: 'Worker 做完 t1（成功），调用 add', tx: 'Worker 每个子任务结束都记一条 Experience：目标、类型标签、成功与否、摘要。成功时没有教训。', stage: 0, line: 0, f: ['caller'], ap: s => { s.caller = 'add(Experience t1：code，成功)'; } },
+    { ti: '追加一行', tx: '先确保目录存在，再以追加方式打开文件，写入一行 JSON（中文不转义，直接能读）。就这么简单，不改动旧内容。', stage: 1, line: 3, f: ['screen'], ap: s => { s.screen.push('{"task_id": "t1", "task_goal": "write a script", "tags": ["code"], "success": true, "summary": "done", "lesson": "", ...}'); } },
+    { ti: 't2 失败了，同样记一条', tx: '失败时 Worker 之后还会异步调一次 LLM 写一句教训，但那是在结果返回之后的事，所以这条先记下来，lesson 暂时为空。', stage: 1, line: 3, f: ['screen', 'caller'], ap: s => { s.caller = 'add(Experience t2：code，失败)'; s.screen.push('{"task_id": "t2", "task_goal": "install and run a tool", "tags": ["code"], "success": false, "summary": "pip failed", "lesson": "", ...}'); } },
+    { ti: 'all()：把整个文件读出来', tx: '每次调用都重新读一遍文件（只有几十条，不值得做缓存），一行解析成一条 Experience，按先后顺序返回。', stage: 2, line: 7, f: ['rows'], ap: s => { addRow(s, 't1', 'code', 'write a script', 'done'); addRow(s, 't2', 'code', 'install and run a tool', 'failed'); } },
+  ]},
+  { name: '场景 2：先记失败，后补教训', code: CODE_MW, titles: mwTitles, callerName: 'Worker', agentName: 'JsonlMemory', init: MW0(), steps: [
+    { ti: '开始', tx: '失败任务的教训要靠 LLM 反思，反思是异步的，在任务结果返回之后才做。所以 Worker 会先记一条没有教训的失败，等反思完再补一条。', stage: -1, line: null, f: [], ap: s => {} },
+    { ti: 't1 失败：先记一条', tx: '先 add 一条 lesson 为空的失败记录，不让写记忆拖慢任务的返回。', stage: 1, line: 3, f: ['screen', 'caller'], ap: s => { s.caller = 'add(t1：失败，lesson 为空)'; s.screen.push('{"task_id": "t1", ..., "success": false, "lesson": ""}'); } },
+    { ti: '反思出教训后，再 add 一次', tx: '结果已经返回之后，Worker 在后台让 LLM 写一句教训："pip install times out"，然后用同一个 task_id 再 add 一次。文件里现在有两行都是 t1。', stage: 1, line: 3, f: ['screen', 'caller'], ap: s => { s.caller = 'add(t1：失败，lesson = "pip install times out")'; s.screen.push('{"task_id": "t1", ..., "success": false, "lesson": "pip install times out"}'); } },
+    { ti: 'all()：同一个 task_id，后写的算数', tx: '读的时候用字典按 task_id 存：第 10 行先把旧的删掉再放新的，所以最后只剩带教训的那一条，而且它算"最新"。文件本身不改，旧行只是被盖过。', stage: 2, line: 10, f: ['rows'], ap: s => { addRow(s, 't1', 'code', 'lesson: pip install times out', 'failed'); } },
+  ]},
+  { name: '场景 3：文件里有一行坏掉了', code: CODE_MW, titles: mwTitles, callerName: 'Worker', agentName: 'JsonlMemory', init: (() => { const s = MW0(); s.screen = ['{"task_id": "t1", ..., "success": true}', 'this line is garbage', '{"task_id": "t2", ..., "success": false}']; s.agent = '文件里有 3 行，第 2 行是坏的'; return s; })(), steps: [
+    { ti: '开始', tx: '文件被人手动改过，或者程序在写的时候被中断，留下了一行不是合法 JSON 的内容。', stage: -1, line: null, f: ['screen'], ap: s => {} },
+    { ti: 'all()：读到坏行', tx: 'json.loads 对第 2 行抛出异常。', stage: 2, line: 8, bad: true, f: ['screen'], ap: s => { s.agent = '第 2 行解析失败 ✗'; } },
+    { ti: '跳过它，记一条警告，继续读', tx: '第 9 行的 except 接住异常，记一条警告（写明文件和行号），然后 continue。一行坏数据不会让整个记忆读不出来，否则一条坏行就会让 Worker 和 Orchestrator 都失去全部记忆。', stage: 2, line: 9, f: ['agent', 'rows'], ap: s => { s.agent = 'WARNING：coder.jsonl 第 2 行不是合法的记录，已跳过'; addRow(s, 't1', 'code', 'ok', 'done'); addRow(s, 't2', 'code', 'failed', 'failed'); } },
+  ]},
+]);
+
+const CODE_RC = [
+  'def recall(self, query, k=3):',
+  '    wanted = keywords(query)                          # {"fetch", "pricing", "page"}',
+  '    for exp in self.all():',
+  '        score = 2 * len(wanted & keywords(goal + tags)) + len(wanted & keywords(summary + lesson))',
+  '        if score: scored.append((score + bool(exp.lesson), order, exp))   # a lesson: +1',
+  '    scored.sort(reverse=True)                         # best first; the newer first on ties',
+  '    return the top k',
+  '',
+  'def keywords(text):',
+  '    words = lower-case ASCII words, without stop words (the, a, to, ...)',
+  '    for each run of Chinese characters: add every pair of neighbours   # 爬虫脚本 -> 爬虫, 虫脚, 脚本',
+];
+const RC0 = rows => { const s = E0(); s.callerName = 'Worker'; s.caller = '要开始一个任务'; s.agentName = 'JsonlMemory'; s.agent = '（空闲）'; s.screen = []; rows.forEach(r => addRow(s, ...r)); return s; };
+const rcTitles = { box: 'JsonlMemory', rows: 'coder 的记忆（all()）', rowsEmpty: '（空）', waiters: false, msgs: false, screen: '关键词与打分过程' };
+mkStepper('st15', ['收到查询', '拆成关键词', '给每条记录打分', '排序', '取前 k 条'], [
+  { name: '场景 1：英文，有教训的记录', code: CODE_RC, titles: rcTitles, callerName: 'Worker', agentName: 'JsonlMemory', init: RC0([['t1', 'search', 'fetch the docs page and save it  → lesson: this site needs JavaScript, use another source', 'failed'], ['t2', 'doc', 'write the docs', 'done'], ['t3', 'search', 'fetch the pricing page and save it', 'done']]), steps: [
+    { ti: '开始', tx: 'Worker 要做的任务是 "fetch the pricing page"。开始之前，它先用任务目标去记忆里找相似的过去经验。记忆里有 3 条。', stage: -1, line: null, f: ['rows'], ap: s => {} },
+    { ti: 'Worker 调用 recall("fetch the pricing page", 3)', tx: '第一步：把查询拆成关键词。', stage: 0, line: 0, f: ['caller'], ap: s => { s.caller = 'recall("fetch the pricing page", 3)'; } },
+    { ti: '查询的关键词', tx: '英文取小写单词，去掉 the、a、to 这类没有区分度的停用词。得到 {fetch, pricing, page}。', stage: 1, line: 1, f: ['screen'], ap: s => { s.screen.push('查询 → {fetch, pricing, page}（the 是停用词）'); } },
+    { ti: '给 t1 打分', tx: '目标 "fetch the docs page and save it" 和查询重合 fetch、page，2 个词，目标里的词算 2 分，得 4；摘要 "the page came back empty" 重合 page，得 1；t1 带着教训，再加 1。合计 6。', stage: 2, line: 3, f: ['rows', 'screen'], ap: s => { s.rows[0].status = 'score 6'; s.screen.push('t1：目标 2 词×2 + 摘要 1 词 + 有教训 1 = 6'); } },
+    { ti: '给 t2 打分', tx: '"write the docs" 和查询一个词也不重合，0 分。第 4 行的 if score 把它排除在外，所以完全不相关的记录不会混进 prompt。', stage: 2, line: 4, f: ['rows', 'screen'], ap: s => { s.rows[1].status = 'score 0'; s.screen.push('t2：没有重合的词 → 不返回'); } },
+    { ti: '给 t3 打分', tx: '"fetch the pricing page and save it" 重合 fetch、pricing、page，3 个词 ×2 = 6，没有教训。也是 6。', stage: 2, line: 3, f: ['rows', 'screen'], ap: s => { s.rows[2].status = 'score 6'; s.screen.push('t3：目标 3 词×2 = 6'); } },
+    { ti: '排序：同分时新的在前', tx: 't1 和 t3 都是 6 分。同分时新的排前面，t3 比 t1 新，所以顺序是 [t3, t1]。注意"有教训 +1"的作用：如果没有这一分，t1 只有 5 分，就排在 t3 后面了，而教训正是召回最想让 Worker 看到的东西。', stage: 3, line: 5, f: ['screen'], ap: s => { s.screen.push('排序 → [t3 (6), t1 (6)]，同分新的在前'); } },
+    { ti: '取前 k 条，注入 Worker 的 prompt', tx: '返回 t3 和 t1。Worker 把它们作为"过去的经验"写进 prompt，所以它看到了"这个网站需要 JavaScript，换一个来源"，第二次就不会再撞同一堵墙。', stage: 4, line: 6, f: ['agent', 'caller'], ap: s => { s.agent = '返回 [t3, t1]'; s.caller = 'prompt 里多了：t1 的教训 "this site needs JavaScript, use another source"'; } },
+  ]},
+  { name: '场景 2：中文查询', code: CODE_RC, titles: rcTitles, callerName: 'Worker', agentName: 'JsonlMemory', init: RC0([['t1', 'code', '写一个爬虫脚本', 'done'], ['t2', 'doc', '整理会议纪要', 'done']]), steps: [
+    { ti: '开始', tx: '人类可能用中文提任务，所以中文也要能召回。中文没有空格分词，用最简单的办法：取相邻的两个字。', stage: -1, line: null, f: ['rows'], ap: s => {} },
+    { ti: '查询 "写爬虫" 的关键词', tx: '三个字拆成相邻两个字：{写爬, 爬虫}。', stage: 1, line: 10, f: ['screen'], ap: s => { s.screen.push('查询 "写爬虫" → {写爬, 爬虫}'); } },
+    { ti: 't1："写一个爬虫脚本"', tx: '拆成 {写一, 一个, 个爬, 爬虫, 虫脚, 脚本}，和查询重合 "爬虫"，目标里的词 ×2，得 2 分，会被返回。', stage: 2, line: 3, f: ['rows', 'screen'], ap: s => { s.rows[0].status = 'score 2'; s.screen.push('t1 → {写一, 一个, 个爬, 爬虫, 虫脚, 脚本}，重合 爬虫 → 2'); } },
+    { ti: 't2："整理会议纪要"', tx: '拆成 {整理, 理会, 会议, 议纪, 纪要}，一个也不重合，不返回。', stage: 2, line: 4, f: ['rows', 'screen'], ap: s => { s.rows[1].status = 'score 0'; s.screen.push('t2 → {整理, 理会, 会议, 议纪, 纪要}，没有重合'); } },
+    { ti: '为什么不用单个字', tx: '"一"、"用"、"的"这样的字几乎出现在每句话里，拿它们做关键词会让所有记录都"相关"。两个字一组既不需要分词工具，误匹配也少得多。（所以只有一个字的查询会找不到任何记录。）', stage: 4, line: 10, f: ['agent'], ap: s => { s.agent = '返回 [t1]'; } },
+  ]},
+]);
+
+const CODE_PF = [
+  'def profile(self, max_chars=300):',
+  '    recent = self.all()[-20:]                         # the latest 20 experiences',
+  '    counts per tag: code 2/4, git 2/2                 # a record with 2 tags counts for both',
+  '    text = "Recent performance: code 2/4 succeeded, git 2/2 succeeded."',
+  '    lessons = lessons of the latest failures          # no repeats, at most 3',
+  '    text += " Known weak spots: " + lessons           # only what fits in max_chars',
+  '    return clip(text, max_chars)',
+];
+const PF0 = rows => { const s = E0(); s.callerName = 'Orchestrator'; s.caller = '要开始一个请求'; s.agentName = 'JsonlMemory'; s.agent = '（空闲）'; s.screen = []; rows.forEach(r => addRow(s, ...r)); return s; };
+const pfTitles = { box: 'JsonlMemory', rows: '最近的记录（all()[-20:]）', rowsEmpty: '（空）', waiters: false, msgs: false, screen: '档案生成过程' };
+mkStepper('st16', ['取最近 20 条', '按标签统计', '挑失败教训', '拼成一句话', 'Orchestrator 使用'], [
+  { name: '场景 1：从记录到档案', code: CODE_PF, titles: pfTitles, callerName: 'Orchestrator', agentName: 'JsonlMemory', init: PF0([['r1', 'code', 'ok', 'done'], ['r2', 'code', 'lesson: pip install times out', 'failed'], ['r3', 'code, git', 'ok', 'done'], ['r4', 'code', 'lesson: pip install times out', 'failed'], ['r5', 'git', 'ok', 'done']]), steps: [
+    { ti: '开始', tx: '每个请求开始时，Orchestrator 向每个 agent 的记忆要一份能力档案，写进 call_<agent> 工具的描述里。这里是 coder 的 5 条记录。', stage: -1, line: null, f: ['rows'], ap: s => {} },
+    { ti: 'Orchestrator 调用 profile(300)', tx: '先只取最近 20 条，更早的不看，这样"近期表现"才是近期。这里一共才 5 条，全取。', stage: 0, line: 1, f: ['caller', 'rows'], ap: s => { s.caller = 'profile(300)'; } },
+    { ti: '按标签统计成功/总数', tx: 'code：r1 成功、r2 失败、r3 成功、r4 失败，2/4；git：r3、r5 都成功，2/2。r3 同时有 code 和 git 两个标签，每个标签各算一次。出现得多的排前面。', stage: 1, line: 2, f: ['screen'], ap: s => { s.screen.push('code 2/4，git 2/2'); } },
+    { ti: '挑最近几次失败的教训', tx: '只看失败记录里的教训，从新到旧：r4 "pip install times out"，r2 也是同一句，重复的只留一次；成功记录里的教训不算。最多取 3 条。', stage: 2, line: 4, f: ['screen'], ap: s => { s.screen.push('教训（新→旧，去重）：pip install times out'); } },
+    { ti: '拼成一句话，不超过 max_chars', tx: '"Recent performance: ... Known weak spots: ..."。每加一条教训前先看还放不放得下，放不下的跳过；最后再保险地截断到 300 字以内，所以不会撑大 Orchestrator 的 prompt。没有任何记录时返回空字符串，工具描述就不带档案。', stage: 3, line: 5, f: ['screen'], ap: s => { s.screen.push('Recent performance: code 2/4 succeeded, git 2/2 succeeded. Known weak spots: pip install times out.'); } },
+    { ti: 'Orchestrator 把它读进工具描述', tx: '这段话被拼在 call_coder 的描述后面。LLM 选人时能看到："写代码类任务 coder 近期只有一半成功，短板是 pip install 超时"。这就是设计里"记忆影响分工"。', stage: 4, line: 6, f: ['agent', 'caller'], ap: s => { s.agent = '档案已生成'; s.caller = 'call_coder 的描述 = 能力描述 + 上面这句档案'; } },
+  ]},
+  { name: '场景 2：同类任务做两次', code: CODE_PF, titles: pfTitles, callerName: 'Orchestrator', agentName: 'coder', init: PF0([['t1', 'code', 'lesson: installing packages times out', 'failed']]), steps: [
+    { ti: '第一次：失败了', tx: 'coder 做"安装依赖并运行"失败，反思出一句教训，记进记忆（6.2 场景 2）。', stage: -1, line: null, f: ['rows'], ap: s => {} },
+    { ti: '档案马上反映出来', tx: '下一个请求开始时，Orchestrator 读到的档案是：code 0/1 succeeded，已知短板是安装依赖超时。它可以选择换个 agent，或者在 goal 里提醒 coder 换个办法。', stage: 4, line: 3, f: ['screen', 'caller'], ap: s => { s.screen.push('Recent performance: code 0/1 succeeded. Known weak spots: installing packages times out.'); s.caller = '读到档案：coder 近期 0/1，短板是安装超时'; } },
+    { ti: '第二次：Worker 先召回教训', tx: '同类任务再来时，coder 开始前 recall 目标，6.3 里讲过的流程：翻出 t1 的教训，写进 prompt，所以它这次先换用别的办法。', stage: 4, line: null, f: ['agent'], ap: s => { s.agent = 'prompt 里有 t1 的教训，换了办法'; } },
+    { ti: '这次成功了，记一条', tx: '新增 t2，成功。', stage: 0, line: 1, f: ['rows'], ap: s => { addRow(s, 't2', 'code', 'ok', 'done'); } },
+    { ti: '档案跟着变', tx: '统计变成 code 1/2。失败的教训还在窗口里，所以"已知短板"仍然列着，直到它滚出最近 20 条。这就是报告里"第一次失败、第二次成功"的对照：记忆改变了 Worker 怎么做（召回），也改变了档案（分工）。', stage: 3, line: 5, f: ['screen'], ap: s => { s.screen.push('Recent performance: code 1/2 succeeded. Known weak spots: installing packages times out.'); } },
+  ]},
+]);
+
+/* ---------- 7.2 the whole system ---------- */
+const CODE_SYS = [
+  'def build_system(settings, llm, human, ...):',
+  '    bus, state = InMemoryBus(), StateTable()',
+  '    sandboxes = {role: sandbox_factory(role, workspaces_dir / role) for role in roles}   # a workspace per role',
+  '    memories = {role: JsonlMemory.for_agent(memory_dir, role) for role in roles}         # a memory per role',
+  '    router = Router(bus, state, sandboxes, settings)             # registers itself on the bus',
+  '    orchestrator = Orchestrator(bus, router, settings, llm, roles, memories)',
+  '    workers = {role: worker_factory(role, parts) for role in roles}   # a plug-in point',
+  '    everybody joins group:main',
+  '    return System(...)',
+  '',
+  'async def run(self):                                  # System',
+  '    self.start()                                      # every agent runs its own loop (3.3)',
+  '    try: await self.human.run(self.bus)               # the command line, until /quit (4.1)',
+  '    finally: await self.stop()',
+];
+const SY0 = () => { const s = E0(); s.callerName = 'human'; s.caller = '（还没启动）'; s.agentName = '系统'; s.agent = '（还没启动）'; s.screen = []; return s; };
+mkStepper('st17', ['启动', '组装', '人类发消息', 'Orchestrator 决策', 'Worker 执行', '汇报'], [
+  { name: '场景 1：启动，并完成一个请求', code: CODE_SYS, titles: { box: '整个系统', rows: 'StateTable', waiters: false, msgs: 'bus 上的消息', screen: '屏幕上显示' }, callerName: 'human', agentName: '系统', init: SY0(), steps: [
+    { ti: '运行 python -m mas --demo', tx: '入口读取参数和 .env，生成 Settings，调用 build_demo_system，它最终调用的是 build_system：和真实系统同一份组装代码，只是传进去的 llm、worker_factory、sandbox_factory 换成了替身。', stage: 0, line: 0, f: ['agent'], ap: s => { s.agent = 'main() → build_demo_system → build_system'; } },
+    { ti: '创建 bus、状态表、Router', tx: '这三样是整个系统共用的。Router 创建时就把自己登记成 bus 的 observer（2.1），之后每条消息它都会看到。', stage: 1, line: 4, f: ['agent'], ap: s => { s.agent = '已创建：bus、StateTable、Router（已登记为 observer）'; } },
+    { ti: '每个角色一个 workspace、一份记忆', tx: 'researcher、coder、writer 各有自己的目录和自己的 .jsonl 记忆文件（6.1）。Orchestrator 拿到所有记忆，只用来读能力档案。', stage: 1, line: 3, f: ['agent'], ap: s => { s.agent = '3 个 workspace，3 份记忆，Orchestrator 和 3 个 Worker 已创建'; } },
+    { ti: 'System.run：启动所有 agent 和命令行', tx: 'start() 给 Orchestrator 和每个 Worker 各开一个任务，各自在自己的 inbox 上等消息（3.3）。然后命令行开始同时读键盘和显示消息（4.1）。human 输入 /quit 后，stop() 取消所有 agent。', stage: 1, line: 11, f: ['agent', 'screen'], ap: s => { s.agent = '4 个 agent 在等消息，命令行在等输入'; s.screen.push('Commands: …（命令行的帮助）'); } },
+    { ti: '人类输入："write a python script and a document"', tx: '命令行（4.2）发现不是命令，也没有 @ 谁，就在群里发一条 CHAT。Router 作为 observer 先看到它，转给会话看板记下原话（1.3）。', stage: 2, line: null, f: ['msgs', 'caller'], ap: s => { s.caller = '输入：write a python script and a document'; s.msgs.push('CHAT  human → (group)  "write a python script and a document"'); } },
+    { ti: 'Orchestrator 被叫醒，开一个请求', tx: 'should_handle 通过（群里没 @ 任何人的人类消息归它），handle_chat 发现没有请求在跑，开 root R1，进入 run_root（5.2）。', stage: 3, line: null, f: ['agent'], ap: s => { s.agent = 'Orchestrator：开 root R1，问 LLM'; } },
+    { ti: '替身 LLM 决定：coder 和 writer 并行', tx: 'demo_brain 看到 "python script" 和 "document" 两个关键词，一轮里发出 call_coder 和 call_writer。（真实系统里这一步是 DeepSeek 在决定。）', stage: 3, line: null, f: ['screen'], ap: s => { s.screen.push('[orchestrator] @coder coder\'s part of: write a python script and a document'); s.screen.push('[orchestrator] @writer writer\'s part of: write a python script and a document'); } },
+    { ti: 'Router 派两个任务', tx: '两次 router.dispatch（2.2）：检查限制、登记到状态表、发 TASK_ASSIGN、创建回执条等结果。两个任务同时在状态表里出现。', stage: 4, line: null, f: ['rows', 'msgs'], ap: s => { addRow(s, 't1', 'coder', "coder's part…", 'running'); addRow(s, 't2', 'writer', "writer's part…", 'running'); s.msgs.push('TASK_ASSIGN  → coder'); s.msgs.push('TASK_ASSIGN  → writer'); } },
+    { ti: '两个 Worker 同时工作', tx: 'Agent 基类（3.3）收到任务，发"收到"，调用 DemoWorker.handle_task：先 recall 记忆（6.3），三步假装工作，写一个文件，add 一条经验。两个 Worker 互不等待。', stage: 4, line: null, f: ['rows', 'screen', 'agent'], ap: s => { s.agent = 'coder 和 writer 各写了一个文件，各记了一条经验'; s.screen.push('· coder: Received t1: …'); s.screen.push('· writer: Received t2: …'); setSt(s, 't1', 'done'); setSt(s, 't2', 'done'); } },
+    { ti: '结果回来，Orchestrator 调用 finish', tx: 'TASK_RESULT 经 Router 唤醒两个 dispatch；observation 回给 LLM；替身 LLM 看到都成功了，单独调用 finish，把两个文件列为交付物（5.2）。', stage: 5, line: null, f: ['screen', 'msgs'], ap: s => { s.msgs.push('TASK_RESULT  coder → orchestrator'); s.msgs.push('TASK_RESULT  writer → orchestrator'); s.screen.push('[coder] @orchestrator Done: … (files: script-t1.py)'); s.screen.push('[writer] @orchestrator Done: … (files: document-t2.md)'); } },
+    { ti: '汇报：交付物收集到输出目录', tx: '_conclude 把两个文件从各自的 workspace 拷到 data/demo/output/R1-<启动时间>/，看板上 R1 标成已完成，在群里发最终回复。命令行把它显示出来。之后你可以试 /status、再提一个请求，或者 /quit。', stage: 5, line: null, f: ['screen', 'caller'], ap: s => { s.caller = '看到最终回复'; s.screen.push('[orchestrator] @human … Deliverables: document-t2.md, script-t1.py (collected in …/output/R1-20261109-153012)'); } },
+  ]},
+]);
+
+
+
+
+
+</script>
+<script>
+/* ---------- table of contents: built from the headings ---------- */
+(() => {
+  const heads = [...document.querySelectorAll('main h2, main h3.sec')];
+  heads.forEach(h => {
+    if (h.id) return;
+    const m = h.textContent.trim().match(/^(\d+)\.(\d+)/);
+    if (m) h.id = `sec${m[1]}-${m[2]}`;
+  });
+  const html = heads.map(h => `<a href="#${h.id}" data-id="${h.id}" class="${h.tagName === 'H2' ? 'chap' : 'sub2'}">${h.textContent.trim()}</a>`).join('');
+  const side = document.createElement('nav'); side.className = 'side';
+  side.innerHTML = '<div style="font-weight:700;margin:0 8px 4px">目录</div>' + html;
+  document.body.prepend(side);
+  const det = document.createElement('details'); det.className = 'tocm';
+  det.innerHTML = '<summary>目录</summary>' + html;
+  document.querySelector('main .sub').after(det);
+  det.addEventListener('click', e => { if (e.target.tagName === 'A') det.open = false; });
+  const links = [...side.querySelectorAll('a')];
+  const spy = () => {
+    let cur = heads[0];
+    heads.forEach(h => { if (h.getBoundingClientRect().top < 130) cur = h; });
+    links.forEach(a => a.classList.toggle('on', a.dataset.id === cur.id));
+    const on = side.querySelector('a.on'); if (on) { const r = on.getBoundingClientRect(); if (r.top < 40 || r.bottom > innerHeight - 20) on.scrollIntoView({ block: 'nearest' }); }
+  };
+  addEventListener('scroll', spy, { passive: true }); spy();
+})();
+</script>
+</body>
+</html>

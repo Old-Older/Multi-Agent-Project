@@ -21,6 +21,10 @@ decompose and delegate tasks, run tools inside isolated sandboxes, and learn fro
 > | 10 | **记忆已经能用了**：`JsonlMemory.for_agent(settings.memory_dir, agent_id)` 得到每个 agent 自己的记忆；`add(exp)`、`recall(query, k)`、`profile(max_chars)` 都已实现。还有一个现成的 `tags_for_tools(tool_names, artifacts)` 帮你打标签。同一个 `task_id` 可以 `add` 两次，后写的算数。`JsonlMemory.clear()` 清空一个 agent 的记忆（评测要从空记忆开始时用）。 | `WorkerAgent`：开始任务时 `recall(goal, settings.memory_recall_k)` 注入 prompt；每个子任务结束 `add` 一次（失败时等异步反思出教训后再 `add` 一次带 `lesson` 的）。**建议不要记录被 `decline` 的和被 `/cancel` 的任务**：它们不是"尝试后失败"，记进去会拉低成功率、污染能力档案。 |
 > | 11 | **系统可以跑起来了**：`python -m mas --demo`（不需要你的部分）。组装在 `mas/app.py`，**你要接的地方**：`build_tools(role, settings)`（返回真实工具，现在返回空列表）；`default_worker_factory` 建 `WorkerAgent`；`default_sandbox_factory` 用 `LocalSandbox`/`DockerSandbox`；`make_llm` 建 `DeepSeekClient`。`mas/demo.py` 里的 `DemoWorker` 是个完整的例子，演示了一个 Worker 该做的事：拒绝做不了的、危险步骤前 `ask_human`、每步检查 `is_cancelled`、开始前 `recall`、结束时 `add`。 | 写好 `WorkerAgent`、工具、`LocalSandbox`、`DeepSeekClient` 后，`python -m mas` 就是真系统；评测框架用 `build_system(..., human=AutoResponder())` + `System.start()`。 |
 
+## 代码导览（先看这个）
+
+用浏览器打开根目录的 [`code_tour.html`](code_tour.html)：一步一步、用动画讲清楚每个模块做了什么，以及整个项目是怎么拆分的（0.1 项目地图，0.2 一次请求的旅程，之后每一步一章）。每章末尾有当时的取舍和决定。LI Heyang 要接的地方在 5、6、7 章和 `docs/interfaces.md` §3.17。
+
 ## 怎么运行
 
 ```bash
