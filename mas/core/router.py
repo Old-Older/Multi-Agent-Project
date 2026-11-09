@@ -17,13 +17,12 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
-import uuid
 from pathlib import Path
 
 from mas.config import Settings
 from mas.core.board import SessionBoard
 from mas.core.bus import MessageBus
-from mas.core.human import HitlKind
+from mas.core.human import CANCELLED_ANSWER, HitlKind
 from mas.core.message import (GROUP_MAIN, HUMAN, ORCHESTRATOR, Message, MsgType,
                               dm_channel, is_group)
 from mas.core.state import StateTable
@@ -51,7 +50,7 @@ class Router:
         self._boards: dict[str, SessionBoard] = {}
         self._task_waiters: dict[str, asyncio.Future[TaskResult]] = {}
         self._hitl_waiters: dict[tuple[str, str], asyncio.Future[str]] = {}
-        self._hitl_task: dict[tuple[str, str], str] = {}      # request -> task id
+        self._hitl_root: dict[tuple[str, str], str] = {}      # open request -> its root id
         self._hitl_counter: dict[str, int] = {}
         self._root_counter: dict[str, int] = {}
         self._delegations: dict[str, int] = {}                # parent task id -> count
@@ -68,18 +67,25 @@ class Router:
         """Create a Task, run it on `target`, return its result.
 
         1. Check limits (depth, cycle in chain, delegations per task, retries of
-           the same goal). On violation return TaskResult(success=False, error=...)
-           without contacting the target.
+           the same goal) and find the files. On violation the call is refused: the task
+           is still registered, as FAILED with error "refused: ...", so it shows up in
+           /status and in the eval statistics, but the target is never contacted and the
+           refusal does not count towards the retry or delegation limits.
         2. Register in the StateTable; copy `files` from the requester's sandbox
            (or from the agent that produced them in this root) into the target's inbox/.
         3. Publish TASK_ASSIGN: in GROUP_MAIN if origin_channel is a group,
            otherwise in dm_channel(requester, target).
         4. Await the TASK_RESULT of that task, with settings.subtask_timeout_s;
-           on timeout return a TIMEOUT failure.
+           on timeout return a TIMEOUT failure. The clock does not run while the task
+           is WAITING_HUMAN (a human may take as long as they like; /cancel ends it).
         Never raises for task failures.
         """
         files = list(files or [])
         chain = (list(parent.chain) if parent else []) + [requester]
+        task = Task(goal=goal, assignee=target, requester=requester,
+                    session_id=session_id, root_id=root_id,
+                    origin_channel=origin_channel, context=context, files=files,
+                    chain=chain, parent_id=parent.id if parent else None)
 
         denied = self._check_limits(requester, target, goal, parent, root_id, chain)
         sources: dict[str, Path] = {}
@@ -91,12 +97,8 @@ class Router:
                     break
                 sources[name] = src
         if denied is not None:
-            return self._denied(denied)
+            return self._refuse(task, denied)
 
-        task = Task(goal=goal, assignee=target, requester=requester,
-                    session_id=session_id, root_id=root_id,
-                    origin_channel=origin_channel, context=context, files=files,
-                    chain=chain, parent_id=parent.id if parent else None)
         self.state.register(task)
         if parent:
             self._delegations[parent.id] = self._delegations.get(parent.id, 0) + 1
@@ -119,13 +121,17 @@ class Router:
             content=f"@{target} {goal}", payload={"task": task.to_dict()},
             receiver=target, mentions=[target]))
         try:
-            return await asyncio.wait_for(fut, self.settings.subtask_timeout_s)
-        except asyncio.TimeoutError:
-            result = TaskResult(
-                task.id, False, "", error=f"no result within {self.settings.subtask_timeout_s}s",
-                failure_mode=FailureMode.TIMEOUT)
-            self.state.finish(result)
-            return result
+            while True:
+                done, _ = await asyncio.wait({fut}, timeout=self.settings.subtask_timeout_s)
+                if done:
+                    return fut.result()
+                if self.state.get(task.id).status == TaskStatus.WAITING_HUMAN:
+                    continue                  # a human is thinking: keep waiting
+                result = TaskResult(
+                    task.id, False, "", error=f"no result within {self.settings.subtask_timeout_s}s",
+                    failure_mode=FailureMode.TIMEOUT)
+                self.state.finish(result)
+                return result
         finally:
             self._task_waiters.pop(task.id, None)
 
@@ -164,11 +170,14 @@ class Router:
                 return None
         return None
 
-    @staticmethod
-    def _denied(reason: str) -> TaskResult:
-        """Result for a call refused before any task was created."""
-        return TaskResult("t" + uuid.uuid4().hex[:6], False, "", error=f"refused: {reason}",
-                          failure_mode=FailureMode.TOOL_ERROR)
+    def _refuse(self, task: Task, reason: str) -> TaskResult:
+        """Record a refused call as a FAILED task (for /status and debugging) and return
+        its result. Not added to the retry or delegation counters."""
+        self.state.register(task)
+        result = TaskResult(task.id, False, "", error=f"refused: {reason}",
+                            failure_mode=FailureMode.TOOL_ERROR)
+        self.state.finish(result)
+        return result
 
     # ---- direct tasks ------------------------------------------------------
 
@@ -195,34 +204,42 @@ class Router:
 
     # ---- human in the loop -----------------------------------------------
 
-    async def request_human(self, task: Task, kind: HitlKind, question: str,
-                            options: list[str] | None = None) -> str:
+    async def request_human(self, *, session_id: str, root_id: str, origin_channel: str,
+                            requester: str, kind: HitlKind, question: str,
+                            options: list[str] | None = None,
+                            task_id: str | None = None) -> str:
         """Publish HITL_REQUEST (@human, numbered h1, h2, ... per session) in
-        task.origin_channel and wait for the matching HITL_RESPONSE. Sets the
-        task to WAITING_HUMAN meanwhile. Works for delegated tasks too, because
-        origin_channel is inherited down the delegation chain.
-        Returns "cancelled" if the request is cancelled with /cancel."""
+        `origin_channel` and wait for the matching HITL_RESPONSE.
+
+        Workers do not call this directly: Agent.ask_human(task, ...) fills the
+        arguments from the task (origin_channel is inherited down the delegation chain,
+        so a delegated agent's request still appears where the human started).
+        The Orchestrator has no Task when it asks for clarification, so it passes
+        task_id=None. With a task_id the task is WAITING_HUMAN meanwhile.
+        Returns CANCELLED_ANSWER if the request is cancelled with /cancel."""
         options = list(options or [])
-        n = self._hitl_counter.get(task.session_id, 0) + 1
-        self._hitl_counter[task.session_id] = n
+        n = self._hitl_counter.get(session_id, 0) + 1
+        self._hitl_counter[session_id] = n
         request_id = f"h{n}"
-        key = (task.session_id, request_id)
+        key = (session_id, request_id)
         fut: asyncio.Future[str] = asyncio.get_running_loop().create_future()
         self._hitl_waiters[key] = fut
-        self._hitl_task[key] = task.id
-        self._set_state(task.id, TaskStatus.WAITING_HUMAN, question)
+        self._hitl_root[key] = root_id
+        if task_id:
+            self._set_state(task_id, TaskStatus.WAITING_HUMAN, question)
         text = f"@human {question}" + (f" [{' / '.join(options)}]" if options else "")
         try:
             await self.bus.publish(Message(
-                MsgType.HITL_REQUEST, sender=task.assignee, channel=task.origin_channel,
+                MsgType.HITL_REQUEST, sender=requester, channel=origin_channel,
                 content=text, receiver=HUMAN, mentions=[HUMAN],
-                payload={"request_id": request_id, "task_id": task.id, "kind": kind.value,
-                         "question": question, "options": options}))
+                payload={"request_id": request_id, "task_id": task_id, "root_id": root_id,
+                         "kind": kind.value, "question": question, "options": options}))
             answer = await fut
         finally:
             self._hitl_waiters.pop(key, None)
-            self._hitl_task.pop(key, None)
-        self._set_state(task.id, TaskStatus.RUNNING)
+            self._hitl_root.pop(key, None)
+        if task_id:
+            self._set_state(task_id, TaskStatus.RUNNING)
         return answer
 
     # ---- sessions and boards -----------------------------------------------
@@ -252,10 +269,10 @@ class Router:
             fut = self._task_waiters.pop(task.id, None)
             if fut and not fut.done():
                 fut.set_result(TaskResult(task.id, False, "", error="cancelled"))
-            for key, tid in list(self._hitl_task.items()):
-                waiter = self._hitl_waiters.get(key)
-                if tid == task.id and waiter and not waiter.done():
-                    waiter.set_result("cancelled")
+        for key, root in list(self._hitl_root.items()):      # also the Orchestrator's questions
+            waiter = self._hitl_waiters.get(key)
+            if root == root_id and waiter and not waiter.done():
+                waiter.set_result(CANCELLED_ANSWER)
 
     # ---- bus observer ------------------------------------------------------
 

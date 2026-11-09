@@ -59,7 +59,21 @@ class Agent(ABC):
 
     async def ask_human(self, task: Task, question: str, kind: HitlKind,
                         options: list[str] | None = None) -> str:
-        return await self.router.request_human(task, kind, question, options)
+        """Ask the human on behalf of `task`. Returns the answer, or CANCELLED_ANSWER
+        if the request was cancelled: treat that as "stop", never as an approval."""
+        return await self.router.request_human(
+            session_id=task.session_id, root_id=task.root_id,
+            origin_channel=task.origin_channel, requester=task.assignee,
+            kind=kind, question=question, options=options, task_id=task.id)
+
+    def is_cancelled(self, task: Task) -> bool:
+        """True once /cancel has cancelled this task. Workers must check it before every
+        step and before running a tool that needs approval; the Router cannot stop a
+        running agent, it can only mark the task and release whoever waits for it."""
+        try:
+            return self.router.state.get(task.id).status == TaskStatus.CANCELLED
+        except KeyError:
+            return False
 
     async def call_agent(self, task: Task, target: str, goal: str,
                          context: str = "", files: list[str] | None = None) -> TaskResult:

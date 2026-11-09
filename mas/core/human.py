@@ -21,6 +21,11 @@ class HitlKind(str, Enum):
     ADVICE = "advice"       # same tool failed twice in a row
 
 
+# What Router.request_human returns when the request is cancelled with /cancel.
+# Callers must treat it as "stop", never as an approval.
+CANCELLED_ANSWER = "cancelled"
+
+
 @dataclass
 class HitlRequest:
     request_id: str         # "h1", "h2", ... unique within a session

@@ -93,8 +93,8 @@ class SessionBoard:
             self._on_result(TaskResult.from_dict(msg.payload["result"]))
         elif msg.type == MsgType.HITL_REQUEST:
             p = msg.payload
-            task = self.tasks.get(p.get("task_id", ""))
-            root_id = task.root_id if task else self._current_root_id()
+            task = self.tasks.get(p.get("task_id") or "")
+            root_id = p.get("root_id") or (task.root_id if task else self._current_root_id())
             self.hitl[p["request_id"]] = HitlEntry(p["request_id"], root_id, p["question"])
         elif msg.type == MsgType.HITL_RESPONSE:
             entry = self.hitl.get(msg.payload["request_id"])

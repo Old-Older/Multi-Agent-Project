@@ -110,7 +110,7 @@ payload 格式：
 | `CHAT` | `{}` | 人类、agent |
 | `TASK_ASSIGN` | `{"task": Task.to_dict()}` | Router |
 | `TASK_RESULT` | `{"result": TaskResult.to_dict()}` | Agent 基类 |
-| `HITL_REQUEST` | `{"request_id", "task_id", "kind", "question", "options"}` | Router |
+| `HITL_REQUEST` | `{"request_id", "task_id", "root_id", "kind", "question", "options"}`（`task_id` 在 Orchestrator 澄清时为 `None`） | Router |
 | `HITL_RESPONSE` | `{"request_id", "answer"}` | HumanIO |
 | `STATUS` | `{"task_id", "status", "note", "public"}` | Agent 基类 |
 
@@ -144,7 +144,7 @@ payload 格式：
 1. 检查限制：深度、委派链里是否有循环、每个任务的委派次数、同一目标的重试次数。违反时直接返回失败的 `TaskResult`，不联系执行者。
 2. 在 `StateTable` 登记；把 `files` 拷到执行者的 `inbox/`。
 3. 发 `TASK_ASSIGN`：群聊任务发到 `group:main`，私聊任务发到 `dm_channel(requester, target)`。
-4. 在 `subtask_timeout_s` 内等待对应的 `TASK_RESULT`，超时返回 `TIMEOUT` 失败。**任务失败时从不抛异常。**
+4. 在 `subtask_timeout_s` 内等待对应的 `TASK_RESULT`，超时返回 `TIMEOUT` 失败；任务处于 `WAITING_HUMAN` 时不计时（等人类多久都行，`/cancel` 可随时终止）。**任务失败时从不抛异常。**
 
 其他方法：`open_direct_task`（人类私聊或 @ 某个 agent 时登记任务）、`request_human`（HITL，编号 h1、h2……，弹在 `origin_channel`）、`board(session_id)`、`session_of(channel)`、`cancel_root`。
 
@@ -152,12 +152,14 @@ payload 格式：
 
 - `Task.chain` 是**委派者**的链，不含执行者：Orchestrator 派出的任务 `chain == ["orchestrator"]`、`depth == 0`；coder 再委派给 researcher 的任务 `chain == ["orchestrator", "coder"]`、`depth == 1`。深度超过 `max_delegation_depth` 时拒绝；目标已在 `chain` 里（含请求者自己）时判为循环。
 - 同一目标的重试：同一 root 下，同一 agent、同一目标（忽略大小写和多余空格）最多尝试 `1 + max_retries_same_goal` 次；被拒绝（declined）的不占次数。
-- 被拒绝的调用（超限、未知 agent、文件找不到、root 已取消）返回 `success=False, failure_mode=TOOL_ERROR`，`error` 以 `refused:` 开头，不登记任务、不联系目标。
+- 被拒绝的调用（超限、未知 agent、文件找不到、root 已取消）返回 `success=False, failure_mode=TOOL_ERROR`，`error` 以 `refused:` 开头；**仍会在状态表里登记成一个 `FAILED` 任务**（方便 `/status` 和调试），不联系目标，也不占重试次数和委派次数。看板里不显示它们（避免 Worker 的 prompt 变长）。
 - `files` 先在请求者自己的 sandbox 里找；找不到时，到本 root 内产出过该文件（出现在某个结果的 `artifacts`）的 agent 的 sandbox 里找。Orchestrator 没有 sandbox，所以走第二条路。
 - 新增 `Router.new_root_id(session_id)`：返回 R1、R2……（每个会话各自计数），Orchestrator 开 root 时调用。
 - 新增 `SessionBoard.add_task(task)`：`open_direct_task` 登记的直接任务不发 `TASK_ASSIGN`，由 Router 直接告诉看板。
 - `session_of(channel)` 直接返回频道名，每个频道一个会话。
-- `cancel_root` 之后，该 root 的新调用会被拒绝；等待中的 `dispatch` 返回 `error="cancelled"`，等待中的 `request_human` 返回 `"cancelled"`。
+- `cancel_root` 之后，该 root 的新调用会被拒绝；等待中的 `dispatch` 返回 `error="cancelled"`，等待中的 `request_human`（包括 Orchestrator 的澄清）返回 `CANCELLED_ANSWER`（`mas.core.human`，值为 `"cancelled"`）。Router 无法停止正在运行的 agent，所以 **Worker 必须自己检查**：每一步 ReAct 开始前、执行 `requires_approval` 的工具前，调用 `self.is_cancelled(task)`；`ask_human` 返回 `CANCELLED_ANSWER` 时要当作中止，不能当成同意。
+- `Router.request_human` 改成关键字参数：`request_human(*, session_id, root_id, origin_channel, requester, kind, question, options=None, task_id=None)`。Worker 照旧调 `Agent.ask_human(task, question, kind, options)`（签名不变，基类负责从 task 里取这些字段）；Orchestrator 澄清时没有 Task，传 `task_id=None`。**如果你的桩 Router 实现了 `request_human`，要改成这个签名。**
+- 新增 `Agent.is_cancelled(task)`：该任务在状态表里是否已 `CANCELLED`。
 - Router 同时负责：根据 `STATUS` 更新状态表、把每条消息交给对应会话的看板。
 
 ### 3.5 状态表与看板
@@ -180,7 +182,8 @@ payload 格式：
 | `should_handle(msg)` | 只处理 `receiver` 是自己或 @ 到自己的消息（已实现） |
 | `on_message(msg)` | `TASK_ASSIGN` → `handle_task` → 发 `TASK_RESULT`；任何异常都转成 `CRASH` 结果，保证不会让整个系统崩溃 |
 | `report_status(task, status, note, public)` | `public=True` 只用于收到、完成、失败、等待人类这几个节点 |
-| `ask_human(task, question, kind, options)` | 转给 `Router.request_human`（已实现） |
+| `ask_human(task, question, kind, options)` | 转给 `Router.request_human`；被 `/cancel` 时返回 `CANCELLED_ANSWER`（已实现） |
+| `is_cancelled(task)` | 任务是否已被 `/cancel`；Worker 每步前都要检查（已实现） |
 | `call_agent(task, target, goal, context, files)` | 再委派，转给 `Router.dispatch`（已实现） |
 | `board_text(task)` | 当前会话看板的文本（已实现） |
 
@@ -275,7 +278,7 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 
 ## 5. 如何并行开发
 
-- **LI Heyang**：`llm`、`tools`、`sandbox` 不依赖总线，可以直接写单元测试。`WorkerAgent.handle_task` 可以用 `MockLLM` 加一个桩 Router（只需实现 `dispatch`、`request_human`、`board`）单独测试。
+- **LI Heyang**：`llm`、`tools`、`sandbox` 不依赖总线，可以直接写单元测试。`WorkerAgent.handle_task` 可以用 `MockLLM` 加一个桩 Router（只需实现 `dispatch`、`request_human`、`board`）单独测试（桩的 `request_human` 用上面的关键字参数签名；或者在测试里直接替换 `Agent.ask_human`）。
 - **JIAN Yimin**：`bus`、`router`、`state`、`board`、`orchestrator` 可以用 `MockLLM` 加一个桩 Worker（`handle_task` 直接返回固定的 `TaskResult`）打通整个流程。
 - **联调**：两边都完成后，把桩替换成真实实现，用 `MockLLM` 先跑通，再换成 `DeepSeekClient`。
 - 运行测试：`python3 -m unittest`（安装 dev 依赖后也可以用 `pytest`）。

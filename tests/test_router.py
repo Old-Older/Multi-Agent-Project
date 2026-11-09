@@ -9,7 +9,7 @@ from pathlib import Path
 
 from mas.config import Settings
 from mas.core.bus import InMemoryBus
-from mas.core.human import HitlKind
+from mas.core.human import CANCELLED_ANSWER, HitlKind
 from mas.core.message import GROUP_MAIN, HUMAN, Message, MsgType, dm_channel
 from mas.core.router import Router
 from mas.core.state import StateTable
@@ -165,6 +165,58 @@ class DispatchTest(RouterTestBase):
         await self.bus.publish(result_msg("coder", assign, TaskResult(r.task_id, True, "太晚了")))
         self.assertEqual(self.state.get(r.task_id).status, TaskStatus.FAILED)
 
+    async def test_timeout_does_not_run_while_waiting_for_a_human(self):
+        self.router.settings.subtask_timeout_s = 0.05
+        answered = asyncio.Event()
+
+        async def asks(task):
+            answer = await self.router.request_human(
+                session_id=task.session_id, root_id=task.root_id, origin_channel=task.origin_channel,
+                requester=task.assignee, kind=HitlKind.APPROVAL, question="push?", task_id=task.id)
+            answered.set()
+            return TaskResult(task.id, True, f"human said {answer}")
+        self.start_worker("coder", asks)
+        pending = asyncio.create_task(self.call())
+        await asyncio.sleep(0.25)                          # five timeouts' worth
+        self.assertFalse(pending.done())
+        [t] = self.state.by_root("R1")
+        self.assertEqual(t.status, TaskStatus.WAITING_HUMAN)
+        await self.bus.publish(Message(MsgType.HITL_RESPONSE, HUMAN, GROUP_MAIN,
+                                       payload={"request_id": "h1", "answer": "yes"}))
+        r = await asyncio.wait_for(pending, 1)
+        self.assertEqual((r.success, r.summary), (True, "human said yes"))
+        self.assertEqual(t.status, TaskStatus.DONE)
+
+    async def test_timeout_runs_again_after_the_human_answered(self):
+        self.router.settings.subtask_timeout_s = 0.05
+
+        async def asks_then_hangs(task):
+            await self.router.request_human(
+                session_id=task.session_id, root_id=task.root_id, origin_channel=task.origin_channel,
+                requester=task.assignee, kind=HitlKind.APPROVAL, question="?", task_id=task.id)
+            await asyncio.sleep(10)
+        self.start_worker("coder", asks_then_hangs)
+        pending = asyncio.create_task(self.call())
+        await asyncio.sleep(0.12)
+        await self.bus.publish(Message(MsgType.HITL_RESPONSE, HUMAN, GROUP_MAIN,
+                                       payload={"request_id": "h1", "answer": "yes"}))
+        r = await asyncio.wait_for(pending, 1)
+        self.assertEqual(r.failure_mode, FailureMode.TIMEOUT)
+
+    async def test_cancel_ends_a_wait_for_a_human(self):
+        self.router.settings.subtask_timeout_s = 0.05
+
+        async def asks(task):
+            return TaskResult(task.id, True, str(await self.router.request_human(
+                session_id=task.session_id, root_id=task.root_id, origin_channel=task.origin_channel,
+                requester=task.assignee, kind=HitlKind.APPROVAL, question="?", task_id=task.id)))
+        self.start_worker("coder", asks)
+        pending = asyncio.create_task(self.call())
+        await asyncio.sleep(0.12)
+        self.router.cancel_root("R1")
+        r = await asyncio.wait_for(pending, 1)
+        self.assertEqual(r.error, "cancelled")
+
     async def test_status_messages_update_state(self):
         async def h(task):
             await self.bus.publish(Message(MsgType.STATUS, "coder", GROUP_MAIN, payload={
@@ -180,7 +232,10 @@ class LimitTest(RouterTestBase):
     async def assertRefused(self, r, text, target=None):
         self.assertFalse(r.success)
         self.assertIn(text, r.error)
+        self.assertTrue(r.error.startswith("refused:"))
         self.assertEqual(r.failure_mode, FailureMode.TOOL_ERROR)
+        self.assertEqual(self.state.get(r.task_id).status, TaskStatus.FAILED)   # visible in /status
+        self.assertEqual(self.state.result(r.task_id), r)
         if target:
             self.assertEqual(self.seen[target], [])      # the target was never contacted
 
@@ -188,7 +243,9 @@ class LimitTest(RouterTestBase):
         self.start_worker("coder", self.ok())
         for t in ("nobody", "orchestrator", "human"):
             await self.assertRefused(await self.call(t), "unknown agent")
-        self.assertEqual(self.state.by_root("R1"), [])   # nothing registered
+        self.assertEqual([t.assignee for t in self.state.by_root("R1")], ["nobody", "orchestrator", "human"])
+        self.assertEqual([t.status for t in self.state.by_root("R1")], [TaskStatus.FAILED] * 3)
+        self.assertEqual(self.assigns(), [])             # nothing was sent to anyone
 
     async def test_cycle(self):
         for n in ("coder", "researcher"):
@@ -235,11 +292,32 @@ class LimitTest(RouterTestBase):
         for _ in range(5):
             self.assertTrue((await self.call("writer")).declined)
 
+    async def test_refusals_do_not_use_up_retries_or_delegations(self):
+        self.start_worker("coder", self.ok())
+        for _ in range(5):                                # refused again and again, e.g. a bad file
+            await self.assertRefused(await self.call(files=["nope.md"]), "file not found")
+        self.assertTrue((await self.call()).success)      # the same goal still gets all its tries
+        parent = Task(goal="x", assignee="writer", requester="orchestrator", session_id=GROUP_MAIN,
+                      root_id="R1", origin_channel=GROUP_MAIN, chain=["orchestrator"])
+        self.settings.max_delegations_per_task = 1
+        for _ in range(3):
+            await self.assertRefused(await self.call("nobody", requester="writer", parent=parent), "unknown agent")
+        self.assertTrue((await self.call("coder", goal="另一个", requester="writer", parent=parent)).success)
+
+    async def test_refused_task_is_linked_to_its_parent_and_chain(self):
+        parent = Task(goal="x", assignee="coder", requester="orchestrator", session_id=GROUP_MAIN,
+                      root_id="R1", origin_channel=GROUP_MAIN, chain=["orchestrator"])
+        r = await self.call("coder", requester="coder", parent=parent)       # a cycle
+        t = self.state.get(r.task_id)
+        self.assertEqual((t.parent_id, t.chain, t.requester, t.assignee),
+                         (parent.id, ["orchestrator", "coder"], "coder", "coder"))
+
     async def test_cancelled_root_refuses_new_calls(self):
         self.start_worker("coder", self.ok())
         self.router.cancel_root("R1")
         await self.assertRefused(await self.call(), "cancelled", "coder")
         self.assertTrue((await self.call(root="R2")).success)
+        self.assertEqual([t.status for t in self.state.by_root("R1")], [TaskStatus.FAILED])
 
 
 class FilesTest(RouterTestBase):
@@ -266,7 +344,7 @@ class FilesTest(RouterTestBase):
             r = await self.call("coder", files=[name])
             self.assertIn("file not found", r.error)
         self.assertEqual(self.seen["coder"], [])
-        self.assertEqual(self.state.by_root("R1"), [])
+        self.assertEqual([t.status for t in self.state.by_root("R1")], [TaskStatus.FAILED] * 2)
 
 
 class HitlTest(RouterTestBase):
@@ -276,16 +354,22 @@ class HitlTest(RouterTestBase):
         self.state.register(t)
         return t
 
+    def ask(self, task, kind, question, options=None):
+        """What Agent.ask_human does: fill the arguments from the task."""
+        return self.router.request_human(
+            session_id=task.session_id, root_id=task.root_id, origin_channel=task.origin_channel,
+            requester=task.assignee, kind=kind, question=question, options=options, task_id=task.id)
+
     def answer(self, channel, request_id, text):
         return self.bus.publish(Message(MsgType.HITL_RESPONSE, HUMAN, channel,
                                         payload={"request_id": request_id, "answer": text}))
 
     async def test_request_and_answer(self):
         t = self.make_task()
-        fut = asyncio.create_task(self.router.request_human(t, HitlKind.APPROVAL, "git push 吗？", ["yes", "no"]))
+        fut = asyncio.create_task(self.ask(t, HitlKind.APPROVAL, "git push 吗？", ["yes", "no"]))
         await asyncio.sleep(0.01)
         [req] = [m for m in self.bus.history(GROUP_MAIN) if m.type == MsgType.HITL_REQUEST]
-        self.assertEqual(req.payload, {"request_id": "h1", "task_id": t.id, "kind": "approval",
+        self.assertEqual(req.payload, {"request_id": "h1", "task_id": t.id, "root_id": "R1", "kind": "approval",
                                        "question": "git push 吗？", "options": ["yes", "no"]})
         self.assertEqual((req.sender, req.receiver, req.content), ("coder", HUMAN, "@human git push 吗？ [yes / no]"))
         self.assertEqual(t.status, TaskStatus.WAITING_HUMAN)
@@ -296,8 +380,8 @@ class HitlTest(RouterTestBase):
 
     async def test_numbering_and_parallel_requests(self):
         a, b = self.make_task(), self.make_task(assignee="writer")
-        fa = asyncio.create_task(self.router.request_human(a, HitlKind.APPROVAL, "q1"))
-        fb = asyncio.create_task(self.router.request_human(b, HitlKind.CLARIFY, "q2"))
+        fa = asyncio.create_task(self.ask(a, HitlKind.APPROVAL, "q1"))
+        fb = asyncio.create_task(self.ask(b, HitlKind.CLARIFY, "q2"))
         await asyncio.sleep(0.01)
         await self.answer(GROUP_MAIN, "h2", "二")
         self.assertEqual(await asyncio.wait_for(fb, 1), "二")
@@ -309,8 +393,8 @@ class HitlTest(RouterTestBase):
         dm = dm_channel("coder", "human")
         self.bus.join("human", dm)
         g, d = self.make_task(), self.make_task(origin=dm)
-        fg = asyncio.create_task(self.router.request_human(g, HitlKind.ADVICE, "群里问"))
-        fd = asyncio.create_task(self.router.request_human(d, HitlKind.ADVICE, "私聊问"))
+        fg = asyncio.create_task(self.ask(g, HitlKind.ADVICE, "群里问"))
+        fd = asyncio.create_task(self.ask(d, HitlKind.ADVICE, "私聊问"))
         await asyncio.sleep(0.01)
         self.assertEqual([m.payload["request_id"] for m in self.bus.history(GROUP_MAIN) if m.type == MsgType.HITL_REQUEST], ["h1"])
         self.assertEqual([m.payload["request_id"] for m in self.bus.history(dm) if m.type == MsgType.HITL_REQUEST], ["h1"])
@@ -324,11 +408,37 @@ class HitlTest(RouterTestBase):
 
     async def test_cancel_releases_waiters(self):
         t = self.make_task()
-        fut = asyncio.create_task(self.router.request_human(t, HitlKind.APPROVAL, "q"))
+        fut = asyncio.create_task(self.ask(t, HitlKind.APPROVAL, "q"))
         await asyncio.sleep(0.01)
         self.router.cancel_root("R1")
-        self.assertEqual(await asyncio.wait_for(fut, 1), "cancelled")
+        self.assertEqual(await asyncio.wait_for(fut, 1), CANCELLED_ANSWER)
         self.assertEqual(t.status, TaskStatus.CANCELLED)   # stays cancelled, not set back to running
+
+    async def test_orchestrator_clarification_has_no_task(self):
+        self.router.board(GROUP_MAIN).start_root("R1", "写个脚本")   # the Orchestrator opens the root first
+        fut = asyncio.create_task(self.router.request_human(
+            session_id=GROUP_MAIN, root_id="R1", origin_channel=GROUP_MAIN, requester="orchestrator",
+            kind=HitlKind.CLARIFY, question="要哪个版本？", options=["3.10", "3.11"]))
+        await asyncio.sleep(0.01)
+        [req] = [m for m in self.bus.history(GROUP_MAIN) if m.type == MsgType.HITL_REQUEST]
+        self.assertEqual((req.sender, req.payload["task_id"], req.payload["root_id"]), ("orchestrator", None, "R1"))
+        self.assertEqual(self.state.by_root("R1"), [])        # no fake task in the table
+        self.assertIn("h1", self.router.board(GROUP_MAIN).render())   # but the board shows it
+        await self.answer(GROUP_MAIN, "h1", "3.11")
+        self.assertEqual(await asyncio.wait_for(fut, 1), "3.11")
+
+    async def test_cancel_releases_orchestrator_clarification(self):
+        fut = asyncio.create_task(self.router.request_human(
+            session_id=GROUP_MAIN, root_id="R1", origin_channel=GROUP_MAIN, requester="orchestrator",
+            kind=HitlKind.CLARIFY, question="?"))
+        other = asyncio.create_task(self.router.request_human(
+            session_id=GROUP_MAIN, root_id="R2", origin_channel=GROUP_MAIN, requester="orchestrator",
+            kind=HitlKind.CLARIFY, question="?"))
+        await asyncio.sleep(0.01)
+        self.router.cancel_root("R1")
+        self.assertEqual(await asyncio.wait_for(fut, 1), CANCELLED_ANSWER)
+        self.assertFalse(other.done())                        # another root is untouched
+        other.cancel()
 
 
 class CancelTest(RouterTestBase):
