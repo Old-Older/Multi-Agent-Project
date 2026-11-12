@@ -1,7 +1,7 @@
 # 接口说明
 
 > 配套代码：`mas/` 目录。设计依据：[design_decisions.md](design_decisions.md)（下文用"§"引用其章节）。
-> 现状：**只有类型定义和方法签名**，方法体为 `raise NotImplementedError`。dataclass、枚举、频道工具函数、虚拟工具的 schema、`MockLLM`、`Settings` 已经可以直接使用。
+> 现状：通信、路由、状态、看板、Agent 基类、Orchestrator、记忆和系统组装已实现；第一阶段 LocalSandbox 与四个文件工具也已接入。Worker、DeepSeekClient、其他实际工具、Docker 执行及评测框架仍待完成。以各节实现说明和测试为准。
 > 规则：**接口改动需要 JIAN Yimin 和 LI Heyang 两人同意**，改完同步更新本文和 `tests/test_interfaces.py`。
 
 ---
@@ -198,7 +198,7 @@ payload 格式：
 | `call_agent(task, target, goal, context, files)` | 再委派，转给 `Router.dispatch`（已实现） |
 | `board_text(task)` | 当前会话看板的文本（已实现） |
 
-基类在发出 `TASK_RESULT` 之前还会做三件事，Worker 不必操心：把 `result.task_id` 改成真实任务的 id；把 `summary` 截断到 `result_summary_max_chars`（默认 1500）；`duration` 为 0 时补上耗时。任务在开始前就已被 `/cancel` 的话，不会调用 `handle_task`，直接返回 `error="cancelled"`。
+基类在发出 `TASK_RESULT` 之前还会做三件事，Worker 不必操心：把 `result.task_id` 改成真实任务的 id；把 `summary` 截断到 `result_summary_max_chars`（默认 1500）；`duration` 为 0 时用 `time.perf_counter()` 补上高精度耗时（秒），保留 Worker 提供的非零值。任务在开始前就已被 `/cancel` 的话，不会调用 `handle_task`，直接返回 `error="cancelled"`。计时实现的调整不改变方法签名或 TaskResult 字段。
 
 新增 `Task.channel`：这个任务的 `TASK_ASSIGN`、`STATUS`、`TASK_RESULT` 所在的频道（群聊任务是 `group:main`，否则是请求者和执行者的私聊）。
 
@@ -250,6 +250,8 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 - `ToolResult.files_written` 和 `refs` 会被汇总进 `TaskResult`，所以写文件、git 提交的工具必须填写。
 - `spec()` 已实现，返回 `FunctionSpec`。
 - 角色配置里用到的工具名：`web_search`、`fetch_url`、`read_file`、`write_file`、`delete_file`、`list_files`、`run_python`、`git`。
+- 已实现文件工具在 `mas/tools/files.py`，也从 `mas.tools` 导出。参数为非空字符串 `path`；`write_file` 另需字符串 `content`，`list_files.path` 默认 `.`。拒绝额外参数；`delete_file.requires_approval=True`，授权由 Worker 负责。
+- `write_file.files_written` 是实际目标的规范 workspace 相对路径（`/` 分隔）；失败为空。`list_files.output` 为直接子项名称的 JSON 数组。完整 schema、错误策略和示例见 [第一阶段交接](sandbox_tools_handoff.md)。
 
 ### 3.12 沙箱 `mas/sandbox/base.py`
 
@@ -257,6 +259,9 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 - `exec(cmd, timeout, env)` 不会因返回码非零或超时而抛异常，结果统一用 `ExecResult` 表示。
 - `import_file(src, name)` 只有 Router 调用，用于把上游产物拷进 `inbox/`。
 - `DockerSandbox` 继承 `LocalSandbox` 的文件操作（workspace 用 bind mount 挂载），只重写 `exec`，在常驻容器里执行。用哪个由 `Settings.sandbox_backend` 决定。
+- `LocalSandbox` 已实现：构造时创建 workspace，UTF-8 文本读写、创建父目录、覆盖写入、仅文件删除和排序的非递归列表。文件方法同步，`exec` 异步，签名不变。`resolve` 按实际解析路径检查边界。
+- `import_file` 从可信外部源按字节复制到 inbox，返回 workspace 相对路径。目标必须留在 inbox；缺失源报 `FileNotFoundError`，同名目标报 `FileExistsError`，不覆盖。Router 保留 `Task.files` 源名称，Worker 应读取 `inbox/<basename>`。
+- `exec` 不经过 shell；环境继承并覆盖；超时返回 `returncode=-1, timed_out=True`，启动失败返回 127。Windows 用 Job Object、POSIX 用进程组清理本次进程；不构成不可信代码的 OS 隔离。`DockerSandbox.exec` 尚未实现，详见 [限制与测试说明](sandbox_tools_handoff.md)。
 
 ### 3.13 记忆 `mas/memory/base.py`
 
@@ -305,7 +310,7 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 - `build_system(settings, llm, human, *, roles=None, worker_factory=..., sandbox_factory=...) -> System`：唯一知道各个零件怎么接在一起的地方。创建 `InMemoryBus`、`StateTable`，每个角色一个 workspace（`settings.workspaces_dir/<agent_id>`）和一份记忆（`JsonlMemory.for_agent`），然后是 `Router`、`Orchestrator` 和各个 Worker，最后让 human、orchestrator 和所有 Worker 加入 `group:main`（`Router` 要求被派活的 agent 在群里）。
 - `System`：`start()`（启动 Orchestrator 和各 Worker 的循环）、`stop()`、`run()`（启动全部，跑 human 一侧，直到 `/quit`，然后停掉 agent）；字段 `bus / state / router / orchestrator / workers / memories / sandboxes / human`。评测框架可以自己 `build_system(..., human=AutoResponder())` 再 `start()`。
 - **接口点（LI Heyang 要接的地方）**，每个都有默认值：
-  - `build_tools(role, settings) -> list[Tool]`：返回 `role.tool_names` 对应的真实工具。**现在返回空列表**，写好工具后在这里接上。
+  - `build_tools(role, settings) -> list[Tool]`：按 `role.tool_names` 顺序返回已实现的四种文件工具；已知待实现的 `web_search`、`fetch_url`、`run_python`、`git` 记录 WARNING 并跳过，未知名称抛 `ValueError`。保留角色完整配置清单。
   - `default_worker_factory`：`WorkerAgent(role, bus, router, settings, llm, build_tools(...), sandbox, memory)`；想换实现就传 `worker_factory=`（参数是 `RoleConfig` 和 `WorkerParts(bus, router, settings, llm, sandbox, memory)`）。
   - `default_sandbox_factory`：按 `settings.sandbox_backend` 用 `LocalSandbox` 或 `DockerSandbox`。
   - `make_llm(settings)`：按 `llm_provider` 建 `DeepSeekClient`；没有 `DEEPSEEK_API_KEY` 时直接退出并告诉你怎么办。`make_human(settings)`：`auto_hitl` 为真用 `AutoResponder`，否则用 `CliHumanIO`。
@@ -317,7 +322,7 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 
 ## 4. 全局约定
 
-1. **全部使用 async**：涉及 I/O 的方法都是 `async`；一个 agent 可以同时处理多个任务。
+1. **保持已定义的同步／异步签名**：消息、Agent、Tool、LLM 与 Sandbox.exec 使用 `async`；Sandbox 文件操作仍是同步方法。一个 agent 可以同时处理多个任务。
 2. **失败用返回值表示，不抛异常**：工具返回 `ToolResult(ok=False)`，任务返回 `TaskResult(success=False, failure_mode=...)`。只有程序 bug 才会抛异常，并在 `Agent.on_message` 里被兜底为 `CRASH`。
 3. **只在以下几处调 LLM**：Orchestrator 的每一轮、Worker 的每一步、失败后的异步反思。路由、看板、状态表、记忆召回、能力档案、"收到"之类的通知，都不调 LLM。
 4. **payload 必须能 JSON 序列化**：`Task` 和 `TaskResult` 通过 `to_dict()` 放进 payload。

@@ -33,6 +33,7 @@ from mas.llm.deepseek import DeepSeekClient
 from mas.memory.base import JsonlMemory, Memory
 from mas.sandbox.base import DockerSandbox, LocalSandbox, Sandbox
 from mas.tools.base import Tool
+from mas.tools.files import DeleteFile, ListFiles, ReadFile, WriteFile
 
 log = logging.getLogger(__name__)
 
@@ -53,11 +54,19 @@ SandboxFactory = Callable[[str, Path], Sandbox]
 
 
 def build_tools(role: RoleConfig, settings: Settings) -> list[Tool]:
-    """The Tool objects for the names in role.tool_names.
-
-    TODO(LI Heyang): return the real tools (web_search, fetch_url, read_file, write_file,
-    delete_file, list_files, run_python, git). Until they exist a worker has no tools."""
-    return []
+    """Build available tools in role order; warn for known tools still to be implemented."""
+    implemented = {"read_file": ReadFile, "write_file": WriteFile,
+                   "delete_file": DeleteFile, "list_files": ListFiles}
+    pending = {"web_search", "fetch_url", "run_python", "git"}
+    result: list[Tool] = []
+    for name in role.tool_names:
+        if name in implemented:
+            result.append(implemented[name]())
+        elif name in pending:
+            log.warning("Tool %s configured for %s is not implemented; skipping it", name, role.agent_id)
+        else:
+            raise ValueError(f"unknown tool {name!r} configured for {role.agent_id}")
+    return result
 
 
 def default_worker_factory(role: RoleConfig, parts: WorkerParts) -> Agent:
