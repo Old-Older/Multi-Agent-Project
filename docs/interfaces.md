@@ -198,7 +198,7 @@ payload 格式：
 | `call_agent(task, target, goal, context, files)` | 再委派，转给 `Router.dispatch`（已实现） |
 | `board_text(task)` | 当前会话看板的文本（已实现） |
 
-基类在发出 `TASK_RESULT` 之前还会做三件事，Worker 不必操心：把 `result.task_id` 改成真实任务的 id；把 `summary` 截断到 `result_summary_max_chars`（默认 1500）；`duration` 为 0 时补上耗时。任务在开始前就已被 `/cancel` 的话，不会调用 `handle_task`，直接返回 `error="cancelled"`。
+基类在发出 `TASK_RESULT` 之前还会做三件事，Worker 不必操心：把 `result.task_id` 改成真实任务的 id；把 `summary` 截断到 `result_summary_max_chars`（默认 1500）；`duration` 为 0 时用 `time.perf_counter()` 补上高精度耗时（秒），保留 Worker 提供的非零值。任务在开始前就已被 `/cancel` 的话，不会调用 `handle_task`，直接返回 `error="cancelled"`。计时实现的调整不改变方法签名或 TaskResult 字段。
 
 新增 `Task.channel`：这个任务的 `TASK_ASSIGN`、`STATUS`、`TASK_RESULT` 所在的频道（群聊任务是 `group:main`，否则是请求者和执行者的私聊）。
 

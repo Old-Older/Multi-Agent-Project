@@ -82,7 +82,8 @@ class Agent(ABC):
     async def _execute(self, task: Task, *, reply_to: str, receiver: str) -> TaskResult:
         """Run `task` through handle_task and publish its TASK_RESULT. Never raises
         (except for cancellation of the asyncio task itself)."""
-        started = time.monotonic()
+        # Measure short tasks with the high-resolution elapsed-time clock.
+        started = time.perf_counter()
         if self.is_cancelled(task):
             result = TaskResult(task.id, False, "", error="cancelled")
         else:
@@ -99,7 +100,7 @@ class Agent(ABC):
         result.task_id = task.id                      # a result always belongs to its task
         result.summary = _clip(result.summary, self.settings.result_summary_max_chars)
         if not result.duration:
-            result.duration = time.monotonic() - started
+            result.duration = time.perf_counter() - started
         await self.bus.publish(Message(
             MsgType.TASK_RESULT, sender=self.agent_id, channel=task.channel,
             content=self._result_text(result, receiver), payload={"result": result.to_dict()},

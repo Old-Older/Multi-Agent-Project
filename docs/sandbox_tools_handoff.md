@@ -2,7 +2,8 @@
 
 本批以已 fetch 核对的 `origin/main = 216191e` 为基线，在
 `feat/heyang-sandbox-tools` 实现。公共方法签名、ExecResult、ToolResult、角色完整工具清单和
-Router 均未改动。Worker、DeepSeekClient、run_python、网络/Git 工具、Docker 执行和评测框架留待后续。
+Router 均未改动。按后续请求补修了 Agent 基类内部的 Windows 短任务耗时统计，使用 `time.perf_counter()`，
+公共接口保持不变。Worker、DeepSeekClient、run_python、网络/Git 工具、Docker 执行和评测框架留待后续。
 
 ## 最小调用
 
@@ -113,7 +114,8 @@ POSIX 主动脱离进程组的恶意子进程也不在保证范围。处理不�
 | Writer | read_file、write_file、list_files | 无 |
 
 未知名称抛 `ValueError`，不注册成功占位工具。沿用 `build_system`、`default_worker_factory`、
-`default_sandbox_factory`，未改通信、路由、状态、看板、Agent 基类、Orchestrator 或记忆模块。
+`default_sandbox_factory`，未改通信、路由、状态、看板、Orchestrator 或记忆模块。
+Agent 基类仅按用户后续请求将内部耗时测量改用高精度时钟；非零 Worker duration 仍保留。
 
 Router 先查请求者 workspace，再查当前 root 中报告对应 artifact 的 agent（最新结果优先）。
 导入目标使用源名称的 basename；**`Task.files` 仍保留原始源名称**，不会更新为 `import_file` 的返回路径。
@@ -153,9 +155,11 @@ git diff --check
 环境定位记录：最初受限执行的异步测试在 Windows asyncio 初始化的 `socket._fallback_socketpair -> accept`
 挂起，已诊断并终止，未报告为通过。允许本地回环连接后，上述汇总测试正常完成，无需改业务层事件循环。
 POSIX 执行分支未在本机实测；真实 API、Worker、Docker 等后续能力未验证。
-全仓 discovery 结果：284 项，281 通过、2 跳过、1 项原有 Agent duration 断言失败，32.585 秒。
-本机 `time.monotonic()` 分辨率为 15.625ms，短任务可能得到零耗时；此问题留给单独的 fix 提交，
-不改本批文件接口。详见 [验收报告](report.md)。全量实际命令：
+全仓 discovery 曾发现 Windows 的粗粒度 `time.monotonic()` 使短任务 duration 为零。
+按用户后续请求，Agent 内部起止计时已改为 `time.perf_counter()`，公共接口不变；
+保留原 duration > 0 断言，新增 0.4ms 短任务及 Worker 自报耗时保留测试。
+最新全仓复查结果：**286 项，284 通过、2 跳过、0 失败，31.957 秒**，退出码 0。
+历史结果与修复细节见 [验收报告](report.md)。最新全量实际命令：
 
 ```powershell
 python -u -c "import faulthandler, unittest; faulthandler.dump_traceback_later(90, exit=True); unittest.main(module=None, argv=['unittest', 'discover', '-s', 'tests', '-q'])"
@@ -168,6 +172,7 @@ python -u -c "import faulthandler, unittest; faulthandler.dump_traceback_later(9
 | `mas/sandbox/base.py`、`mas/sandbox/_process.py`、`mas/sandbox/__init__.py` | 文件操作、导入、执行及清理、导出 |
 | `mas/tools/files.py`、`mas/tools/__init__.py` | 四个文件工具、schema、错误转换与导出 |
 | `mas/app.py` | 现有 build_tools 接线 |
+| `mas/agents/base.py`、`tests/test_agent_base.py` | Windows 高精度耗时修复及短任务、已有 duration 回归测试 |
 | `tests/test_sandbox.py`、`tests/test_process_cleanup.py` | 真实文件、导入与进程测试 |
 | `tests/test_tools.py`、`tests/test_router_files.py` | 工具契约、真实 Router 交接测试 |
 | `tests/test_app.py` | 真实工具断言、接线验证及 Windows 测试适配 |
@@ -184,6 +189,7 @@ app 自动测试还显式提供非交互 stdin，避免有 isatty 标记但无 W
 PR 内容：实现 workspace 边界、UTF-8 文件操作、inbox 独占导入和带进程树清理的本地命令执行；
 新增四个文件工具，按角色接入现有 build_tools，跳过并警告已知未实现工具，拒绝未知工具名。
 指定回归与新增测试共 130 项：128 通过，2 项因本机符号链接权限跳过；可运行示例、编译和 diff 检查通过。
-全仓回归 284 项：281 通过、2 项符号链接权限跳过、1 项原有 Windows duration 断言失败，待单独修复。
+另修复 Agent 在 Windows 下的短任务 duration 精度问题；公共接口不变、原断言保留。
+最新全仓复查 286 项：284 通过、2 项符号链接权限跳过、0 失败，31.957 秒。
 覆盖真实 Router 文件交接、工具参数/产物、超时和回归测试；POSIX 执行未实测。后续范围为 Worker、DeepSeekClient、
 run_python、网络/Git 工具及容器隔离，不在本 PR 扩展。

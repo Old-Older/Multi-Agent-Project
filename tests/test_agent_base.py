@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import asyncio
 import unittest
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 from mas.agents.base import Agent
 from mas.config import Settings
@@ -127,6 +129,31 @@ class RunLoopTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((res.sender, res.receiver, res.reply_to), ("coder", "orchestrator", assign.id))
         self.assertEqual(res.content, "@orchestrator Done: script ready (files: a.py)")
         self.assertGreater(r.duration, 0)                  # filled in when the worker did not
+
+    async def test_measures_submillisecond_task_when_coarse_clock_does_not_advance(self):
+        self.start(handler=lambda t: _ret(TaskResult(t.id, True, "quick result")))
+        clock = SimpleNamespace(
+            monotonic=lambda: 100.0,
+            perf_counter=Mock(side_effect=[100.0, 100.0004]))
+        # Replace only this module's clock reference, keeping asyncio's clock real.
+        with patch("mas.agents.base.time", clock):
+            result = await self.dispatch()
+        self.assertTrue(result.success)
+        self.assertAlmostEqual(result.duration, 0.0004, places=9)
+        [message] = self.of_type(GROUP_MAIN, MsgType.TASK_RESULT)
+        self.assertAlmostEqual(message.payload["result"]["duration"], 0.0004, places=9)
+
+    async def test_preserves_duration_supplied_by_worker(self):
+        self.start(handler=lambda t: _ret(TaskResult(t.id, True, "timed by worker", duration=2.5)))
+        clock = SimpleNamespace(
+            monotonic=lambda: 100.0,
+            perf_counter=Mock(side_effect=[100.0, 100.0004]))
+        with patch("mas.agents.base.time", clock):
+            result = await self.dispatch()
+        self.assertTrue(result.success)
+        self.assertEqual(result.duration, 2.5)
+        [message] = self.of_type(GROUP_MAIN, MsgType.TASK_RESULT)
+        self.assertEqual(message.payload["result"]["duration"], 2.5)
 
     async def test_received_status_is_public_and_updates_the_table(self):
         seen = {}
