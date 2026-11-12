@@ -7,19 +7,22 @@ import io
 import json
 import logging
 import os
-import select
+import queue
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import unittest
+from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 from mas.agents.base import Agent
 from mas.agents.orchestrator import Orchestrator
 from mas.agents.roles import ROLES
-from mas.app import System, WorkerParts, build_system, default_worker_factory, make_human, make_llm
+from mas.app import System, WorkerParts, build_system, build_tools, default_worker_factory, make_human, make_llm
 from mas.__main__ import configure_logging, parse_args
 from mas.config import Settings
 from mas.core.human import AutoResponder, CliHumanIO
@@ -45,6 +48,10 @@ class TmpDirTest(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.settings = Settings(data_dir=self.tmp / "data", workspaces_dir=self.tmp / "ws")
+        # These tests use queues or pipes, never an interactive terminal.
+        stdin = patch("sys.stdin", io.StringIO())
+        stdin.start()
+        self.addCleanup(stdin.stop)
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
@@ -97,7 +104,44 @@ class WiringTest(TmpDirTest):
                          sandbox_factory=lambda a, r: DemoSandbox(a, r))
         self.assertTrue(all(isinstance(w, WorkerAgent) for w in s.workers.values()))
         self.assertEqual(s.workers["coder"].role, ROLES["coder"])
-        self.assertEqual(s.workers["coder"].tools, {})               # no tools yet (build_tools is LI's)
+        self.assertEqual(list(s.workers["coder"].tools), ["read_file", "write_file", "delete_file", "list_files"])
+        for name in ("researcher", "writer"):
+            self.assertEqual(list(s.workers[name].tools), ["read_file", "write_file", "list_files"])
+
+    async def test_default_system_tools_write_and_read_real_workspace_files(self):
+        s = build_system(self.settings, MockLLM(), CliHumanIO())
+        for name, worker in s.workers.items():
+            with self.subTest(role=name):
+                sb = s.sandboxes[name]
+                written = await worker.tools["write_file"].run(sb, path="nested/notes.md", content=f"{name} 中文笔记")
+                self.assertTrue(written.ok, written.output)
+                self.assertEqual(written.files_written, ["nested/notes.md"])
+                read = await worker.tools["read_file"].run(sb, path=written.files_written[0])
+                self.assertTrue(read.ok, read.output)
+                self.assertEqual(read.output, f"{name} 中文笔记")
+
+    def test_build_tools_skips_and_warns_for_known_pending_tools(self):
+        configured = {name: list(role.tool_names) for name, role in ROLES.items()}
+        with self.assertLogs("mas.app", level="WARNING") as logs:
+            tools = {name: build_tools(role, self.settings) for name, role in ROLES.items()}
+        self.assertEqual([tool.name for tool in tools["coder"]], ["read_file", "write_file", "delete_file", "list_files"])
+        for name in ("researcher", "writer"):
+            self.assertEqual([tool.name for tool in tools[name]], ["read_file", "write_file", "list_files"])
+        self.assertEqual(len(logs.records), 4)
+        for name in ("web_search", "fetch_url", "run_python", "git"):
+            self.assertTrue(any(f"Tool {name} " in line and "not implemented; skipping" in line for line in logs.output))
+        self.assertEqual({name: role.tool_names for name, role in ROLES.items()}, configured)
+
+    def test_build_tools_preserves_configured_order_and_returns_fresh_instances(self):
+        role = replace(ROLES["writer"], tool_names=["list_files", "read_file", "write_file"])
+        first, second = build_tools(role, self.settings), build_tools(role, self.settings)
+        self.assertEqual([tool.name for tool in first], role.tool_names)
+        self.assertTrue(all(a is not b for a, b in zip(first, second)))
+
+    def test_build_tools_rejects_unknown_names(self):
+        role = replace(ROLES["writer"], tool_names=["read_file", "write_flie"])
+        with self.assertRaisesRegex(ValueError, "unknown tool 'write_flie'"):
+            build_tools(role, self.settings)
 
     def test_the_default_sandbox_follows_the_settings(self):
         from mas.sandbox.base import DockerSandbox, LocalSandbox
@@ -407,29 +451,46 @@ class EntryPointTest(TmpDirTest):
 
     def test_python_dash_m_mas_demo_runs_a_request_end_to_end(self):
         """The real program, started like a user would: a request goes in, files and a report come out."""
-        env = dict(os.environ, PYTHONPATH=str(ROOT), DEEPSEEK_API_KEY="")
+        env = dict(os.environ, PYTHONPATH=str(ROOT), DEEPSEEK_API_KEY="", PYTHONIOENCODING="utf-8")
         p = subprocess.Popen([sys.executable, "-m", "mas", "--demo", "--data-dir", str(self.tmp), "--delay", "0"],
-                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                              cwd=self.tmp, env=env)
+        output: queue.Queue = queue.Queue()
+
+        def read_output():
+            try:
+                for line in p.stdout:
+                    output.put(line)
+            finally:
+                output.put(None)
+
+        # Windows select() accepts sockets only, so read the pipe in a separate thread.
+        reader = threading.Thread(target=read_output, daemon=True)
+        reader.start()
         try:
             p.stdin.write("write a python script that prints hello\n")
             p.stdin.flush()
             seen = ""
-            deadline = time.time() + 20
-            while "Deliverables:" not in seen and time.time() < deadline:
-                if select.select([p.stdout], [], [], 0.2)[0]:
-                    chunk = os.read(p.stdout.fileno(), 4096).decode()
-                    if not chunk:
-                        break
-                    seen += chunk
+            deadline = time.monotonic() + 20
+            while "Deliverables:" not in seen and time.monotonic() < deadline:
+                try:
+                    line = output.get(timeout=0.2)
+                except queue.Empty:
+                    continue
+                if line is None:
+                    break
+                seen += line
             p.stdin.write("/quit\n")
             p.stdin.flush()
             p.wait(timeout=10)
         finally:
             if p.poll() is None:
                 p.kill()
+            p.wait(timeout=5)
             p.stdin.close()
+            reader.join(timeout=5)
             p.stdout.close()
+        self.assertFalse(reader.is_alive())
         self.assertIn("[orchestrator] @coder write a python script that prints hello", seen)
         self.assertIn("Deliverables: script-", seen)
         self.assertEqual(p.returncode, 0)
