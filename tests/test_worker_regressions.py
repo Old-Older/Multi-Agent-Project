@@ -116,9 +116,11 @@ class WorkerRegressionTest(unittest.IsolatedAsyncioTestCase):
                                             origin_channel=GROUP_MAIN)
         self.assertEqual(result.failure_mode, FailureMode.TIMEOUT)
         [assignment] = self.messages(MsgType.TASK_ASSIGN)
-        with mock.patch.object(write, "run", wraps=write.run) as run:
+        with mock.patch.object(write, "run", wraps=write.run) as run, \
+                mock.patch.object(worker, "reflect", wraps=worker.reflect) as reflection:
             await asyncio.wait_for(worker.on_message(assignment), 2)
             run.assert_not_called()
+            reflection.assert_not_called()
         self.assertEqual(llm.calls, [])
         self.assertFalse(self.sandbox.exists("too-late.txt"))
         self.assertEqual(self.messages(MsgType.HITL_REQUEST), [])
@@ -127,6 +129,19 @@ class WorkerRegressionTest(unittest.IsolatedAsyncioTestCase):
         saved = self.state.result(result.task_id)
         self.assertEqual((saved.success, saved.failure_mode, saved.error),
                          (False, FailureMode.TIMEOUT, result.error))
+
+    async def test_zero_local_budget_does_not_create_execution_memory(self):
+        self.settings.subtask_timeout_s = 0
+        worker, llm = self.worker([
+            call("write_file", path="never-started.txt", content="must not be written"), final(),
+        ])
+        with mock.patch.object(worker, "reflect", wraps=worker.reflect) as reflection:
+            result = await worker.handle_task(self.task())
+            reflection.assert_not_called()
+        self.assertEqual((result.success, result.failure_mode), (False, FailureMode.TIMEOUT))
+        self.assertEqual(llm.calls, [])
+        self.assertEqual(self.memory.all(), [])
+        self.assertFalse(self.sandbox.exists("never-started.txt"))
 
     async def test_human_advice_stops_the_old_batch_before_replanning(self):
         self.sandbox.write_text("keep.txt", "Important original contents")
@@ -186,12 +201,17 @@ class WorkerRegressionTest(unittest.IsolatedAsyncioTestCase):
         entered, release = asyncio.Event(), asyncio.Event()
 
         class DelayedLLM(SnapshotLLM):
+            task_calls = 0
+
             async def chat(self, messages, tools=None, temperature=0.2):
-                entered.set()
-                await release.wait()
+                if tools is not None:
+                    self.task_calls += 1
+                    entered.set()
+                    await release.wait()
                 return await super().chat(messages, tools, temperature)
 
-        llm = DelayedLLM([call("write_file", path="too-late.txt", content="must not be written"), final()])
+        llm = DelayedLLM([call("write_file", path="too-late.txt", content="must not be written"),
+                          LLMResponse("Keep model requests within the remaining execution time.")])
         worker, _ = self.worker(llm=llm)
         task = self.task()
         pending = self.spawn(worker.handle_task(task))
@@ -202,10 +222,81 @@ class WorkerRegressionTest(unittest.IsolatedAsyncioTestCase):
         result = await asyncio.wait_for(pending, 2)
         self.assertEqual((result.success, result.failure_mode), (False, FailureMode.TIMEOUT))
         self.assertFalse(self.sandbox.exists("too-late.txt"))
-        self.assertEqual(len(llm.calls), 1)
+        self.assertEqual(llm.task_calls, 1)
         self.assertEqual(self.messages(MsgType.HITL_REQUEST), [])
-        self.assertEqual(self.memory.all(), [])
+        [experience] = self.memory.all()
+        self.assertEqual(experience.task_id, task.id)
+        self.assertFalse(experience.success)
         self.assertEqual(self.state.result(task.id).failure_mode, FailureMode.TIMEOUT)
+
+    async def test_executed_router_timeout_records_failure_and_reflects_without_changing_result(self):
+        self.settings.subtask_timeout_s = 0.2
+        blocked, interrupted = asyncio.Event(), asyncio.Event()
+        router_finished = asyncio.Event()
+        reflection_started, release_reflection = asyncio.Event(), asyncio.Event()
+        lesson = "Finish the next model request within the remaining task budget."
+        reflected_failures = []
+
+        class TimeoutLLM(SnapshotLLM):
+            task_calls = 0
+            reflection_calls = 0
+
+            async def chat(self, messages, tools=None, temperature=0.2):
+                if tools is None:
+                    self.reflection_calls += 1
+                    reflected_failures.append(json.loads(messages[-1]["content"])["result"])
+                    reflection_started.set()
+                    await release_reflection.wait()
+                    return LLMResponse(lesson)
+                self.task_calls += 1
+                if self.task_calls == 1:
+                    return await super().chat(messages, tools, temperature)
+                blocked.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    # Let the real Router deadline win before the mock acknowledges
+                    # cancellation, without synthetic state or deadline changes.
+                    await router_finished.wait()
+                    raise
+                finally:
+                    interrupted.set()
+
+        llm = TimeoutLLM([call("write_file", path="partial.txt", content="completed before timeout")])
+        worker, _ = self.worker(llm=llm)
+        self.spawn(worker.run())
+        try:
+            result = await self.router.dispatch(
+                requester="upstream", target="worker", goal="write a file and then finish",
+                session_id=GROUP_MAIN, root_id=self.router.new_root_id(), origin_channel=GROUP_MAIN)
+        finally:
+            router_finished.set()
+        canonical_result = self.state.result(result.task_id).to_dict()
+        await until(lambda: self.messages(MsgType.TASK_RESULT))
+        self.assertEqual((result.success, result.failure_mode), (False, FailureMode.TIMEOUT))
+        # Exercise Router's terminal-timeout path, not only Worker's local deadline.
+        self.assertEqual(result.error, f"no result within {self.settings.subtask_timeout_s}s")
+        self.assertTrue(blocked.is_set())
+        self.assertTrue(interrupted.is_set())
+        self.assertEqual(self.sandbox.read_text("partial.txt"), "completed before timeout")
+        [experience] = self.memory.all()
+        self.assertEqual(experience.task_id, result.task_id)
+        self.assertFalse(experience.success)
+        self.assertEqual(experience.lesson, "")
+        await asyncio.wait_for(reflection_started.wait(), 2)
+        self.assertEqual(reflected_failures[0]["failure_mode"], FailureMode.TIMEOUT.value)
+        self.assertIn("partial.txt", reflected_failures[0]["artifacts"])
+        release_reflection.set()
+        await until(lambda: self.memory.all()[0].lesson == lesson)
+        [updated] = self.memory.all()
+        self.assertEqual((updated.task_id, updated.success, updated.lesson),
+                         (result.task_id, False, lesson))
+        self.assertEqual((llm.task_calls, llm.reflection_calls), (2, 1))
+        self.assertEqual(self.state.result(result.task_id).to_dict(), canonical_result)
+        [late_reply] = self.messages(MsgType.TASK_RESULT)
+        self.assertEqual(TaskResult.from_dict(late_reply.payload["result"]).failure_mode, FailureMode.TIMEOUT)
+        self.assertEqual(self.sandbox.list_dir(), ["partial.txt"])
+        self.assertEqual(self.messages(MsgType.HITL_REQUEST), [])
 
     async def test_router_source_names_are_mapped_to_readable_inbox_paths(self):
         self.upstream.write_text("sources/input.txt", "content from the upstream workspace")

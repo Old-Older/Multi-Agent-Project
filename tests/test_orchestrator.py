@@ -271,12 +271,57 @@ class LoopTest(OrchestratorTestBase):
         self.assertTrue((Path(final.payload["output_dir"]) / "part.md").exists())    # and the partial files kept
         self.assertEqual(self.orch.outcomes["R1"].failure_mode, FailureMode.MAX_ROUNDS)
 
-    async def test_text_without_tools_is_taken_as_the_answer(self):
-        self.start([reply("1+1 equals 2")])
+    async def test_text_without_tools_requires_finish_in_a_later_round(self):
+        self.start([reply("1+1 equals 2"), reply("", finish("1+1 equals 2"))])
         await self.say("What is 1+1?")
         final = await self.final()
         self.assertEqual((final.content, final.payload["success"]), ("@human 1+1 equals 2", True))
+        self.assertEqual((final.payload["rounds"], len(self.llm.calls)), (2, 2))
+        messages, _ = self.llm.calls[1]
+        self.assertEqual(messages[-2], {"role": "assistant", "content": "1+1 equals 2"})
+        self.assertIn("Please call a tool", messages[-1]["content"])
+        self.assertIn("finish", messages[-1]["content"])
+        self.assertEqual(len(self.finals()), 1)
         self.assertEqual(self.state.by_root("R1"), [])
+
+    async def test_persistent_text_without_finish_exhausts_rounds(self):
+        self.settings.max_orchestrator_rounds = 3
+        self.start(responder=lambda messages, tools: reply("The task is done."))
+        await self.say("do something")
+        final = await self.final()
+        self.assertEqual(len(self.llm.calls), 3)
+        self.assertEqual((final.payload["success"], final.payload["failure_mode"], final.payload["rounds"]),
+                         (False, "max_rounds", 3))
+        self.assertEqual(self.orch.outcomes["R1"].failure_mode, FailureMode.MAX_ROUNDS)
+        self.assertEqual(len(self.finals()), 1)
+        self.assertFalse(self.settings.output_dir.exists())
+
+    async def test_text_does_not_close_or_collect_output_before_finish(self):
+        finish_requested, allow_finish = asyncio.Event(), asyncio.Event()
+        self.start([reply("", call("1", "call_coder", goal="write a script")),
+                    reply("The script is ready."), reply("", finish("script ready", ["a.py"]))],
+                   workers={"coder": self.writes("coder", "a.py", "print(1)")})
+        original_chat = self.llm.chat
+
+        async def wait_before_finish(messages, tools=None, temperature=0.2):
+            if len(self.llm.calls) == 2:
+                finish_requested.set()
+                await allow_finish.wait()
+            return await original_chat(messages, tools, temperature)
+
+        self.llm.chat = wait_before_finish
+        await self.say("write a script")
+        await asyncio.wait_for(finish_requested.wait(), timeout=2)
+        self.assertEqual(self.finals(), [])
+        self.assertEqual(self.orch.outcomes, {})
+        self.assertFalse(self.router.board(GROUP_MAIN).roots["R1"].finished)
+        self.assertTrue((self.tmp / "ws" / "coder" / "a.py").exists())
+        self.assertFalse(self.settings.output_dir.exists())
+        allow_finish.set()
+        final = await self.final()
+        self.assertEqual((final.payload["success"], final.payload["rounds"]), (True, 3))
+        self.assertEqual((Path(final.payload["output_dir"]) / "a.py").read_text(), "print(1)")
+        self.assertEqual(len(self.finals()), 1)
 
     async def test_an_empty_response_costs_a_round_and_gets_a_nudge(self):
         self.start([reply(""), reply("", finish("finished"))])
@@ -379,7 +424,7 @@ class MessagesTest(OrchestratorTestBase):
 
     async def test_dm_to_the_orchestrator_runs_in_that_session(self):
         dm = dm_channel(HUMAN, "orchestrator")
-        self.start([reply("the answer in the DM")])
+        self.start([reply("", finish("the answer in the DM"))])
         await self.say("hello", channel=dm, receiver="orchestrator")
         final = await self.final(channel=dm)
         self.assertEqual(final.channel, dm)

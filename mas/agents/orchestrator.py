@@ -207,9 +207,8 @@ class Orchestrator(Agent):
             if resp.text.strip():
                 board.set_plan(run.root_id, _clip(resp.text, 200))
             if not resp.tool_calls:
-                if resp.text.strip():                        # the answer without the finish tool: accept it
-                    await self._conclude(msg, run, True, None, resp.text.strip(), self._artifacts(run))
-                    return
+                if resp.text.strip():
+                    messages.append({"role": "assistant", "content": resp.text})
                 messages.append({"role": "user", "content": "Please call a tool; when the task is done, call finish."})
                 continue
             messages.append(self._assistant_message(resp.text, resp.tool_calls))

@@ -57,6 +57,7 @@ def _clip(text: str, limit: int) -> str:
 class _Run:
     """Per-task state: concurrent tasks must never share prompts or observations."""
     deadline: float
+    execution_started: bool = False
     steps: int = 0
     artifacts: list[str] = field(default_factory=list)
     refs: dict[str, str] = field(default_factory=dict)
@@ -107,10 +108,11 @@ class WorkerAgent(Agent):
         """
         started = time.perf_counter()
         run = _Run(deadline=started + self.settings.subtask_timeout_s)
+        terminal = None
         try:
             result = await self._loop(task, run)
         except _TaskTerminated as exc:
-            return exc.result
+            result = terminal = exc.result
         except asyncio.TimeoutError:
             result = TaskResult(task.id, False, "", error="worker execution timed out",
                                 failure_mode=FailureMode.TIMEOUT)
@@ -122,15 +124,20 @@ class WorkerAgent(Agent):
             result = TaskResult(task.id, False, "", error=f"{type(exc).__name__}: {exc}",
                                 failure_mode=FailureMode.CRASH)
         # asyncio cancellation deliberately propagates to Agent.run/System.stop.
-        terminal = self._terminal_result(task)
+        terminal = self._terminal_result(task) or terminal
         if terminal is not None:
-            return terminal
+            if not run.execution_started or terminal.failure_mode != FailureMode.TIMEOUT:
+                return terminal
+            # Preserve the Router's result; enrich only a copy for failure memory
+            # and reflection with work observed before the execution timed out.
+            result = replace(terminal)
         result.steps = run.steps
         result.duration = time.perf_counter() - started
         result.summary = _clip(result.summary, self.settings.result_summary_max_chars)
         result.artifacts = self._existing_artifacts([*run.artifacts, *result.artifacts])
         result.refs = {**result.refs, **run.refs}   # observed identifiers win over model guesses
-        if not result.declined and result.error != CANCELLED_ANSWER:
+        if (not result.declined and result.error != CANCELLED_ANSWER
+                and (result.failure_mode != FailureMode.TIMEOUT or run.execution_started)):
             experience = Experience(task.id, task.goal, tags_for_tools(run.tools_used, result.artifacts),
                                     result.success, result.summary or result.error or "")
             try:
@@ -143,7 +150,7 @@ class WorkerAgent(Agent):
                 pending = asyncio.create_task(self.reflect(task, result), name=f"reflect:{task.id}")
                 self._reflections.add(pending)
                 pending.add_done_callback(self._reflections.discard)
-        return result
+        return terminal if terminal is not None else result
 
     async def _loop(self, task: Task, run: _Run) -> TaskResult:
         self._ensure_running(task)
@@ -245,6 +252,7 @@ class WorkerAgent(Agent):
         async def invoke() -> T:
             # A queued coroutine can start after Router has already ended the task.
             self._ensure_running(task)
+            run.execution_started = True
             return await operation()
 
         result = await asyncio.wait_for(invoke(), timeout=max(0, remaining))
