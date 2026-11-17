@@ -1,7 +1,7 @@
 # 接口说明
 
 > 配套代码：`mas/` 目录。设计依据：[design_decisions.md](design_decisions.md)（下文用"§"引用其章节）。
-> 现状：通信、路由、状态、看板、Agent 基类、Orchestrator、记忆和系统组装已实现；第一阶段 LocalSandbox 与四个文件工具也已接入。Worker、DeepSeekClient、其他实际工具、Docker 执行及评测框架仍待完成。以各节实现说明和测试为准。
+> 现状：通信、路由、状态、看板、Agent 基类、Orchestrator、记忆、系统组装及通用 Worker 已实现；LocalSandbox 与四个文件工具也已接入。DeepSeekClient、Python/网络/Git 工具、Docker 执行、AutoResponder 及评测框架仍待完成。通用 Worker 当前范围见 §3.9；三角色分工与 Worker 再委派是后续阶段。
 > 规则：**接口改动需要 JIAN Yimin 和 LI Heyang 两人同意**，改完同步更新本文和 `tests/test_interfaces.py`。
 
 ---
@@ -144,7 +144,9 @@ payload 格式：
 1. 检查限制：深度、委派链里是否有循环、每个任务的委派次数、同一目标的重试次数。违反时直接返回失败的 `TaskResult`，不联系执行者。
 2. 在 `StateTable` 登记；把 `files` 拷到执行者的 `inbox/`。
 3. 发 `TASK_ASSIGN`：群聊任务发到 `group:main`，私聊任务发到 `dm_channel(requester, target)`。
-4. 在 `subtask_timeout_s` 内等待对应的 `TASK_RESULT`，超时返回 `TIMEOUT` 失败；任务处于 `WAITING_HUMAN` 时不计时（等人类多久都行，`/cancel` 可随时终止）。**任务失败时从不抛异常。**
+4. 在 `subtask_timeout_s` 的累计执行时间内等待对应的 `TASK_RESULT`，超时返回 `TIMEOUT` 失败；精确扣除每段 `WAITING_HUMAN` 时间（等人类多久都行，`/cancel` 可随时终止），答复后继续使用剩余预算，不重置全部时间。**任务失败时从不抛异常。**
+
+任务终态以 `StateTable` 已保存的结果为准：Agent 跳过超时后才收到的任务，晚返回的成功不能覆盖原来的 `TIMEOUT` 或改变看板状态。已结束、未知任务或已取消 root 不再创建 HITL 请求；审批创建前执行预算已耗尽时也先结束为 `TIMEOUT`。
 
 其他方法：`locate_file(name, requester, root_id)`（文件在哪个 workspace，Orchestrator 收集交付物时用）、`open_direct_task`（人类私聊或 @ 某个 agent 时登记任务）、`request_human`（HITL，编号 h1、h2……，弹在 `origin_channel`）、`board(session_id)`、`session_of(channel)`、`cancel_root`。
 
@@ -219,9 +221,16 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 ### 3.9 Worker `mas/agents/worker.py`、`roles.py`
 
 - `WorkerAgent(role, bus, router, settings, llm, tools, sandbox, memory)`。
-- `handle_task` 的步骤写在 docstring 里，对应 §6：召回记忆、注入看板、最多 12 步、需要授权的工具先请求人类批准、同一工具连续失败 2 次时求助、补全 `artifacts/refs`、写入记忆、失败时异步 `reflect()`。
-- `function_specs(task)`：真实工具 + 其他 agent 的 `call_<agent>` + `decline` + `read_group`。
-- `RoleConfig.capability` 是 Orchestrator 看到的能力描述；`system_prompt` 还没写（`TODO(LI Heyang)`）。
+- **当前阶段只实现通用 Worker**：保留 `RoleConfig` 作为身份和可选 prompt 的配置容器，但不读取 `ROLES`，也不要求 Researcher / Coder / Writer 存在。能力来自构造时实际传入的 `tools`。三个预设角色的 prompt、跨 Worker 委派留待后续实现。
+- `function_specs(task)`：注入的真实工具 + `decline` + `read_group`；当前不暴露 `call_<agent>` 或 Orchestrator 的 `finish`。未知工具以失败观察返回，不触发路由。工具名不得重复或覆盖 `decline/read_group`。
+- `handle_task`：注入通用执行规则、角色补充、任务目标/上下文/inbox 路径、会话看板和召回经验；`Task.files` 保留源文件名，prompt 中的 `inbox_files` 按 Router 的导入规则映射为 `inbox/<basename>`。每步追加当前 root 新增的人类原话。最多 `max_worker_steps`（默认 12）步。同批工具按顺序执行，避免先写后读等依赖操作互相抢跑。
+- 工具调用历史保留 assistant 的 `tool_calls` 和每个对应 `tool_call_id` 的观察。观察为 JSON，包含 `ok/output/files_written/refs`；工具输出正文按 `tool_output_max_chars` 截断，预期失败和工具异常都交给模型修正。同一真实工具连续失败两次请求 `ADVICE`，回答写入观察，并跳过本批剩余调用，让模型先处理人类建议再重新规划。
+- **完成协议**：模型不调用工具时，返回 JSON 对象，必填 `success: bool`、`summary: str`；可选 `artifacts: list[str]`、`refs: dict[str, str]`、`open_issues: list[str]`、`error: str | null`、`failure_mode`（已有枚举值或 null）。可接受外层 Markdown JSON 代码块。非法结果最多给两次纠正机会，仍不合法返回 `LLM_FORMAT`，纠正也计入步数。
+- `TaskResult.artifacts` 与工具记录合并后，按沙箱内规范化路径去重，只保留结束时仍存在的文件；已删除、越界或不存在的路径即使由模型再次声明也不会交付。删除后重新生成的文件正常保留。`refs` 冲突时工具实际返回的值优先；失败也保留部分产物，填入步数、耗时和失败模式。步数耗尽为 `MAX_STEPS`；执行超时为 `TIMEOUT`；LLM 重试耗尽为 `CRASH`（与 Orchestrator 一致）。
+- `decline` 必须在第一步单独调用并提供非空 reason；与其他调用混用时整批不执行，返回纠正提示。`handle_chat` 直接继承基类的私聊/@任务登记、回复和 `/cancel` 行为。
+- 授权工具先经 `ask_human(APPROVAL)` 获得明确批准；拒绝后跳过本批全部剩余调用，仍为每个 `tool_call_id` 补齐观察，让模型看到拒绝后再重新规划。每步、LLM/工具执行前后和人工答复后重新检查终态；Router 已保存的 `TIMEOUT` 保留原有失败模式，不误报为取消。LLM 与工具执行共享 `subtask_timeout_s`，同时受 Router 剩余预算约束，排队不会获得新的完整预算，等待人类不消耗预算；程序关闭产生的 asyncio 取消继续向上传播。
+- 成功或实际失败写一条 `Experience`，标签来自工具和产物；decline/cancel 不写入，遇到 Router 已结束的任务直接返回权威结果，不继续执行或写入记忆。记忆持久化异常记录日志，仍返回已形成的任务结果与产物。失败返回后异步 `reflect()` 调用一次 LLM，以同一 task_id 更新教训，不拖慢结果返回；反思失败保留原记录，Worker 运行循环停止时清理后台反思。
+- 验证：`python -m unittest tests.test_worker tests.test_worker_regressions tests.test_task_lifecycle`，使用一个自定义 `worker`、`MockLLM` 以及真实 Router/JsonlMemory；回归测试另用真实 LocalSandbox/文件工具覆盖拒绝审批、过期任务、inbox 路径和产物生命周期，不需要 API key。LocalSandbox 与四个文件工具已从主线同步；默认 CLI 仍需完成 DeepSeekClient 才能使用真实模型。
 
 ### 3.10 Orchestrator `mas/agents/orchestrator.py`
 

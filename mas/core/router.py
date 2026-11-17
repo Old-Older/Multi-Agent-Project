@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from dataclasses import dataclass
 from pathlib import Path
 
 from mas.config import Settings
@@ -37,6 +38,26 @@ def _norm(goal: str) -> str:
     return " ".join(goal.lower().split())
 
 
+@dataclass
+class _DispatchBudget:
+    """Execution deadline, extended only by actual WAITING_HUMAN intervals."""
+    deadline: float
+    changed: asyncio.Future[None]
+    waiting_since: float | None = None
+
+    def set_waiting(self, waiting: bool, now: float) -> None:
+        if waiting == (self.waiting_since is not None):
+            return
+        if waiting:
+            self.waiting_since = now
+        else:
+            assert self.waiting_since is not None
+            self.deadline += now - self.waiting_since
+            self.waiting_since = None
+        if not self.changed.done():
+            self.changed.set_result(None)
+
+
 class Router:
     def __init__(self, bus: MessageBus, state: StateTable,
                  sandboxes: dict[str, Sandbox], settings: Settings) -> None:
@@ -48,6 +69,7 @@ class Router:
         self.settings = settings
         self._boards: dict[str, SessionBoard] = {}
         self._task_waiters: dict[str, asyncio.Future[TaskResult]] = {}
+        self._task_budgets: dict[str, _DispatchBudget] = {}
         self._hitl_waiters: dict[tuple[str, str], asyncio.Future[str]] = {}
         self._hitl_root: dict[tuple[str, str], str] = {}      # open request -> its root id
         self._hitl_counter: dict[str, int] = {}
@@ -111,26 +133,51 @@ class Router:
             self.state.finish(result)
             return result
 
-        fut: asyncio.Future[TaskResult] = asyncio.get_running_loop().create_future()
+        loop = asyncio.get_running_loop()
+        fut: asyncio.Future[TaskResult] = loop.create_future()
+        budget = _DispatchBudget(loop.time() + self.settings.subtask_timeout_s, loop.create_future())
         self._task_waiters[task.id] = fut
-        await self.bus.publish(Message(
-            MsgType.TASK_ASSIGN, sender=requester, channel=task.channel,
-            content=f"@{target} {goal}", payload={"task": task.to_dict()},
-            receiver=target, mentions=[target]))
+        self._task_budgets[task.id] = budget
         try:
-            while True:
-                done, _ = await asyncio.wait({fut}, timeout=self.settings.subtask_timeout_s)
-                if done:
-                    return fut.result()
-                if self.state.get(task.id).status == TaskStatus.WAITING_HUMAN:
-                    continue                  # a human is thinking: keep waiting
-                result = TaskResult(
-                    task.id, False, "", error=f"no result within {self.settings.subtask_timeout_s}s",
-                    failure_mode=FailureMode.TIMEOUT)
-                self.state.finish(result)
-                return result
+            await self.bus.publish(Message(
+                MsgType.TASK_ASSIGN, sender=requester, channel=task.channel,
+                content=f"@{target} {goal}", payload={"task": task.to_dict()},
+                receiver=target, mentions=[target]))
+            while not fut.done():
+                now = budget.waiting_since if budget.waiting_since is not None else loop.time()
+                remaining = budget.deadline - now
+                if remaining <= 0:
+                    result = TaskResult(
+                        task.id, False, "", error=f"no result within {self.settings.subtask_timeout_s}s",
+                        failure_mode=FailureMode.TIMEOUT)
+                    self.state.finish(result)
+                    return result
+                if budget.changed.done():
+                    budget.changed = loop.create_future()
+                # State transitions wake this wait even when a whole human pause
+                # fits inside the original timeout window. Resuming keeps the
+                # remaining execution budget instead of granting a fresh timeout.
+                await asyncio.wait({fut, budget.changed},
+                                   timeout=None if budget.waiting_since is not None else remaining,
+                                   return_when=asyncio.FIRST_COMPLETED)
+            return fut.result()
         finally:
             self._task_waiters.pop(task.id, None)
+            self._task_budgets.pop(task.id, None)
+            if not budget.changed.done():
+                budget.changed.cancel()
+
+    def _remaining_execution(self, task_id: str) -> float | None:
+        """Remaining live dispatch budget, excluding time spent waiting for a human.
+
+        Workers use this alongside their local limit so queueing time cannot
+        grant a fresh timeout. Direct tasks have no dispatch budget (None).
+        """
+        budget = self._task_budgets.get(task_id)
+        if budget is None:
+            return None
+        now = budget.waiting_since if budget.waiting_since is not None else asyncio.get_running_loop().time()
+        return max(0.0, budget.deadline - now)
 
     def _check_limits(self, requester: str, target: str, goal: str, parent: Task | None,
                       root_id: str, chain: list[str]) -> str | None:
@@ -215,7 +262,25 @@ class Router:
         so a delegated agent's request still appears where the human started).
         The Orchestrator has no Task when it asks for clarification, so it passes
         task_id=None. With a task_id the task is WAITING_HUMAN meanwhile.
-        Returns CANCELLED_ANSWER if the request is cancelled with /cancel."""
+        Returns CANCELLED_ANSWER if the root is cancelled or the task has already
+        ended. Callers use the task's stored result to distinguish timeout from
+        user cancellation."""
+        if root_id in self._cancelled_roots:
+            return CANCELLED_ANSWER
+        if task_id:
+            try:
+                if self.state.get(task_id).status.finished:
+                    return CANCELLED_ANSWER
+            except KeyError:
+                return CANCELLED_ANSWER
+            remaining = self._remaining_execution(task_id)
+            if remaining is not None and remaining <= 0:
+                # The clock may have expired before dispatch's waiter resumes.
+                # Finish it now rather than creating an approval nobody can cancel.
+                self._on_result(TaskResult(
+                    task_id, False, "", error=f"no result within {self.settings.subtask_timeout_s}s",
+                    failure_mode=FailureMode.TIMEOUT))
+                return CANCELLED_ANSWER
         options = list(options or [])
         n = self._hitl_counter.get(session_id, 0) + 1
         self._hitl_counter[session_id] = n
@@ -319,5 +384,9 @@ class Router:
         try:
             if not self.state.get(task_id).status.finished:
                 self.state.update(task_id, status, note)
+                budget = self._task_budgets.get(task_id)
+                if budget is not None:
+                    budget.set_waiting(status == TaskStatus.WAITING_HUMAN,
+                                       asyncio.get_running_loop().time())
         except KeyError:
             pass
