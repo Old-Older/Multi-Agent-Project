@@ -3,6 +3,8 @@
 Course final project. A backend framework where multiple heterogeneous agents chat with humans,
 decompose and delegate tasks, run tools inside isolated sandboxes, and learn from past executions.
 
+当前开发阶段：**通用 `WorkerAgent` 已实现**，支持注入工具的 ReAct 循环、结构化结果、审批/取消和记忆反思；先用单个 Worker + `MockLLM` 验证，不引入三角色分工或 Worker 再委派。运行 `python -m unittest tests.test_worker tests.test_worker_regressions tests.test_task_lifecycle` 查看行为及回归测试，完成协议与范围见 [docs/interfaces.md §3.9](docs/interfaces.md#39-worker-masagentsworkerpyrolespy)。主线已包含 LocalSandbox 和四个文件工具，DeepSeek 客户端及 Python/网络/Git 工具仍待实现。
+
 > ## ⚠️ 给 LI Heyang：接口约定（请先读）
 >
 > 更新于 2026-11-09，分支 `feat/jian-comms-orchestration`。下面这些约定会影响 `WorkerAgent`、桩 Router 和 `AutoResponder`。完整说明见 [docs/interfaces.md](docs/interfaces.md) §3.4。
@@ -29,7 +31,7 @@ decompose and delegate tasks, run tools inside isolated sandboxes, and learn fro
 
 `LocalSandbox`、`read_file` / `write_file` / `delete_file` / `list_files` 已实现并接入现有 `build_tools`。
 运行最小示例：`python -m examples.sandbox_tools`。路径、schema、inbox 冲突策略、执行清理和验证记录见
-[第一阶段交接说明](docs/sandbox_tools_handoff.md)。Worker 和 DeepSeekClient 等后续部分尚未完成。
+[第一阶段交接说明](docs/sandbox_tools_handoff.md)。通用 Worker 已完成；DeepSeekClient 等后续部分尚待实现。
 
 ## 怎么运行
 
@@ -37,7 +39,7 @@ decompose and delegate tasks, run tools inside isolated sandboxes, and learn fro
 # 演示：不需要 API key，也不需要 LI 的部分（stand-in LLM 和 worker，其余都是真的）
 python -m mas --demo            # 每次启动都从干净的状态开始；想保留上次的记忆和文件加 --keep
 
-# 真实系统：需要 .env 里的 DEEPSEEK_API_KEY，以及 WorkerAgent、工具、DeepSeekClient（LI 的部分）写好
+# 真实系统：需要 .env 里的 DEEPSEEK_API_KEY，并完成 DeepSeekClient 与任务所需的后续工具
 python -m mas
 
 # 全部测试

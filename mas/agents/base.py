@@ -11,10 +11,11 @@ import asyncio
 import logging
 import time
 from abc import ABC, abstractmethod
+from dataclasses import replace
 
 from mas.config import Settings
 from mas.core.bus import MessageBus
-from mas.core.human import HitlKind
+from mas.core.human import CANCELLED_ANSWER, HitlKind
 from mas.core.message import HUMAN, Message, MsgType
 from mas.core.router import Router
 from mas.core.task import FailureMode, Task, TaskResult, TaskStatus
@@ -84,19 +85,23 @@ class Agent(ABC):
         (except for cancellation of the asyncio task itself)."""
         # Measure short tasks with the high-resolution elapsed-time clock.
         started = time.perf_counter()
-        if self.is_cancelled(task):
-            result = TaskResult(task.id, False, "", error="cancelled")
-        else:
+        result = self._terminal_result(task)
+        if result is None:
             await self.report_status(task, TaskStatus.RUNNING,
                                      f"Received {task.id}: {_clip(task.goal, 60)}", public=True)
-            try:
-                result = await self.handle_task(task)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                log.exception("%s crashed on task %s", self.agent_id, task.id)
-                result = TaskResult(task.id, False, "", error=f"{type(exc).__name__}: {exc}",
-                                    failure_mode=FailureMode.CRASH)
+            result = self._terminal_result(task)
+            if result is None:
+                try:
+                    result = await self.handle_task(task)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    log.exception("%s crashed on task %s", self.agent_id, task.id)
+                    result = TaskResult(task.id, False, "", error=f"{type(exc).__name__}: {exc}",
+                                        failure_mode=FailureMode.CRASH)
+        # A router timeout/cancellation remains authoritative even if a handler
+        # returns later. Do not publish a stale success that changes the board.
+        result = self._terminal_result(task) or result
         result.task_id = task.id                      # a result always belongs to its task
         result.summary = _clip(result.summary, self.settings.result_summary_max_chars)
         if not result.duration:
@@ -181,6 +186,30 @@ class Agent(ABC):
             return self.router.state.get(task.id).status == TaskStatus.CANCELLED
         except KeyError:
             return False
+
+    def _terminal_result(self, task: Task) -> TaskResult | None:
+        """Snapshot the router's terminal result without changing its failure kind.
+
+        A queued task may already have timed out before this agent receives it.
+        Callers may add local metadata to the copy without mutating StateTable.
+        """
+        try:
+            status = self.router.state.get(task.id).status
+        except KeyError:
+            return None
+        if status == TaskStatus.CANCELLED:
+            return TaskResult(task.id, False, "", error=CANCELLED_ANSWER)
+        if not status.finished:
+            return None
+        result = self.router.state.result(task.id)
+        if result is not None:
+            return replace(result, artifacts=list(result.artifacts), refs=dict(result.refs),
+                           open_issues=list(result.open_issues))
+        # Handle terminal status-only updates defensively; normal completion
+        # always stores a TaskResult through StateTable.finish().
+        return TaskResult(task.id, status == TaskStatus.DONE, "Task already finished",
+                          error=None if status == TaskStatus.DONE else f"task already {status.value}",
+                          declined=status == TaskStatus.DECLINED)
 
     async def call_agent(self, task: Task, target: str, goal: str,
                          context: str = "", files: list[str] | None = None) -> TaskResult:

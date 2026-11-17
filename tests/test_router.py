@@ -161,6 +161,7 @@ class DispatchTest(RouterTestBase):
         self.assertEqual(r.failure_mode, FailureMode.TIMEOUT)
         self.assertEqual(self.state.get(r.task_id).status, TaskStatus.FAILED)
         self.assertEqual(self.router._task_waiters, {})
+        self.assertEqual(self.router._task_budgets, {})
         assign = self.assigns()[0]
         await self.bus.publish(result_msg("coder", assign, TaskResult(r.task_id, True, "too late")))
         self.assertEqual(self.state.get(r.task_id).status, TaskStatus.FAILED)
@@ -203,6 +204,53 @@ class DispatchTest(RouterTestBase):
         r = await asyncio.wait_for(pending, 1)
         self.assertEqual(r.failure_mode, FailureMode.TIMEOUT)
 
+    async def test_short_human_wait_does_not_consume_the_resumed_work_budget(self):
+        self.router.settings.subtask_timeout_s = 0.3
+        requested = asyncio.Event()
+
+        async def asks_then_works(task):
+            requested.set()
+            await self.router.request_human(
+                session_id=task.session_id, root_id=task.root_id, origin_channel=task.origin_channel,
+                requester=task.assignee, kind=HitlKind.APPROVAL, question="write?", task_id=task.id)
+            await asyncio.sleep(0.2)
+            return TaskResult(task.id, True, "written after approval")
+
+        self.start_worker("coder", asks_then_works)
+        pending = asyncio.create_task(self.call())
+        await asyncio.wait_for(requested.wait(), 1)
+        await asyncio.sleep(0.15)  # the entire human wait ends before the original deadline
+        await self.bus.publish(Message(MsgType.HITL_RESPONSE, HUMAN, GROUP_MAIN,
+                                       payload={"request_id": "h1", "answer": "yes"}))
+        result = await asyncio.wait_for(pending, 1)
+        self.assertEqual((result.success, result.summary), (True, "written after approval"))
+        self.assertEqual(self.router._task_waiters, {})
+        self.assertEqual(self.router._task_budgets, {})
+
+    async def test_human_answer_does_not_reset_time_already_spent_working(self):
+        self.router.settings.subtask_timeout_s = 0.3
+        requested = asyncio.Event()
+
+        async def works_asks_then_works(task):
+            await asyncio.sleep(0.18)
+            requested.set()
+            await self.router.request_human(
+                session_id=task.session_id, root_id=task.root_id, origin_channel=task.origin_channel,
+                requester=task.assignee, kind=HitlKind.APPROVAL, question="continue?", task_id=task.id)
+            await asyncio.sleep(0.18)
+            return TaskResult(task.id, True, "too much execution time")
+
+        self.start_worker("coder", works_asks_then_works)
+        pending = asyncio.create_task(self.call())
+        await asyncio.wait_for(requested.wait(), 1)
+        await asyncio.sleep(0.2)
+        self.assertFalse(pending.done())
+        await self.bus.publish(Message(MsgType.HITL_RESPONSE, HUMAN, GROUP_MAIN,
+                                       payload={"request_id": "h1", "answer": "yes"}))
+        result = await asyncio.wait_for(pending, 1)
+        self.assertEqual(result.failure_mode, FailureMode.TIMEOUT)
+        self.assertEqual(self.router._task_budgets, {})
+
     async def test_cancel_ends_a_wait_for_a_human(self):
         self.router.settings.subtask_timeout_s = 0.05
 
@@ -216,6 +264,18 @@ class DispatchTest(RouterTestBase):
         self.router.cancel_root("R1")
         r = await asyncio.wait_for(pending, 1)
         self.assertEqual(r.error, "cancelled")
+        self.assertEqual(self.router._task_budgets, {})
+
+    async def test_cancelling_dispatch_cleans_up_its_execution_budget(self):
+        self.start_worker("coder")
+        pending = asyncio.create_task(self.call())
+        await asyncio.sleep(0.01)
+        self.assertEqual(len(self.router._task_budgets), 1)
+        pending.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await pending
+        self.assertEqual(self.router._task_waiters, {})
+        self.assertEqual(self.router._task_budgets, {})
 
     async def test_status_messages_update_state(self):
         async def h(task):
