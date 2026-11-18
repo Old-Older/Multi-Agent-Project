@@ -38,13 +38,25 @@ class Settings:
     # Nudges that help a member stop once it has enough (a note after many searches, a progress check halfway when
     # nothing has been written). Off for experiments: the budget warning and the tool-less last step stay on.
     early_stop_nudges: bool = True
-    research_note_after: int = 12             # searches and page fetches in one task before the first note...
-    research_note_every: int = 6              # ...and between the notes after that
+    research_note_after: int = 6              # searches and page fetches in one task before the first note...
+    research_note_every: int = 2              # ...and between the notes after that
+    research_max_calls: int = 14              # a hard stop: the 15th search or page fetch of one task is refused (0: no limit)
     max_retries_same_goal: int = 2
 
     # leading a request (design D18): the lead's own budget, delegated work included
     max_lead_steps: int = 40                  # a lead's ReAct step limit (a worker keeps max_worker_steps)
     lead_timeout_s: float = 2400.0            # budget of the lead's whole task, delegated work included
+
+    # time budget of one request (0: none). Every member shares it: members stop starting new work `worker_wrapup_s` /
+    # `lead_wrapup_s` before it ends and hand in what they have, nobody starts a delegation with less than
+    # `min_delegation_s` left, and `budget_grace_s` after it ends whatever still runs is cut off.
+    request_budget_s: float = 0.0
+    lead_wrapup_s: float = 30.0
+    worker_wrapup_s: float = 50.0
+    min_delegation_s: float = 60.0
+    budget_grace_s: float = 45.0
+    finish_not_before: float = 0.5            # a lead that hands in with less than this share of the budget used is sent back (0: off)
+    closing_check: bool = True                # before a lead's final answer, one more step to check the loose ends
 
     # context sizes (§2.1, §3.1, §6, §8)
     result_summary_max_chars: int = 1500
@@ -97,6 +109,9 @@ class Settings:
         nudges = os.getenv("EARLY_STOP_NUDGES")
         if nudges is not None:
             values["early_stop_nudges"] = nudges.strip().lower() not in ("0", "false", "no", "off", "")
+        budget = os.getenv("REQUEST_BUDGET_S")
+        if budget:
+            values["request_budget_s"] = float(budget)
         values.update(overrides)
         known = {f.name for f in fields(cls)}
         unknown = set(values) - known

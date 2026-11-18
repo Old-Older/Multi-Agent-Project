@@ -29,6 +29,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="which LLM to use (default: LLM_PROVIDER from .env, else hkgai)")
     p.add_argument("--auto", action="store_true",
                    help="unattended: the AutoResponder answers every question, the run ends after the last task")
+    p.add_argument("--time-budget", type=float, default=None, metavar="SECONDS",
+                   help="seconds one request may take (waiting for you not counted); the team hands in what it has "
+                        "as it runs out (default: no budget)")
     p.add_argument("--delay", type=float, default=0.4, help="demo only: seconds each demo step takes")
     p.add_argument("--keep", action="store_true",
                    help="demo only: keep the memory and files of the previous run (default: start clean)")
@@ -72,6 +75,8 @@ def main(argv: list[str] | None = None) -> int:
         overrides["llm_provider"] = args.llm
     if args.auto and args.scenario is None:
         raise SystemExit("--auto runs a scenario unattended: add --scenario <folder>.")
+    if args.time_budget is not None:
+        overrides["request_budget_s"] = args.time_budget
     settings = Settings.from_env(**overrides)
     configure_logging(settings.data_dir / "mas.log", args.verbose)
     driver = None

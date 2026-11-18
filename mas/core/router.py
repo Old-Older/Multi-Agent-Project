@@ -15,8 +15,10 @@ answer, and feeds each message to the board of its session.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -27,11 +29,23 @@ from mas.core.human import CANCELLED_ANSWER, HitlKind
 from mas.core.message import GROUP_MAIN, HUMAN, ORCHESTRATOR, Message, MsgType
 from mas.core.state import StateTable
 from mas.core.task import FailureMode, Task, TaskResult, TaskStatus
-from mas.sandbox.base import Sandbox
+from mas.sandbox.base import INBOX, Sandbox
 
 log = logging.getLogger(__name__)
 
 _LEADING_MENTION = re.compile(r"^\s*@\S+\s*")
+# A word that is a file name: what a goal says about a file it wants the teammate to work on.
+_SCRIPT_SUFFIXES = (".py", ".sh", ".pyc")                   # a teammate's tools, not something to hand back
+_FILE_NAME = re.compile(r"(?<![\w/.-])[\w][\w.-]*\.(?:md|txt|py|json|html?|csv|tsv|pdf|docx?|xlsx?|pptx?|js|css|ipynb|ya?ml)\b",
+                        re.IGNORECASE)
+
+
+def _digest(path: Path) -> str | None:
+    """A fingerprint of a file's content now (None when it cannot be read)."""
+    try:
+        return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    except OSError:
+        return None
 
 
 def _norm(goal: str) -> str:
@@ -77,6 +91,10 @@ class Router:
         self._delegations: dict[str, int] = {}                # parent task id -> count
         self._attempts: dict[tuple[str, str, str], list[str]] = {}
         self._cancelled_roots: set[str] = set()
+        self._handed: dict[str, dict[str, tuple[Path, str | None]]] = {}   # task id -> file -> (source, fingerprint)
+        self.clock = time.monotonic                           # replaceable in tests
+        self._root_started: dict[str, float] = {}             # root id -> when its time budget began
+        self._root_human_wait: dict[str, float] = {}          # root id -> seconds spent waiting for the human
         bus.add_observer(self._on_message)
 
     # ---- dispatch --------------------------------------------------------
@@ -101,7 +119,7 @@ class Router:
            is WAITING_HUMAN (a human may take as long as they like; /cancel ends it).
         Never raises for task failures.
         """
-        files = list(files or [])
+        files = self._with_handover_files(requester, target, goal, context, list(files or []))
         chain = (list(parent.chain) if parent else []) + [requester]
         task = Task(goal=goal, assignee=target, requester=requester,
                     session_id=session_id, root_id=root_id,
@@ -127,7 +145,8 @@ class Router:
 
         try:
             for name, src in sources.items():
-                self.sandboxes[target].import_file(src, Path(name).name)
+                self._hand_over(self.sandboxes[target], src, Path(name).name)
+                self._handed.setdefault(task.id, {})[name] = (src, _digest(src))
         except Exception as exc:                      # sandbox I/O problem, not a bug here
             result = TaskResult(task.id, False, "", error=f"cannot hand over files: {exc}",
                                 failure_mode=FailureMode.TOOL_ERROR)
@@ -180,6 +199,111 @@ class Router:
             return None
         now = budget.waiting_since if budget.waiting_since is not None else asyncio.get_running_loop().time()
         return max(0.0, budget.deadline - now)
+
+    def _with_handover_files(self, requester: str, target: str, goal: str, context: str,
+                             files: list[str]) -> list[str]:
+        """`files` plus what the requester evidently meant to hand over but did not list.
+
+        A teammate sees only what is listed: a file the goal talks about but `files` leaves out does not exist
+        for it, and a copy it got earlier is the OLD version once the requester has changed the file. So also
+        hand over (1) every file named in the goal or context that is in the requester's workspace, and (2) the
+        requester's current version of every file already in the teammate's inbox. Only the requester's own
+        workspace is looked at; nothing is guessed from anywhere else."""
+        mine, theirs = self.sandboxes.get(requester), self.sandboxes.get(target)
+        if mine is None or theirs is None:
+            return files
+        out, have = list(files), {Path(f).name for f in files}
+
+        def add(name: str) -> None:
+            if name not in have:
+                out.append(name)
+                have.add(name)
+
+        for name in dict.fromkeys(_FILE_NAME.findall(f"{goal}\n{context}")):
+            try:
+                if mine.exists(name) and mine.resolve(name).is_file():
+                    add(name)
+            except (OSError, ValueError, PermissionError):
+                continue
+        try:
+            inbox = theirs.list_dir(INBOX) if theirs.exists(INBOX) else []
+        except OSError:
+            inbox = []
+        for name in inbox:
+            try:
+                new, old = mine.resolve(name), theirs.resolve(f"{INBOX}/{name}")
+                if new.is_file() and old.is_file() and new.read_bytes() != old.read_bytes():
+                    add(name)
+            except (OSError, ValueError, PermissionError):
+                continue
+        return out
+
+    def stale_work(self, root_id: str) -> list[str]:
+        """Work done on a version of a file that has changed since, one line per task.
+
+        Every hand-over records a fingerprint of the file as it was handed over. A teammate's finished task whose
+        file has been changed afterwards (and was not handed over again to the same teammate, who then worked on
+        the new version) is out of date: whatever it wrote or approved is about the old text. This is how a
+        client letter written from version 1 of a proposal is found after the proposal became version 2."""
+        latest: dict[tuple[str, str], str] = {}
+        for task in self.state.by_root(root_id):                       # in the order they were registered
+            result = self.state.result(task.id)
+            if task.id in self._handed and result is not None and result.success and not result.declined:
+                for name in self._handed[task.id]:
+                    latest[(task.assignee, name)] = task.id
+        changed: dict[str, list[str]] = {}
+        for (_, name), task_id in latest.items():
+            source, was = self._handed[task_id][name]
+            now = _digest(source)
+            if was is not None and now is not None and now != was:
+                changed.setdefault(task_id, []).append(name)
+        lines = []
+        for task_id, names in changed.items():
+            result = self.state.result(task_id)
+            made = ", ".join(result.artifacts) if result and result.artifacts else "its reply"
+            lines.append(f"{self.state.get(task_id).assignee}'s work ({made}) was done on an earlier version of "
+                         f"{', '.join(names)}, which has changed since")
+        return lines
+
+    def copy_back(self, requester: str, result: TaskResult, limit: int = 6, max_bytes: int = 300_000) -> list[str]:
+        """Put the files a teammate reported into the inbox of whoever asked for the work, so that it can read them.
+
+        Workspaces are private and a reply is cut after `result_summary_max_chars`: without this the requester sees
+        only the first lines of a long file and, to get more, has to ask the teammate to paste it. Scripts are left
+        out (they are the teammate's tools), as are files that are too large; at most `limit` files, the last ones
+        reported. A copy of the same name already in the inbox is replaced. Best effort: it never fails the call.
+        Returns the names now in the inbox."""
+        try:
+            assignee = self.state.get(result.task_id).assignee
+        except KeyError:
+            return []
+        mine, theirs = self.sandboxes.get(requester), self.sandboxes.get(assignee)
+        if mine is None or theirs is None or mine is theirs or result.declined:
+            return []
+        names = [n for n in dict.fromkeys(result.artifacts)
+                 if not n.lower().endswith(_SCRIPT_SUFFIXES) and not n.startswith(f"{INBOX}/")]
+        copied: list[str] = []
+        for name in names[-limit:]:
+            try:
+                src = theirs.resolve(name)
+                if not src.is_file() or src.stat().st_size > max_bytes:
+                    continue
+                self._hand_over(mine, src, Path(name).name)
+                copied.append(Path(name).name)
+            except Exception:
+                log.warning("could not copy %s from %s to %s", name, assignee, requester, exc_info=True)
+        return copied
+
+    @staticmethod
+    def _hand_over(target: Sandbox, src: Path, name: str) -> None:
+        """Put `src` in the teammate's inbox. A copy of the same name that is already there is replaced (it is an
+        older version of the file, or the same one), because import_file itself never overwrites."""
+        old = f"{INBOX}/{name}"
+        if target.exists(old):
+            if target.resolve(old).is_file() and target.resolve(old).read_bytes() == Path(src).read_bytes():
+                return
+            target.delete(old)
+        target.import_file(src, name)
 
     def _check_limits(self, requester: str, target: str, goal: str, parent: Task | None,
                       root_id: str, chain: list[str]) -> str | None:
@@ -267,6 +391,7 @@ class Router:
                     root_id=self.new_root_id(session_id), origin_channel=msg.channel,
                     chain=[HUMAN])
         self.state.register(task)
+        self.start_clock(task.root_id)
         self._attempts.setdefault((task.root_id, assignee, _norm(task.goal)), []).append(task.id)
         board = self.board(session_id)
         board.start_root(task.root_id, msg.content)
@@ -279,6 +404,21 @@ class Router:
         is accepted for compatibility and not used.)"""
         self._root_counter += 1
         return f"R{self._root_counter}"
+
+    # ---- time budget of a request -------------------------------------------
+
+    def start_clock(self, root_id: str) -> None:
+        """The request's time budget starts now (only the first call counts)."""
+        self._root_started.setdefault(root_id, self.clock())
+
+    def time_left(self, root_id: str) -> float | None:
+        """Seconds left of the request's time budget (negative when it is over), or None without a budget.
+        Time spent waiting for the human is not counted."""
+        budget = self.settings.request_budget_s
+        if budget <= 0:
+            return None
+        started = self._root_started.setdefault(root_id, self.clock())
+        return started + budget + self._root_human_wait.get(root_id, 0.0) - self.clock()
 
     # ---- human in the loop -----------------------------------------------
 
@@ -324,6 +464,7 @@ class Router:
         if task_id:
             self._set_state(task_id, TaskStatus.WAITING_HUMAN, question)
         text = f"@human {question}" + (f" [{' / '.join(options)}]" if options else "")
+        asked_at = self.clock()
         try:
             await self.bus.publish(Message(
                 MsgType.HITL_REQUEST, sender=requester, channel=origin_channel,
@@ -332,6 +473,7 @@ class Router:
                          "kind": kind.value, "question": question, "options": options}))
             answer = await fut
         finally:
+            self._root_human_wait[root_id] = self._root_human_wait.get(root_id, 0.0) + self.clock() - asked_at
             self._hitl_waiters.pop(key, None)
             self._hitl_root.pop(key, None)
         if task_id:

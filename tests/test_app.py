@@ -146,7 +146,7 @@ class WiringTest(TmpDirTest):
         with patch.dict(os.environ, {}, clear=True):
             settings = Settings.from_env()
         self.assertEqual((settings.early_stop_nudges, settings.research_note_after, settings.research_note_every),
-                         (True, 12, 6))
+                         (True, 6, 2))
         for value, expected in (("0", False), ("off", False), ("false", False), ("1", True), ("on", True)):
             with patch.dict(os.environ, {"EARLY_STOP_NUDGES": value}, clear=True):
                 self.assertEqual(Settings.from_env().early_stop_nudges, expected, value)

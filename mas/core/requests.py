@@ -143,6 +143,7 @@ class RequestTracker:
         second root in between the check in handle_chat and this registration."""
         run = _RootRun(root_id=self.router.new_root_id(session), session_id=session, channel=msg.channel)
         self._runs[session] = run
+        self.router.start_clock(run.root_id)
         self.router.board(session).start_root(run.root_id, msg.content)
         return run
 

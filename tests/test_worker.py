@@ -114,7 +114,8 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
-        self.settings = Settings(data_dir=root / "data", workspaces_dir=root / "workspaces")
+        # closing_check off: the scripts here end a lead's run with one final answer (tests/test_budget.py covers the check)
+        self.settings = Settings(data_dir=root / "data", workspaces_dir=root / "workspaces", closing_check=False)
         self.bus = InMemoryBus()
         for member in (HUMAN, "worker"):
             self.bus.join(member, GROUP_MAIN)
@@ -320,6 +321,8 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         fetch = ScriptedTool("fetch_url")
         script = [call("fetch_url", f"c{n}", value=f"page {n}") for n in range(1, 21)] + [final()]
         self.settings.max_worker_steps = 40
+        self.settings.research_max_calls = 0                      # no hard limit here: only the reminders are tested
+        self.settings.research_note_after, self.settings.research_note_every = 12, 6
         worker, llm = self.worker(script, [fetch])
         await asyncio.wait_for(worker.handle_task(self.task()), 5)
         seen = [json.loads(m["content"]) for m in llm.calls[-1][0] if m["role"] == "tool"]
