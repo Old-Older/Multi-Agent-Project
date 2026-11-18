@@ -45,7 +45,7 @@ class Settings:
     max_retries_same_goal: int = 2
 
     # leading a request (design D18): the lead's own budget, delegated work included
-    max_lead_steps: int = 40                  # a lead's ReAct step limit (a worker keeps max_worker_steps)
+    max_lead_steps: int = 60                  # a lead's ReAct step limit (a worker keeps max_worker_steps)
     lead_timeout_s: float = 2400.0            # budget of the lead's whole task, delegated work included
 
     # time budget of one request (0: none). Every member shares it: members stop starting new work `worker_wrapup_s` /

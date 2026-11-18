@@ -331,7 +331,7 @@ class WorkerAgent(Agent):
                 messages.append({"role": "assistant", "content": response.text})
                 try:
                     parsed = self._final_result(task, response.text)
-                    unreviewed = self._unreviewed_push(task, run, parsed)
+                    unreviewed = self._unreviewed_push(task, run, parsed, left)
                     if unreviewed:
                         messages.append({"role": "user", "content": unreviewed})
                         continue
@@ -558,12 +558,14 @@ class WorkerAgent(Agent):
             limits["searches_and_page_fetches_for_this_task"] = self.settings.research_max_calls
         return limits
 
-    def _unreviewed_push(self, task: Task, run: _Run, parsed: TaskResult) -> str | None:
+    def _unreviewed_push(self, task: Task, run: _Run, parsed: TaskResult, steps_left: int) -> str | None:
         """A lead that hands in a deliverable no reviewer has seen is sent back to have it reviewed, twice at most. If the
         time is short, it is topped up first (the same reserve as for a failed review): a review needs time of its own.
-        None when everything was reviewed, there is nobody to ask, or there is no time for a review even after a top-up."""
+        None when everything was reviewed, there is nobody to ask, there is no time for a review even after a top-up, or
+        too few steps are left to ask for it, apply the fixes and answer again (a final answer on the last steps is
+        handed in as it is: sending the lead back then would throw it away and end the request as 'step limit')."""
         if (not self.settings.review_final or not self.settings.closing_check or not self._leads(task) or not self.peers
-                or run.review_pushes >= 2 or not parsed.success):
+                or run.review_pushes >= 2 or not parsed.success or steps_left < 4):
             return None
         names = self.router.unreviewed(task.root_id, parsed.artifacts)
         if not names:

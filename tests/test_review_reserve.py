@@ -225,6 +225,31 @@ class UnreviewedDeliverableTest(BudgetCase):
         self.assertEqual(len(llm.calls), 1)
         self.assertTrue(result.success)
 
+    async def test_a_final_answer_on_the_last_steps_is_never_thrown_away_for_a_review_nobody_can_do(self):
+        """The eighth real run: two requests ended as 'worker step limit reached' although the lead had answered, because
+        on its last step it was sent back to have a deliverable reviewed and had no step left to do it."""
+        self.settings.max_lead_steps = 3
+        task = self.task()
+        # steps 1 and 2 are spent on other work; the final answer comes on step 3, the last
+        from tests.test_worker import call, ScriptedTool
+        worker, llm = self.member([call("write_file", "c1", value="a"), call("write_file", "c2", value="b"), self.deck(),
+                                   self.deck()], [ScriptedTool("write_file")], lead=True)
+        result = await asyncio.wait_for(worker.handle_task(task), 3)
+        self.assertTrue(result.success, result.error)
+        self.assertEqual(len(llm.calls), 3)
+        self.assertEqual(result.artifacts, [])                              # nothing written to list; the point is: it ended
+
+    async def test_a_lead_with_few_steps_left_is_not_sent_to_a_review_it_cannot_finish(self):
+        self.settings.max_lead_steps = 5
+        task = self.task()
+        from tests.test_worker import call, ScriptedTool
+        worker, llm = self.member([call("write_file", "c1", value="a"), call("write_file", "c2", value="b"),
+                                   call("write_file", "c3", value="c"), self.deck(), self.deck()],
+                                  [ScriptedTool("write_file")], lead=True)    # the answer comes on step 4 of 5: 1 step left
+        result = await asyncio.wait_for(worker.handle_task(task), 3)
+        self.assertTrue(result.success, result.error)
+        self.assertEqual(len(llm.calls), 4)
+
     async def test_switched_off_or_nothing_listed_or_no_budget_to_top_up(self):
         self.settings.review_final = False
         worker, llm = self.member([self.deck()], lead=True)

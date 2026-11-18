@@ -107,7 +107,7 @@ carrying out one part). Then:
 ### 4.3 What the lead does
 
 The lead is an ordinary `WorkerAgent` whose task has no parent. It differs from other members only in
-budget (`max_lead_steps` 40 steps, `lead_timeout_s` 2400 s, up to `max_lead_delegations` 16 delegations)
+budget (`max_lead_steps` 60 steps, `lead_timeout_s` 2400 s, up to `max_lead_delegations` 16 delegations)
 and in a short extra instruction: understand the request, ask the human if it is unclear, split the work,
 delegate, have important results reviewed by a teammate and returned for fixing, finish only when the
 result is good, and write a final answer the human can read. Its tools are the team's `call_<teammate>`
@@ -151,7 +151,7 @@ Delegations a member sends together in one reply run in parallel; see [4.5](#45-
 | Limit | Default | What it bounds |
 |---|---:|---|
 | `max_worker_steps` | 30 | ReAct steps (model calls) of a member for one task |
-| `max_lead_steps` | 40 | the same, for the lead of a request |
+| `max_lead_steps` | 60 | the same, for the lead of a request |
 | `subtask_timeout_s` | 900 s | one delegated task; time spent waiting for a human does not count |
 | `lead_timeout_s` | 2400 s | a whole request |
 | `max_lead_delegations` | 16 | delegations made by the lead of a request |
@@ -326,7 +326,7 @@ Anthropic APIs are not used. Tests use `MockLLM`, a scripted stand-in.
 ## 12. Configuration and data layout
 
 All limits are fields of `Settings` (`mas/config.py`): step limits (`max_worker_steps` 30,
-`max_lead_steps` 40), time limits (`subtask_timeout_s` 900, `lead_timeout_s` 2400), delegation limits,
+`max_lead_steps` 60), time limits (`subtask_timeout_s` 900, `lead_timeout_s` 2400), delegation limits,
 memory recall size, sandbox backend, paths. Keys come from `.env`.
 
 ```

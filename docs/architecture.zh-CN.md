@@ -92,7 +92,7 @@ agent id、角色名和提示词，请它选出最适合*协调*这个请求的�
 ### 4.3 牵头者做什么
 
 牵头者就是一个普通的 `WorkerAgent`，它的任务没有父任务。它与其他成员的区别只在预算
-（`max_lead_steps` 40 步、`lead_timeout_s` 2400 秒、最多 `max_lead_delegations` 16 次委派）和一小段额外指示：
+（`max_lead_steps` 60 步、`lead_timeout_s` 2400 秒、最多 `max_lead_delegations` 16 次委派）和一小段额外指示：
 弄清请求，不清楚就问人类，拆分工作，委派，让队友复核重要结果并退回修改，结果好了才结束，最后写一段人类能读懂的回答。
 它的工具是团队的 `call_<队友>`、`ask_human` 和它自己的工具。它最后的回答就是人类读到的话，它列出的文件就是交付物。
 
@@ -130,7 +130,7 @@ agent id、角色名和提示词，请它选出最适合*协调*这个请求的�
 | 上限 | 默认值 | 限制的是什么 |
 |---|---:|---|
 | `max_worker_steps` | 30 | 一个成员完成一个任务的 ReAct 步数（模型调用次数） |
-| `max_lead_steps` | 40 | 同上，针对一个请求的牵头者 |
+| `max_lead_steps` | 60 | 同上，针对一个请求的牵头者 |
 | `subtask_timeout_s` | 900 秒 | 一个被委派的任务；等待人类的时间不计 |
 | `lead_timeout_s` | 2400 秒 | 一个完整的请求 |
 | `max_lead_delegations` | 16 | 一个请求的牵头者可以委派的次数 |
@@ -273,7 +273,7 @@ DeepSeek（`DeepSeekClient`，即用 DeepSeek 默认值的同一个客户端）�
 
 ## 12. 配置与数据目录
 
-所有上限都是 `Settings`（`mas/config.py`）的字段：步数上限（`max_worker_steps` 30、`max_lead_steps` 40）、时限（`subtask_timeout_s` 900、
+所有上限都是 `Settings`（`mas/config.py`）的字段：步数上限（`max_worker_steps` 30、`max_lead_steps` 60）、时限（`subtask_timeout_s` 900、
 `lead_timeout_s` 2400）、委派限制、记忆召回条数、沙箱后端、路径。密钥来自 `.env`。
 
 ```

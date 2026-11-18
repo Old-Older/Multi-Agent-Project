@@ -93,7 +93,7 @@ class MockLLMTest(unittest.TestCase):
 class SettingsTest(unittest.TestCase):
     def test_defaults_match_design(self):
         s = Settings()
-        self.assertEqual(s.max_lead_steps, 40)
+        self.assertEqual(s.max_lead_steps, 60)
         self.assertEqual(s.max_worker_steps, 30)
         self.assertEqual(s.max_delegation_depth, 2)
         self.assertEqual(s.memory_dir.name, "memory")
