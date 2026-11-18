@@ -3,11 +3,11 @@
 Course final project. A backend framework where multiple heterogeneous agents chat with humans,
 decompose and delegate tasks, run tools inside isolated sandboxes, and learn from past executions.
 
-当前开发阶段：**通用 `WorkerAgent` 已实现**，支持注入工具的 ReAct 循环、结构化结果、审批/取消和记忆反思；先用单个 Worker + `MockLLM` 验证，不引入三角色分工或 Worker 再委派。运行 `python -m unittest tests.test_worker tests.test_worker_regressions tests.test_task_lifecycle` 查看行为及回归测试，完成协议与范围见 [docs/interfaces.md §3.9](docs/interfaces.md#39-worker-masagentsworkerpyrolespy)。主线已包含 LocalSandbox 和四个文件工具，DeepSeek 客户端及 Python/网络/Git 工具仍待实现。
+通用 `WorkerAgent` 已支持工具调用、审批、取消和记忆反思。系统默认使用 `HKGAIClient` 访问 HKGAI。Python 执行、网络检索与 Git 工具通过示例工厂注入 Worker；默认命令行按角色注册已有的文件工具。[执行工具与模型配置](docs/execution_tools_handoff.md)
 
 > ## ⚠️ 给 LI Heyang：接口约定（请先读）
 >
-> 更新于 2026-11-09，分支 `feat/jian-comms-orchestration`。下面这些约定会影响 `WorkerAgent`、桩 Router 和 `AutoResponder`。完整说明见 [docs/interfaces.md](docs/interfaces.md) §3.4。
+> 以下为历史接线记录，当前运行方式见下文「怎么运行」。更新于 2026-11-09，分支 `feat/jian-comms-orchestration`。下面这些约定会影响 `WorkerAgent`、桩 Router 和 `AutoResponder`。完整说明见 [docs/interfaces.md](docs/interfaces.md) §3.4。
 >
 > | # | 约定 | 你需要做什么 |
 > |---|---|---|
@@ -21,7 +21,7 @@ decompose and delegate tasks, run tools inside isolated sandboxes, and learn fro
 > | 8 | **私聊里的 `/cancel` 由 `Agent.handle_chat` 处理**（取消这个私聊里未结束的任务，并发一条带 `cancelled_roots` 的"Cancelled R1" 通知）。**root id 现在全局唯一**（R1、R2……跨会话递增）。新增依赖 `prompt_toolkit`（命令行用，`pip install -e .` 会装）。 | 如果你重写 `WorkerAgent.handle_chat`，对不认识的消息请调用 `super().handle_chat(msg)`，否则私聊里的 `/cancel` 会失效。不要自己假设 root id 在每个会话里从 R1 开始。 |
 > | 9 | **评测框架读什么**：Orchestrator 的最终回复是一条 `CHAT`（`receiver` 是 human），`payload` 是 `{"final": True, "root_id", "success", "rounds", "failure_mode", "deliverables", "output_dir"}`；也可以直接读 `Orchestrator.outcomes[root_id]`。交付物在 `data/output/<root_id>-<启动时间>/`，完整路径就在 `payload["output_dir"]` 里（检查器读这个，不要自己拼路径）。`success` 只表示"LLM 调用了 finish"，对不对由 checker 判断。 | 写 `run_case` 时等这条消息即可，轮数、失败模式、输出目录都在里面。 |
 > | 10 | **记忆已经能用了**：`JsonlMemory.for_agent(settings.memory_dir, agent_id)` 得到每个 agent 自己的记忆；`add(exp)`、`recall(query, k)`、`profile(max_chars)` 都已实现。还有一个现成的 `tags_for_tools(tool_names, artifacts)` 帮你打标签。同一个 `task_id` 可以 `add` 两次，后写的算数。`JsonlMemory.clear()` 清空一个 agent 的记忆（评测要从空记忆开始时用）。 | `WorkerAgent`：开始任务时 `recall(goal, settings.memory_recall_k)` 注入 prompt；每个子任务结束 `add` 一次（失败时等异步反思出教训后再 `add` 一次带 `lesson` 的）。**建议不要记录被 `decline` 的和被 `/cancel` 的任务**：它们不是"尝试后失败"，记进去会拉低成功率、污染能力档案。 |
-> | 11 | **系统可以跑起来了**：`python -m mas --demo`（不需要你的部分）。组装在 `mas/app.py`，**你要接的地方**：`build_tools(role, settings)`（已接入四个文件工具；已知待实现工具警告并跳过）；`default_worker_factory` 建 `WorkerAgent`；`default_sandbox_factory` 用 `LocalSandbox`/`DockerSandbox`；`make_llm` 建 `DeepSeekClient`。`mas/demo.py` 里的 `DemoWorker` 是个完整的例子，演示了一个 Worker 该做的事：拒绝做不了的、危险步骤前 `ask_human`、每步检查 `is_cancelled`、开始前 `recall`、结束时 `add`。 | `LocalSandbox` 和四个文件工具已完成；补齐 `WorkerAgent`、后续工具、`DeepSeekClient` 后，`python -m mas` 就是真系统；评测框架用 `build_system(..., human=AutoResponder())` + `System.start()`。 |
+> | 11 | **系统组装**在 `mas/app.py`。`default_worker_factory` 创建通用 `WorkerAgent`，`build_tools` 为默认入口注册文件工具，`make_llm` 按课程配置创建 `HKGAIClient`。`python -m mas --demo` 可离线运行。 | Python、网络与 Git 工具可通过示例的 `execution_worker_factory` 接入；评测仍可通过 `build_system(..., human=AutoResponder())` 和 `System.start()` 组装。 |
 
 ## 代码导览（先看这个）
 
@@ -31,15 +31,26 @@ decompose and delegate tasks, run tools inside isolated sandboxes, and learn fro
 
 `LocalSandbox`、`read_file` / `write_file` / `delete_file` / `list_files` 已实现并接入现有 `build_tools`。
 运行最小示例：`python -m examples.sandbox_tools`。路径、schema、inbox 冲突策略、执行清理和验证记录见
-[第一阶段交接说明](docs/sandbox_tools_handoff.md)。通用 Worker 已完成；DeepSeekClient 等后续部分尚待实现。
+[第一阶段交接说明](docs/sandbox_tools_handoff.md)。
 
 ## 怎么运行
+
+在仓库根目录安装项目依赖（`python -m pip install -e .`）。将 `.env.example` 复制为 `.env`，填写课程网关的 `HKGAI_API_KEY` 即可调用真实模型。默认网关为 `https://api1.hkgai.net/v1`，模型为 `t2_hkgai-v3_fp8_1m_e7`。如需切换部署，可覆盖 `HKGAI_BASE_URL` 和 `HKGAI_MODEL`。
 
 ```bash
 # 演示：不需要 API key，也不需要 LI 的部分（stand-in LLM 和 worker，其余都是真的）
 python -m mas --demo            # 每次启动都从干净的状态开始；想保留上次的记忆和文件加 --keep
 
-# 真实系统：需要 .env 里的 DEEPSEEK_API_KEY，并完成 DeepSeekClient 与任务所需的后续工具
+# 离线验证通用 Worker 执行 Python 测试
+python -X utf8 -m examples.execution_tools
+
+# 使用 HKGAI 凭据发送一次真实聊天请求
+python -X utf8 -m examples.hkgai_chat
+
+# 使用支持自定义工具调用的模型，查看其返回的调用请求
+python -X utf8 -m examples.hkgai_chat --with-tools
+
+# 启动使用 HKGAI 的真实系统
 python -m mas
 
 # 全部测试

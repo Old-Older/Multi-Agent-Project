@@ -3,7 +3,7 @@
 build_system() is the one place that knows how the parts fit together. Everything that
 belongs to someone else's work is a plug-in point with a default:
 
-  llm              any LLMClient (make_llm() builds the DeepSeek one from the settings)
+  llm              any LLMClient (make_llm() builds the HKGAI one from the settings)
   worker_factory   how a Worker is built (default: WorkerAgent with build_tools())
   sandbox_factory  how a workspace is built (default: LocalSandbox or DockerSandbox)
   human            CliHumanIO for a person, AutoResponder for evaluation
@@ -29,7 +29,7 @@ from mas.core.message import GROUP_MAIN, HUMAN, ORCHESTRATOR
 from mas.core.router import Router
 from mas.core.state import StateTable
 from mas.llm.base import LLMClient
-from mas.llm.deepseek import DeepSeekClient
+from mas.llm.hkgai import HKGAIClient
 from mas.memory.base import JsonlMemory, Memory
 from mas.sandbox.base import DockerSandbox, LocalSandbox, Sandbox
 from mas.tools.base import Tool
@@ -83,12 +83,15 @@ def default_sandbox_factory(settings: Settings) -> SandboxFactory:
 def make_llm(settings: Settings) -> LLMClient:
     """The LLM client the settings ask for. Raises SystemExit with a readable message
     if it cannot be built."""
-    if settings.llm_provider != "deepseek":
-        raise SystemExit(f"unsupported LLM provider: {settings.llm_provider!r} (supported: deepseek)")
-    if not settings.deepseek_api_key:
-        raise SystemExit("DEEPSEEK_API_KEY is not set. Copy .env.example to .env and fill it in, "
+    if settings.llm_provider != "hkgai":
+        raise SystemExit("Unsupported LLM provider. Set LLM_PROVIDER=hkgai.")
+    if not settings.hkgai_api_key.strip():
+        raise SystemExit("HKGAI_API_KEY is not set. Copy .env.example to .env and fill it in, "
                          "or try `python -m mas --demo` which needs no key.")
-    return DeepSeekClient(settings.deepseek_api_key, settings.deepseek_base_url, settings.deepseek_model)
+    if not settings.hkgai_model.strip():
+        raise SystemExit("HKGAI_MODEL is not set. Set it to a model ID available to your HKGAI account.")
+    return HKGAIClient(api_key=settings.hkgai_api_key, base_url=settings.hkgai_base_url,
+                       model=settings.hkgai_model)
 
 
 def make_human(settings: Settings) -> HumanIO:

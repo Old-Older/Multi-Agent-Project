@@ -10,14 +10,18 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 
 
+DEFAULT_HKGAI_BASE_URL = "https://api1.hkgai.net/v1"
+DEFAULT_HKGAI_MODEL = "t2_hkgai-v3_fp8_1m_e7"
+
+
 @dataclass
 class Settings:
     # LLM (design §11)
-    llm_provider: str = "deepseek"            # "deepseek" | "mock"
-    deepseek_api_key: str = ""
-    deepseek_base_url: str = "https://api.deepseek.com"
-    deepseek_model: str = "deepseek-chat"
-    orchestrator_model: str = ""              # empty = same as deepseek_model
+    llm_provider: str = "hkgai"
+    hkgai_api_key: str = ""
+    hkgai_base_url: str = DEFAULT_HKGAI_BASE_URL
+    hkgai_model: str = DEFAULT_HKGAI_MODEL
+    orchestrator_model: str = ""              # empty = same as hkgai_model
     temperature: float = 0.1
 
     # loop limits (D10, D11, §5)
@@ -65,9 +69,9 @@ class Settings:
         """Read from environment variables (see .env.example), then apply overrides."""
         env = {
             "llm_provider": os.getenv("LLM_PROVIDER"),
-            "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY"),
-            "deepseek_base_url": os.getenv("DEEPSEEK_BASE_URL"),
-            "deepseek_model": os.getenv("DEEPSEEK_MODEL"),
+            "hkgai_api_key": os.getenv("HKGAI_API_KEY"),
+            "hkgai_base_url": os.getenv("HKGAI_BASE_URL"),
+            "hkgai_model": os.getenv("HKGAI_MODEL"),
             "github_token": os.getenv("GITHUB_TOKEN"),
             "search_api_key": os.getenv("SEARCH_API_KEY"),
         }
