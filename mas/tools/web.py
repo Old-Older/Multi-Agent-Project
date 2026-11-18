@@ -292,12 +292,7 @@ class _PageText(HTMLParser):
             (self.title if self.in_title else self.body).append(data)
 
 
-# Proxy tools that answer DNS themselves ("fake-IP" mode, e.g. Clash) hand out addresses from this
-# range; it is reserved for benchmarking, so it is refused unless the user says the machine works so.
-_FAKE_IP_NET = ipaddress.ip_network("198.18.0.0/15")
-
-
-async def _public_addresses(url: httpx.URL, allow_fake_ip: bool = False) -> list[str]:
+async def _public_addresses(url: httpx.URL) -> list[str]:
     port = url.port or (443 if url.scheme == "https" else 80)
     records = await asyncio.get_running_loop().getaddrinfo(
         url.raw_host.decode("ascii"), port, type=socket.SOCK_STREAM)
@@ -306,8 +301,6 @@ async def _public_addresses(url: httpx.URL, allow_fake_ip: bool = False) -> list
         raise ValueError("host has no addresses")
     for address in addresses:
         ip = ipaddress.ip_address(address)
-        if allow_fake_ip and isinstance(ip, ipaddress.IPv4Address) and ip in _FAKE_IP_NET:
-            continue
         if isinstance(ip, ipaddress.IPv6Address):
             if ip.is_site_local:
                 raise ValueError("fetch_url requires a publicly routable address")
@@ -329,16 +322,13 @@ class FetchURL(_WebTool):
         "required": ["url"], "additionalProperties": False,
     }
 
-    def __init__(self, allow_fake_ip: bool = False) -> None:
-        self._allow_fake_ip = allow_fake_ip
-
     async def _request(self, *, url: str, max_chars: int = 3000) -> dict[str, Any]:
         _integer(max_chars, "max_chars", 20000)
         source = _url(url)
         for hop in range(6):
             # A separate client per hop prevents virtual hosts on one IP sharing TLS sessions or cookies.
             async with httpx.AsyncClient(trust_env=False, timeout=_TIMEOUT) as client:
-                addresses = await _public_addresses(source, self._allow_fake_ip)
+                addresses = await _public_addresses(source)
                 for address in addresses:
                     headers = {"Host": source.netloc.decode("ascii"), "Accept-Encoding": "gzip, identity"}
                     extensions = {"sni_hostname": source.raw_host.decode("ascii")}

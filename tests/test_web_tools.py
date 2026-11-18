@@ -253,28 +253,6 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(not args["trust_env"] for args in self.client_args))
         self.assertTrue(all("x-subscription-token" not in request.headers for request in self.requests))
 
-    # A proxy that answers DNS itself hands out 198.18.x.x; that is refused unless the user opted in.
-    async def test_the_benchmark_range_is_refused_by_default_and_allowed_on_request(self):
-        self.records["one.example"] = ["198.18.0.46"]
-        result = await FetchURL().run(self.sandbox, url="https://one.example/")
-        self.assertFalse(result.ok)
-        self.assertIn("publicly routable", result.output)
-        self.assertEqual(self.requests, [])
-        self.responses.append(response(b"<title>T</title><p>text</p>"))
-        result = await FetchURL(allow_fake_ip=True).run(self.sandbox, url="https://one.example/")
-        self.assertTrue(result.ok, result.output)
-        self.assertEqual(json.loads(result.output)["title"], "T")
-
-    async def test_the_option_opens_only_that_range(self):
-        for address in ("127.0.0.1", "10.0.0.8", "192.168.1.1", "169.254.169.254", "::1"):
-            with self.subTest(address=address):
-                self.records["one.example"] = [address]
-                result = await FetchURL(allow_fake_ip=True).run(self.sandbox, url="https://one.example/")
-                self.assertFalse(result.ok)
-                self.assertIn("publicly routable", result.output)
-        self.records["one.example"] = ["198.18.0.46", "10.0.0.8"]                  # one bad address among the allowed ones
-        self.assertFalse((await FetchURL(allow_fake_ip=True).run(self.sandbox, url="https://one.example/")).ok)
-
     async def test_fetch_rejects_private_or_mixed_addresses_on_every_hop(self):
         for ip in ("127.0.0.1", "10.0.0.8", "169.254.169.254", "::1", "fec0::1",
                    "::ffff:192.168.1.1", "224.0.0.1"):
