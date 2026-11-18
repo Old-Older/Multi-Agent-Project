@@ -461,6 +461,25 @@ class Router:
             return "pass"
         return "fail" if _FAIL_WEAK.search(text) else None
 
+    def reviewed_files(self, root_id: str) -> set[str]:
+        """Base names of the files a reviewer has been given in this request (a successful task whose goal asks
+        for a review or check), and of the files such reviewers wrote themselves (their reports are not deliverables
+        that need a review)."""
+        seen: set[str] = set()
+        for task in self.state.by_root(root_id):
+            result = self.state.result(task.id)
+            if result is None or not result.success or result.declined or not _REVIEW_GOAL.search(task.goal[:120]):
+                continue
+            seen.update(Path(name).name for name in self._handed.get(task.id, {}))
+            seen.update(Path(name).name for name in result.artifacts)
+        return seen
+
+    def unreviewed(self, root_id: str, deliverables: list[str]) -> list[str]:
+        """The deliverables (scripts left out) that no reviewer was ever given."""
+        reviewed = self.reviewed_files(root_id)
+        return [n for n in dict.fromkeys(deliverables)
+                if not n.lower().endswith(_SCRIPT_SUFFIXES) and Path(n).name not in reviewed]
+
     def open_reviews(self, root_id: str) -> list[str]:
         """The reviewers whose latest verdict in this request is a fail: nobody has confirmed the fix since."""
         latest: dict[str, tuple[str, str]] = {}

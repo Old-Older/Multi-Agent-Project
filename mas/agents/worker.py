@@ -78,13 +78,15 @@ the message the human reads: say what was done, where the files are and what to 
 not helper scripts, checks or drafts: only what you list is delivered, so do not leave the deliverable out.
 When you change a document that your teammates built their work on (a figure, an allocation, a plan), send them the
 new file and have their work updated: the documents you hand in must agree with each other.
-Keep the work small. Research is the slow part: ask for one or two research jobs in all, each a short brief of facts and
-numbers that a teammate can finish in about ten searches or page reads, not an essay; do not ask for more research on a
-point the first brief already covers. Make the deliverable as short as the request allows (when the human gave no size,
+Research decides the quality, so spread it: split it into up to three independent topics and send them in your first
+reply (they run at the same time), each a brief of facts and numbers with sources and dates that a teammate can finish in
+ten to fourteen searches or page reads (not an essay, and not seven topics in one brief); ask for one follow-up at most,
+for a gap the briefs revealed. Make the deliverable as short as the request allows (when the human gave no size,
 choose a compact one: a memo of a page or two, a deck of about ten slides). The request has a time budget, and you are told
 when half of it is gone: after that, stop opening new lines and finish. Never tell the human that documents are consistent,
 checked or approved unless a teammate's check of the FINAL files said so; if a reviewer could not read or got an old version
-of a file, send the current file again and have it redone, or say that it is unverified. When a reviewer does not pass your work, apply every item in the document itself (a
+of a file, send the current file again and have it redone, or say that it is unverified. Have the FINAL deliverable reviewed before you hand it in: give the reviewer the file and the briefs it rests on, and ask it to
+begin its answer with PASS or FAIL and to number what must be fixed. When a reviewer does not pass your work, apply every item in the document itself (a
 claim nobody can check is deleted or labelled unverified there, not just mentioned in your reply) and have the same reviewer
 confirm the fix; time is added to the request for exactly this."""
 
@@ -127,6 +129,7 @@ class _Run:
     time_notes: set[str] = field(default_factory=set)       # the time reminders already given
     time_up_sent: bool = False
     time_up_retries: int = 0
+    review_pushes: int = 0            # how often the lead was sent back to have its deliverable reviewed
     early_pushes: int = 0             # how often the lead was sent back for finishing early
     closing_rounds: int = 0           # how often the lead was asked to check the loose ends
 
@@ -328,6 +331,12 @@ class WorkerAgent(Agent):
                 messages.append({"role": "assistant", "content": response.text})
                 try:
                     parsed = self._final_result(task, response.text)
+                    unreviewed = self._unreviewed_push(task, run, parsed)
+                    if unreviewed:
+                        messages.append({"role": "user", "content": unreviewed})
+                        continue
+                    time_left = self.router.time_left(task.root_id)       # a top-up may have changed it
+                    time_up = time_left is not None and time_left <= wrap
                     check = None if time_up or left < 2 or (
                         time_left is not None and time_left <= wrap + 15) else (
                         self._early_finish_push(task, run, time_left) or self._closing_check(task, run))
@@ -548,6 +557,30 @@ class WorkerAgent(Agent):
         if self.settings.research_max_calls > 0:
             limits["searches_and_page_fetches_for_this_task"] = self.settings.research_max_calls
         return limits
+
+    def _unreviewed_push(self, task: Task, run: _Run, parsed: TaskResult) -> str | None:
+        """A lead that hands in a deliverable no reviewer has seen is sent back to have it reviewed, twice at most. If the
+        time is short, it is topped up first (the same reserve as for a failed review): a review needs time of its own.
+        None when everything was reviewed, there is nobody to ask, or there is no time for a review even after a top-up."""
+        if (not self.settings.review_final or not self.settings.closing_check or not self._leads(task) or not self.peers
+                or run.review_pushes >= 2 or not parsed.success):
+            return None
+        names = self.router.unreviewed(task.root_id, parsed.artifacts)
+        if not names:
+            return None
+        added = self.router.grant_review_reserve(task.root_id)
+        left = self.router.time_left(task.root_id)
+        if left is not None and left < self.settings.min_delegation_s:
+            return None                                       # no review can be started: it will be said in the reply
+        run.review_pushes += 1
+        when = ("" if left is None else f" Time was added for exactly this: about {int(left)} s are left." if added
+                else f" About {int(left)} s are left.")
+        return (f"Before you hand in: {', '.join(names)} {'has' if len(names) == 1 else 'have'} not been reviewed, no "
+                "reviewer was ever given it. Ask the most suitable teammate to review the FINAL file against the sources it "
+                "rests on: list the file AND the research briefs or source files in `files`, and ask it to begin its answer "
+                "with PASS or FAIL and to number what must be fixed. Then apply every item in the file itself (a claim nobody "
+                "can check is deleted or labelled unverified there) and have the same reviewer confirm only those items."
+                f"{when} Then return the final result JSON again.")
 
     def _early_finish_push(self, task: Task, run: _Run, time_left: float | None) -> str | None:
         """A lead that hands in while most of the request's time is still unused is sent back, twice at most: the

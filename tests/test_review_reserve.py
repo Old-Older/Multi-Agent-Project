@@ -151,6 +151,98 @@ class ClosingCheckWithReviewsTest(BudgetCase):
         self.assertIn("none flagged", asked)
 
 
+class UnreviewedFilesTest(OpenReviewsTest):
+    def done(self, assignee, goal, summary, root="R1", handed=(), artifacts=(), success=True):
+        task = Task(goal, assignee, "lead", GROUP_MAIN, root, GROUP_MAIN, chain=[HUMAN, "lead"])
+        self.state.register(task)
+        self.state.finish(TaskResult(task.id, success, summary, artifacts=list(artifacts)))
+        if handed:
+            self.router._handed[task.id] = {name: (Path(name), None) for name in handed}
+
+    def test_a_file_given_to_a_reviewer_is_reviewed_and_another_one_is_not(self):
+        self.done("risk", "Review the proposal", "PASS", handed=["proposal.md"])
+        self.assertEqual(self.router.unreviewed("R1", ["proposal.md", "deck.html"]), ["deck.html"])
+
+    def test_names_are_compared_by_base_name_and_scripts_are_not_deliverables(self):
+        self.done("risk", "Re-check the deck", "PASS", handed=["inbox/deck.html"])
+        self.assertEqual(self.router.unreviewed("R1", ["deck.html", "check.py", "build.sh"]), [])
+
+    def test_what_a_reviewer_wrote_needs_no_review_itself(self):
+        self.done("risk", "Review the proposal", "PASS", handed=["proposal.md"], artifacts=["risk_review.md"])
+        self.assertEqual(self.router.unreviewed("R1", ["proposal.md", "risk_review.md"]), [])
+
+    def test_a_failed_task_or_one_that_is_not_a_review_or_another_request_does_not_count(self):
+        self.done("risk", "Review the proposal", "", handed=["a.md"], success=False)
+        self.done("marketing", "Write the intro from the proposal", "done", handed=["b.md"])
+        self.done("risk", "Review the memo", "PASS", handed=["c.md"], root="R2")
+        self.assertEqual(self.router.unreviewed("R1", ["a.md", "b.md", "c.md"]), ["a.md", "b.md", "c.md"])
+
+
+class UnreviewedDeliverableTest(BudgetCase):
+    """The sixth real run: the deck was handed in with 42 s left and nobody had reviewed it."""
+
+    def setUp(self):
+        super().setUp()
+        self.settings.request_budget_s = 270.0
+        self.settings.min_delegation_s = 80.0
+        self.settings.closing_check = True
+        self.settings.finish_not_before = 0.0
+
+    def deck(self, **fields):
+        return final(summary="deck", artifacts=["deck.html"], **fields)
+
+    async def test_a_lead_with_an_unreviewed_deliverable_gets_time_and_is_sent_to_a_reviewer_twice_at_most(self):
+        task = self.task()
+        self.now[0] = 228.0                                                   # 42 s left of 270
+        worker, llm = self.member([self.deck(), self.deck(), self.deck(), self.deck()], lead=True)
+        result = await asyncio.wait_for(worker.handle_task(task), 3)
+        self.assertEqual(len(llm.calls), 3)                                   # handed in the third time
+        self.assertTrue(result.success)
+        first, second = prompt_text(llm.calls[1][0]), prompt_text(llm.calls[2][0])
+        self.assertIn("deck.html has not been reviewed", first)
+        self.assertIn("Time was added for exactly this: about 120 s are left", first)
+        self.assertIn("begin its answer with PASS or FAIL", first)
+        self.assertEqual(second.count("has not been reviewed"), 2)
+        self.assertIn("About 120 s are left", second)                         # nothing more to add the second time
+
+    async def test_a_deliverable_a_reviewer_has_seen_is_not_sent_back(self):
+        task = self.task()
+        mate = Task("Review the deck", "mate", "worker", GROUP_MAIN, task.root_id, GROUP_MAIN,
+                    chain=[HUMAN, "worker"], parent_id=task.id)
+        self.state.register(mate)
+        self.state.finish(TaskResult(mate.id, True, "PASS"))
+        self.router._handed[mate.id] = {"deck.html": (Path("deck.html"), None)}
+        worker, llm = self.member([self.deck(), self.deck()], lead=True)
+        await asyncio.wait_for(worker.handle_task(task), 3)
+        self.assertNotIn("has not been reviewed", prompt_text(llm.calls[-1][0]))
+
+    async def test_no_push_when_no_review_could_be_started(self):
+        task = self.task()
+        self.settings.review_reserve_s = 0.0                                  # no time can be added
+        self.now[0] = 250.0                                                   # 20 s left, under the 80 s a delegation needs
+        worker, llm = self.member([self.deck(), self.deck()], lead=True)
+        result = await asyncio.wait_for(worker.handle_task(task), 3)
+        self.assertEqual(len(llm.calls), 1)
+        self.assertTrue(result.success)
+
+    async def test_switched_off_or_nothing_listed_or_no_budget_to_top_up(self):
+        self.settings.review_final = False
+        worker, llm = self.member([self.deck()], lead=True)
+        await asyncio.wait_for(worker.handle_task(self.task()), 3)
+        self.assertEqual(len(llm.calls), 1)
+
+        self.settings.review_final = True
+        worker, llm = self.member([final(summary="nothing to review")], lead=True)
+        await asyncio.wait_for(worker.handle_task(self.task()), 3)
+        self.assertEqual(len(llm.calls), 1)
+
+        self.settings.request_budget_s = 0.0                                  # no budget: pushed all the same, no time added
+        worker, llm = self.member([self.deck(), self.deck(), self.deck()], lead=True)
+        await asyncio.wait_for(worker.handle_task(self.task()), 3)
+        self.assertEqual(len(llm.calls), 3)
+        self.assertNotIn("Time was added", prompt_text(llm.calls[1][0]))
+
+
 class Reviewer(Agent):
     """A reviewer that answers from a list and takes the given seconds on the test's clock."""
 
