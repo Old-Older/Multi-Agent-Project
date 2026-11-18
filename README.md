@@ -1,90 +1,298 @@
+<p align="right"><b>English</b> | <a href="README.zh-CN.md">简体中文</a></p>
+
 # Evolutionary Multi-Agent Collaboration System
 
-Course final project. A backend framework where multiple heterogeneous agents chat with humans,
-decompose and delegate tasks, run tools inside isolated sandboxes, and learn from past executions.
+A backend framework where several agents with different roles talk to a human, split a task up
+among themselves, run tools in private workspaces, and learn from earlier tasks. It is the final
+project of HKUST MAIE5221 (NLP).
 
-通用 `WorkerAgent` 已支持工具调用、审批、取消和记忆反思。系统默认使用 `HKGAIClient` 访问 HKGAI。Python 执行、网络检索与 Git 工具通过示例工厂注入 Worker；默认命令行按角色注册已有的文件工具。[执行工具与模型配置](docs/execution_tools_handoff.md)
+You describe a **team** (who is in it and what each member is responsible for) in a Markdown file.
+When you give the team a request, one member **leads** it: asks you questions when something is
+unclear, hands parts of the work to teammates, checks the results and reports back. Every agent has
+its own workspace and its own memory.
 
-> ## ⚠️ 给 LI Heyang：接口约定（请先读）
->
-> 以下为历史接线记录，当前运行方式见下文「怎么运行」。更新于 2026-11-09，分支 `feat/jian-comms-orchestration`。下面这些约定会影响 `WorkerAgent`、桩 Router 和 `AutoResponder`。完整说明见 [docs/interfaces.md](docs/interfaces.md) §3.4。
->
-> | # | 约定 | 你需要做什么 |
-> |---|---|---|
-> | 1 | **`Task.chain` 只记委派者，不含执行者。** Orchestrator 派给你的任务 `chain == ["orchestrator"]`、`depth == 0`；你再委派出去的任务，`chain` 末尾是你自己。 | 如果 Worker 读 `task.chain`，注意最后一项是"谁委派给我"，不是我自己。 |
-> | 2 | **取消要 Worker 自己配合。** `/cancel` 后 Router 只能标记任务、唤醒等待者，**停不住正在运行的 agent**。 | 每一步 ReAct 开始前、执行 `requires_approval` 工具（`git push`、删除文件）前，先 `if self.is_cancelled(task): return TaskResult(task.id, False, "", error="cancelled")`。`ask_human` 返回 `CANCELLED_ANSWER`（`from mas.core.human import CANCELLED_ANSWER`，值 `"cancelled"`）时按中止处理，**不要当成同意**。 |
-> | 3 | **`Router.request_human` 的签名变了**（关键字参数：`session_id, root_id, origin_channel, requester, kind, question, options, task_id`）。`HITL_REQUEST` 的 payload 新增 `root_id`，`task_id` 可能为 `None`（Orchestrator 澄清时）。 | Worker 照旧调 `self.ask_human(task, question, kind, options)`，不用改。但**如果你的桩 Router 实现了 `request_human`，要改成新签名**（或测试里直接替换 `ask_human`）。`CliHumanIO` / `AutoResponder` 读 payload 时要容忍 `task_id is None`。 |
-> | 4 | **被拒绝的 `call_<agent>`**（超限、未知 agent、文件找不到、root 已取消）返回 `success=False`、`failure_mode=TOOL_ERROR`、`error` 以 `refused:` 开头，并在状态表里登记成 `FAILED` 任务。 | 当作普通的失败结果回给 LLM，由它决定换目标或放弃。 |
-> | 5 | **任务在等人类时，`dispatch` 不会超时。** | 无需改动，知道就行。 |
-> | 6 | **同一目标最多试 3 次**（首次 + 2 次重试，同一 root、同一 agent、同一目标）；被 `decline` 的不占次数。再委派最多 2 层，每个任务最多再委派 2 次，链上已有的 agent 不能再被委派。 | 无需改动；撞到限制时会按第 4 条收到 `refused:` 结果。 |
-> | 7 | **`HumanIO` 新增了两个共用方法**：`HumanIO.request_from(msg)` 和 `handle_incoming(bus, msg)`（跳过人类自己的消息、调 `show`、遇到 `HITL_REQUEST` 就调 `answer` 并发回 `HITL_RESPONSE`）。`HitlRequest.task_id` 在 Orchestrator 澄清时是 `""`。 | 写 `AutoResponder` 时，`run` 里只需要"从 inbox 取消息 → `await self.handle_incoming(bus, msg)`"，`answer` 直接返回默认答案；不用自己拼 `HITL_RESPONSE`。 |
-> | 8 | **私聊里的 `/cancel` 由 `Agent.handle_chat` 处理**（取消这个私聊里未结束的任务，并发一条带 `cancelled_roots` 的"Cancelled R1" 通知）。**root id 现在全局唯一**（R1、R2……跨会话递增）。新增依赖 `prompt_toolkit`（命令行用，`pip install -e .` 会装）。 | 如果你重写 `WorkerAgent.handle_chat`，对不认识的消息请调用 `super().handle_chat(msg)`，否则私聊里的 `/cancel` 会失效。不要自己假设 root id 在每个会话里从 R1 开始。 |
-> | 9 | **评测框架读什么**：Orchestrator 的最终回复是一条 `CHAT`（`receiver` 是 human），`payload` 是 `{"final": True, "root_id", "success", "rounds", "failure_mode", "deliverables", "output_dir"}`；也可以直接读 `Orchestrator.outcomes[root_id]`。交付物在 `data/output/<root_id>-<启动时间>/`，完整路径就在 `payload["output_dir"]` 里（检查器读这个，不要自己拼路径）。`success` 只表示"LLM 调用了 finish"，对不对由 checker 判断。 | 写 `run_case` 时等这条消息即可，轮数、失败模式、输出目录都在里面。 |
-> | 10 | **记忆已经能用了**：`JsonlMemory.for_agent(settings.memory_dir, agent_id)` 得到每个 agent 自己的记忆；`add(exp)`、`recall(query, k)`、`profile(max_chars)` 都已实现。还有一个现成的 `tags_for_tools(tool_names, artifacts)` 帮你打标签。同一个 `task_id` 可以 `add` 两次，后写的算数。`JsonlMemory.clear()` 清空一个 agent 的记忆（评测要从空记忆开始时用）。 | `WorkerAgent`：开始任务时 `recall(goal, settings.memory_recall_k)` 注入 prompt；每个子任务结束 `add` 一次（失败时等异步反思出教训后再 `add` 一次带 `lesson` 的）。**建议不要记录被 `decline` 的和被 `/cancel` 的任务**：它们不是"尝试后失败"，记进去会拉低成功率、污染能力档案。 |
-> | 11 | **系统组装**在 `mas/app.py`。`default_worker_factory` 创建通用 `WorkerAgent`，`build_tools` 为默认入口注册文件工具，`make_llm` 按课程配置创建 `HKGAIClient`。`python -m mas --demo` 可离线运行。 | Python、网络与 Git 工具可通过示例的 `execution_worker_factory` 接入；评测仍可通过 `build_system(..., human=AutoResponder())` 和 `System.start()` 组装。 |
+## Contents
 
-## 代码导览（先看这个）
+- [How it works](#how-it-works)
+- [Repository layout](#repository-layout)
+- [Requirements and setup](#requirements-and-setup)
+- [Running it](#running-it)
+- [Defining your own team](#defining-your-own-team)
+- [What a run leaves behind](#what-a-run-leaves-behind)
+- [Configuration](#configuration)
+- [Tests](#tests)
+- [Documentation](#documentation)
+- [Project rules and workflow](#project-rules-and-workflow)
+- [Status](#status)
 
-用浏览器打开根目录的 [`code_tour.html`](code_tour.html)：一步一步、用动画讲清楚每个模块做了什么，以及整个项目是怎么拆分的（0.1 项目地图，0.2 一次请求的旅程，之后每一步一章）。每章末尾有当时的取舍和决定。LI Heyang 要接的地方在 5、6、7 章和 `docs/interfaces.md` §3.17。
+## How it works
 
-## 第一阶段文件执行基础
-
-`LocalSandbox`、`read_file` / `write_file` / `delete_file` / `list_files` 已实现并接入现有 `build_tools`。
-运行最小示例：`python -m examples.sandbox_tools`。路径、schema、inbox 冲突策略、执行清理和验证记录见
-[第一阶段交接说明](docs/sandbox_tools_handoff.md)。
-
-## 怎么运行
-
-在仓库根目录安装项目依赖（`python -m pip install -e .`）。将 `.env.example` 复制为 `.env`，填写课程网关的 `HKGAI_API_KEY` 即可调用真实模型。默认网关为 `https://api1.hkgai.net/v1`，模型为 `t2_hkgai-v3_fp8_1m_e7`。如需切换部署，可覆盖 `HKGAI_BASE_URL` 和 `HKGAI_MODEL`。
-
-```bash
-# 演示：不需要 API key，也不需要 LI 的部分（stand-in LLM 和 worker，其余都是真的）
-python -m mas --demo            # 每次启动都从干净的状态开始；想保留上次的记忆和文件加 --keep
-
-# 离线验证通用 Worker 执行 Python 测试
-python -X utf8 -m examples.execution_tools
-
-# 使用 HKGAI 凭据发送一次真实聊天请求
-python -X utf8 -m examples.hkgai_chat
-
-# 使用支持自定义工具调用的模型，查看其返回的调用请求
-python -X utf8 -m examples.hkgai_chat --with-tools
-
-# 启动使用 HKGAI 的真实系统
-python -m mas
-
-# 全部测试
-python -m unittest
+```
+ you ──"Build a booking system"──▶ group chat (message bus)
+                                        │
+                              RequestTracker        bookkeeping only, no LLM: opens a request,
+                                        │           handles /status and /cancel, collects files,
+                                        │           records the outcome
+                              LeadSelector          one LLM call picks the lead (cached per session,
+                                        │           falls back to the first member of the team)
+                                        ▼
+                                 the lead (a WorkerAgent)
+              ┌─────────────────────────┼──────────────────────────┐
+         ask_human                 call_<teammate>             its own tools
+     (asks you in the chat)    (delegates through the Router)   (files, Python, web, git)
+                                        │
+                          teammates work in their own sandboxes,
+                          and may delegate or ask you in turn
 ```
 
-演示里可以试：`write a python script and a document`、`run the tests`（writer 拒绝，改派给 coder）、`write a script and push it`（要你批准，`/reply yes`）、`/status`、`/cancel`、`/dm researcher find out about decorators`。命令行里输入 `/help` 看全部命令。日志写在 `<data-dir>/mas.log`（出内部错误时堆栈在这里，聊天里只有一行提示），加 `-v` 才同时打到屏幕。组装代码在 `mas/app.py`，LI 要接的地方见 `docs/interfaces.md` §3.17。
+- **Team, not a boss.** There is no fixed coordinator. The lead is chosen per request, so a different
+  team or a different request needs no code change. Follow-up requests in the same chat keep the lead.
+- **Router.** All delegation goes through one piece of plain code that enforces limits (depth, cycles,
+  retries, timeouts), keeps the task state table, hands files from one workspace to another, and
+  routes questions to the human. It never calls an LLM.
+- **Human in the loop.** Agents ask you for clarification and before risky actions (deleting files,
+  `git` operations). `/cancel` stops a request; agents check for cancellation at every step.
+- **Memory.** Each agent keeps a JSONL log of its tasks and lessons from failures. Relevant lessons are
+  recalled when a similar task starts, and a short performance profile of each teammate is shown to
+  whoever decides whom to delegate to.
+- **Isolation.** Every agent has its own workspace directory (`workspaces/<agent>/`); files only move
+  between agents through the Router.
+- **Tools.** `read_file`, `write_file`, `delete_file`, `list_files`, `run_python`, `web_search`
+  (Brave Search when you give it a key, otherwise a keyless DuckDuckGo/Bing search), `fetch_url`, `git` (clone, add, commit, push; each call needs your approval).
+- **LLM.** The course HKGAI gateway (default) or DeepSeek, the two the course allows; both are
+  OpenAI-compatible chat endpoints. OpenAI and Anthropic APIs are not allowed.
 
-## Hard constraints (from the spec)
+## Repository layout
 
-- LLM: DeepSeek or HKGAI only. No OpenAI / Anthropic APIs.
-- Outputs: plain text only (`.md` / `.txt`). No PDF / DOCX / PPT handling.
-- UI: minimal (CLI, or a simple bot / Gradio / Streamlit text box). Frontend earns no credit.
-- Every agent needs its own memory and its own isolated workspace.
-- Required tools: web search, file read/write/update/delete, write + run Python, git commit + push.
-- Harness must report task completion rate and execution time.
+```
+.
+├── mas/                       the system
+│   ├── __main__.py            command line entry: python -m mas
+│   ├── app.py                 build_system(): wires everything together; build_tools()
+│   ├── config.py              Settings: every tunable limit and path in one place
+│   ├── team.py                loads a team from a role file
+│   ├── scenario.py            loads a scenario and posts its tasks one after another
+│   ├── demo.py                offline demo (stand-in LLM and workers, no API key)
+│   ├── core/
+│   │   ├── message.py         Message and payload types, channels
+│   │   ├── bus.py             message bus (in memory)
+│   │   ├── router.py          delegation, limits, files, human questions, cancel (no LLM)
+│   │   ├── state.py           task state table
+│   │   ├── board.py           shared session board (progress, files, the human's words)
+│   │   ├── requests.py        RequestTracker: one request from arrival to final reply
+│   │   ├── lead.py            LeadSelector: who leads a request
+│   │   ├── human.py           command line (CliHumanIO) and AutoResponder
+│   │   └── transcript.py      the whole conversation as a Markdown file
+│   ├── agents/
+│   │   ├── base.py            Agent base class (messages, status, asking the human)
+│   │   ├── worker.py          WorkerAgent: ReAct loop, delegation, approval, memory
+│   │   ├── roles.py           RoleConfig, and a sample team for the demo and tests
+│   │   └── virtual_tools.py   schemas of call_<teammate>, decline, read_group, ask_human
+│   ├── tools/                 files, Python, web search and fetch, git
+│   ├── sandbox/               per-agent workspace (LocalSandbox; DockerSandbox is a stub)
+│   ├── memory/                JsonlMemory: add, recall, capability profile
+│   ├── llm/                   HKGAIClient, DeepSeekClient, MockLLM, the LLMClient contract
+│   └── eval/                  evaluation harness (not finished)
+├── tests/                     unit and end-to-end tests (python -m unittest)
+├── examples/                  small runnable examples (sandbox, execution tools, HKGAI chat)
+├── docs/                      design decisions, interfaces, architecture, report, hand-over notes
+├── code_tour.html             animated walk through the code (open in a browser)
+├── pyproject.toml             package metadata and dependencies
+├── .env.example               template for your API keys
+└── README.md / README.zh-CN.md
+```
 
-## Deliverables
+At run time the system also creates `workspaces/` (one directory per agent) and `data/` (memory,
+output, transcripts, log). Both are git-ignored.
 
-1. GitHub repo with continuous commits from every member (history is graded).
-2. System architecture document: `docs/architecture.md`
-3. Test results and performance report: `docs/report.md`
-4. Presentation in week 13.
+## Requirements and setup
 
-## To be decided (first team meeting)
+- Python **3.10 or newer**
+- `git` on your `PATH` (only if agents use the git tool)
+- An **HKGAI API key** from the course, or a **DeepSeek API key** (for real runs; the demo needs none)
+- Optional: a [Brave Search](https://brave.com/search/api/) API key for better `web_search` results
+  (search works without one), and a GitHub token for pushing
 
-- Code layout and module boundaries
-- Core interfaces: LLM call, Agent, Tool, Message, Memory
-- Memory backend: JSON log vs. vector DB
-- Sandbox approach: per-agent directory vs. containers
-- Ownership of modules between members
+```bash
+git clone https://github.com/Old-Older/Multi-Agent-Project.git
+cd Multi-Agent-Project
 
-## Workflow
+python3 -m venv .venv
+source .venv/bin/activate           # Windows: .venv\Scripts\activate
+python -m pip install -e .
 
-- `main` is protected. Work on `feat/<name>-<topic>` branches and merge via PR.
-- Small, frequent commits from both members every week.
-- Copy `.env.example` to `.env` for API keys. Never commit `.env`.
+cp .env.example .env                # then edit .env
+```
+
+`.env` (never commit it):
+
+| Variable | Needed for | Notes |
+|---|---|---|
+| `LLM_PROVIDER` | optional | `hkgai` (default) or `deepseek`; `--llm` on the command line overrides it |
+| `HKGAI_API_KEY` | real runs with `hkgai` | key for the course gateway |
+| `HKGAI_BASE_URL`, `HKGAI_MODEL` | optional | default `https://api1.hkgai.net/v1` and `t2_hkgai-v3_fp8_1m_e7` |
+| `DEEPSEEK_API_KEY` | real runs with `deepseek` | your DeepSeek key |
+| `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL` | optional | default `https://api.deepseek.com` and `deepseek-chat` |
+| `SEARCH_API_KEY` | optional | Brave Search token. Without it `web_search` still works through DuckDuckGo, Bing and other engines (no key, no account, but less reliable); with it Brave is used first, and the keyless search takes over if Brave refuses or is down |
+| `GITHUB_TOKEN` | `git push` to GitHub | sent only to github.com over HTTPS |
+
+## Running it
+
+**1. Try it without a key.** A stand-in LLM and stand-in workers drive the real bus, router, request
+tracker and command line:
+
+```bash
+python -m mas --demo
+```
+
+Type `write a python script and a document`, `run the tests`, `write a script and push it` (asks for
+your approval), `/status`, `/cancel` or `/dm researcher find out about decorators`.
+
+**2. Run a team of your own** (needs a key for the LLM you chose):
+
+```bash
+python -m mas --team path/to/01_role_initialization.md      # the file, or the folder that holds it
+```
+
+**3. Run a scenario**: a folder with a role file and task files (the course's test data has this shape).
+The first task is posted, and when it has ended the next one is posted to the same group, so the team
+keeps its context. You answer the team's questions as they come; type `/quit` to finish.
+
+```bash
+python -m mas --scenario "scenario_1_software_engineering 2"
+python -m mas --scenario "scenario_1_software_engineering 2" --auto     # unattended
+```
+
+Add `--llm deepseek` to use DeepSeek instead of the course gateway.
+
+With `--auto` an `AutoResponder` answers every question with a fixed default ("proceed as described",
+"yes", ...) and the run ends after the last task.
+
+Command line options:
+
+| Option | Meaning |
+|---|---|
+| `--demo` | the offline demo (every start is clean unless `--keep`) |
+| `--team PATH` | the team: a role file or a folder containing `01_role_initialization.md` |
+| `--scenario DIR` | a scenario folder: team and tasks |
+| `--llm hkgai\|deepseek` | which LLM to use (default: `LLM_PROVIDER`, else `hkgai`) |
+| `--auto` | unattended; needs `--scenario` |
+| `--data-dir DIR` | where memory, output and transcripts go (default `./data`) |
+| `--keep`, `--delay S` | demo only |
+| `-v` | also print the log on the screen (it always goes to `<data-dir>/mas.log`) |
+
+Commands you can type while it runs:
+
+| Command | What it does |
+|---|---|
+| *text* | say it to the team (it becomes a request, or an addition to the running one) |
+| `@dev text` | give a task straight to one agent |
+| `/dm <agent> <text>` | private chat with one agent |
+| `/status` | show where the current tasks are |
+| `/cancel`, `/cancel <agent>` | cancel the running request / the tasks in a private chat |
+| `/reply <id> <answer>` | answer a question (`/reply <answer>` when only one is open) |
+| `/help`, `/quit` | |
+
+## Defining your own team
+
+A team file is Markdown in the format of the course's `01_role_initialization.md`: a table fixes the
+order of the members, and each member has a heading `## Role name (agent_id)` followed by a fenced block
+with their prompt.
+
+````markdown
+| Agent ID | Role |
+|---|---|
+| `lead` | Technical Lead |
+| `dev` | Software Developer |
+
+## Technical Lead (lead)
+
+```text
+You are the technical lead of a software development team. You are responsible for ...
+```
+
+## Software Developer (dev)
+
+```text
+You are the software developer on a software development team. You are responsible for ...
+```
+````
+
+Any number of members works. The first one is the fallback lead. Every member gets all eight tools.
+A scenario folder adds task files (`02_task_1.md`, `03_task_2.md`, ...), each with the human's words
+in a fenced block.
+
+## What a run leaves behind
+
+| Path | Content |
+|---|---|
+| `data/transcripts/<scenario>-<time>.md` | the whole conversation: what you said, who led, who delegated what, what the team asked you and what you answered, every result, how each request ended, and a summary table. Rewritten whenever a request ends, so a crash loses nothing. |
+| `data/output/<request>-<time>/` | the deliverables of each request, collected from the agents' workspaces |
+| `data/memory/<agent>.jsonl` | each agent's memory |
+| `workspaces/<agent>/` | each agent's private files |
+| `data/mas.log` | log, with stack traces of internal errors |
+
+## Configuration
+
+Every limit is a field of `Settings` in `mas/config.py`. The ones you may want to change:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `max_worker_steps` | 12 | ReAct steps of a worker for one task |
+| `max_lead_steps` | 24 | ReAct steps of the lead of a request |
+| `subtask_timeout_s` | 600 | time limit for one delegated task (waiting for a human does not count) |
+| `lead_timeout_s` | 1800 | time limit for a whole request |
+| `max_delegation_depth`, `max_delegations_per_task`, `max_retries_same_goal` | 2, 2, 2 | guards against runaway delegation (a worker re-delegating one task, same goal retried) |
+| `max_lead_delegations` | 16 | how many times the lead of a request may delegate |
+| `memory_recall_k` | 3 | lessons recalled when a task starts |
+| `sandbox_backend` | `local` | `docker` is not implemented yet |
+
+> `LocalSandbox` runs commands with your own user's permissions; it separates the agents' files but is
+> not a security boundary. Do not run an untrusted team on a machine you care about.
+
+## Tests
+
+```bash
+python -m unittest                      # everything
+python -m unittest tests.test_lead      # one module
+```
+
+The tests need no API key: the LLM is scripted (`MockLLM`). `tests/test_lead.py`,
+`tests/test_requests.py` and `tests/test_scenario.py` run whole systems with real workspaces.
+
+## Documentation
+
+| Document | What is in it |
+|---|---|
+| [`code_tour.html`](code_tour.html) | animated walk through the code, one chapter per module |
+| [`docs/design_decisions.md`](docs/design_decisions.md) | the design decisions with their reasons (D1 to D18), and which are still current |
+| [`docs/interfaces.md`](docs/interfaces.md) | the interface of each module, who owns it, how a request flows |
+| [`docs/README.md`](docs/README.md) | index of the documents, and which ones describe the code as it is today |
+| [`docs/architecture.md`](docs/architecture.md) ([中文](docs/architecture.zh-CN.md)) | system architecture: routing and delegation, human in the loop, memory, sandboxes, tools |
+| [`docs/report.md`](docs/report.md) | test results and performance report, phase by phase |
+| [`docs/sandbox_tools_handoff.md`](docs/sandbox_tools_handoff.md), [`docs/execution_tools_handoff.md`](docs/execution_tools_handoff.md) | the sandbox, the file tools, and the Python / web / git tools |
+| [`docs/team_notes.md`](docs/team_notes.md) | interface changes announced between the two members |
+
+## Project rules and workflow
+
+From the course specification:
+
+- LLM: the course HKGAI (or DeepSeek) gateway only. No OpenAI or Anthropic API.
+- Documents and outputs are plain text (`.md`, `.txt`) or code; no PDF, Word or PowerPoint handling.
+- The UI is minimal: command line, a bot, or a simple text box.
+- Every agent has its own memory and its own workspace.
+- The harness reports the task completion rate and the execution time.
+
+Workflow: `main` is protected; work on `feat/<name>-<topic>` branches and merge by pull request.
+Commit small and often, from both members, every week; the history is graded.
+
+## Status
+
+Working: messaging, routing, task state, session board, human in the loop, per-agent memory with
+failure lessons, workers with eight tools, lead selection and delegation, team and scenario loading,
+transcript export, unattended runs.
+
+Not finished: the evaluation harness (`mas/eval/harness.py`: completion rate and timing over a test
+set), the Docker sandbox, and a simulated human that answers real questions in unattended runs.
+Nothing has been run against the real model yet, so there are no completion-rate or timing results: the
+tests use a scripted LLM (see [`docs/report.md`](docs/report.md) for exactly what has been measured).
