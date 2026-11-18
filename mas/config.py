@@ -57,6 +57,8 @@ class Settings:
     min_delegation_s: float = 60.0
     budget_grace_s: float = 45.0
     finish_not_before: float = 0.5            # a lead that hands in with less than this share of the budget used is sent back (0: off)
+    review_reserve_s: float = 120.0           # when a review does not pass, the time left is topped up to this, for the fix and the re-check
+    max_review_extensions: int = 2            # how often that can happen in one request (0: never)
     closing_check: bool = True                # before a lead's final answer, one more step to check the loose ends
 
     # context sizes (§2.1, §3.1, §6, §8)

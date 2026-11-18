@@ -84,7 +84,9 @@ point the first brief already covers. Make the deliverable as short as the reque
 choose a compact one: a memo of a page or two, a deck of about ten slides). The request has a time budget, and you are told
 when half of it is gone: after that, stop opening new lines and finish. Never tell the human that documents are consistent,
 checked or approved unless a teammate's check of the FINAL files said so; if a reviewer could not read or got an old version
-of a file, send the current file again and have it redone, or say that it is unverified."""
+of a file, send the current file again and have it redone, or say that it is unverified. When a reviewer does not pass your work, apply every item in the document itself (a
+claim nobody can check is deleted or labelled unverified there, not just mentioned in your reply) and have the same reviewer
+confirm the fix; time is added to the request for exactly this."""
 
 
 # Calls that look things up outside the workspace. A long run of them gets a reminder to stop: a worker that never
@@ -574,10 +576,12 @@ class WorkerAgent(Agent):
         if not others:
             return None
         stale = self.router.stale_work(task.root_id)
-        # Once is enough, unless the work of teammates is still out of date after the lead's fixes: then once more.
-        if run.closing_rounds >= (2 if stale else 1):
+        open_reviews = self.router.open_reviews(task.root_id)
+        # Once is enough, unless a review is still not passed or work is still out of date after the lead's fixes.
+        if run.closing_rounds >= (2 if stale or open_reviews else 1):
             return None
-        flags: list[str] = [f"OUT OF DATE: {line}" for line in stale]
+        flags: list[str] = [f"REVIEW NOT CLEARED: {line}" for line in open_reviews]
+        flags += [f"OUT OF DATE: {line}" for line in stale]
         for t in others:
             r = self.router.state.result(t.id)
             if r is None or r.declined:
@@ -594,6 +598,10 @@ class WorkerAgent(Agent):
         return ("Before you finish, check the loose ends. This is a one-time check; if everything is in order, return "
                 "the final result JSON again.\n"
                 f"1. What your teammates reported that needs a look:\n{shown}\n"
+                "1a. A line marked REVIEW NOT CLEARED means a reviewer's last verdict was a fail and nobody has confirmed the "
+                "fix. Apply every item in the document itself (a claim that cannot be checked is deleted or clearly labelled "
+                "unverified there), then send the new file to the same reviewer and ask it to confirm only those items. If you "
+                "cannot, say in your reply which items are not applied or not re-checked.\n"
                 "1b. A line marked OUT OF DATE means that work was done on an older version of a file you changed since: "
                 "send the new file to that teammate and have the work updated (or the review repeated), or say in your "
                 "reply that it is out of date. Do not hand in documents that disagree with each other.\n"
@@ -716,6 +724,16 @@ class WorkerAgent(Agent):
             handed = []
         extra = [name for name in handed if Path(name).name not in {Path(str(f)).name for f in files}]
         notes = []
+        if self.router.review_verdict(goal, result) == "fail":
+            added = self.router.grant_review_reserve(task.root_id)
+            left = self.router.time_left(task.root_id)
+            when = ("" if left is None else
+                    f" The request's time was extended: about {int(left)} s are left for the fix and the re-check."
+                    if added else f" No extra time can be added now (about {max(0, int(left))} s are left): fix what you can "
+                                  "and say in your reply which items were not re-checked.")
+            notes.append("This review did not pass. Apply EVERY item in the document itself (delete a claim you cannot check, "
+                         "or label it clearly as unverified there), then send the new file to the same reviewer and ask it to "
+                         "confirm only those items." + when)
         if extra:
             notes.append(f"Also handed over automatically: {', '.join(extra)} (named in your goal, or a newer version "
                          "of a copy the teammate already had).")

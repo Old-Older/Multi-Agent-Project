@@ -35,6 +35,16 @@ log = logging.getLogger(__name__)
 
 _LEADING_MENTION = re.compile(r"^\s*@\S+\s*")
 # A word that is a file name: what a goal says about a file it wants the teammate to work on.
+# What a reviewer's answer says. Only the answer to a task whose goal asks for a review or a check counts, and an
+# upper-case FAIL / REJECT / APPROVE WITH CHANGES is a failing verdict even if some points passed.
+_REVIEW_GOAL = re.compile(r"review|check|verif|sign-?off|approv|audit|confirm|复核|復核|審閱|审阅|审核|審核|检查|檢查|核对|核對|验证|驗證",
+                          re.IGNORECASE)
+_FAIL_UPPER = re.compile(r"\bFAIL(?:ED)?\b|APPROVE WITH CHANGES|NOT APPROVED|\bREJECT(?:ED)?\b")
+_FAIL_PHRASE = re.compile(r"approv\w* with (?:conditions?|changes|reservations?)|conditional(?:ly)? approv|not (?:yet )?"
+                          r"(?:approved|publishable|ready to (?:send|publish))|不通[過过]|未通[過过]|有條件|有条件", re.IGNORECASE)
+_PASS = re.compile(r"\bPASS(?:ED)?\b|\bLGTM\b|\bapproved?\b(?! with)|(?<![不未])通[過过]", re.IGNORECASE)
+_FAIL_WEAK = re.compile(r"must[- ]fix|requires? (?:the )?(?:following )?(?:changes|fixes)|[須须]修改|需要修改|top \d+ fixes",
+                        re.IGNORECASE)
 _SCRIPT_SUFFIXES = (".py", ".sh", ".pyc")                   # a teammate's tools, not something to hand back
 _FILE_NAME = re.compile(r"(?<![\w/.-])[\w][\w.-]*\.(?:md|txt|py|json|html?|csv|tsv|pdf|docx?|xlsx?|pptx?|js|css|ipynb|ya?ml)\b",
                         re.IGNORECASE)
@@ -91,6 +101,8 @@ class Router:
         self._delegations: dict[str, int] = {}                # parent task id -> count
         self._attempts: dict[tuple[str, str, str], list[str]] = {}
         self._cancelled_roots: set[str] = set()
+        self._root_extra: dict[str, float] = {}               # root id -> seconds added to its budget for re-checks
+        self._root_grants: dict[str, int] = {}
         self._handed: dict[str, dict[str, tuple[Path, str | None]]] = {}   # task id -> file -> (source, fingerprint)
         self.clock = time.monotonic                           # replaceable in tests
         self._root_started: dict[str, float] = {}             # root id -> when its time budget began
@@ -418,7 +430,48 @@ class Router:
         if budget <= 0:
             return None
         started = self._root_started.setdefault(root_id, self.clock())
-        return started + budget + self._root_human_wait.get(root_id, 0.0) - self.clock()
+        return (started + budget + self._root_human_wait.get(root_id, 0.0) + self._root_extra.get(root_id, 0.0)
+                - self.clock())
+
+    def grant_review_reserve(self, root_id: str) -> float:
+        """A review did not pass: top the time left up to `review_reserve_s`, so that there is time to fix what it
+        found and to have the reviewer check the fix. Only the missing part is added, and only
+        `max_review_extensions` times per request. Returns the seconds added (0: no budget, enough time, or used up)."""
+        s = self.settings
+        left = self.time_left(root_id)
+        if (left is None or s.review_reserve_s <= 0 or left >= s.review_reserve_s
+                or self._root_grants.get(root_id, 0) >= s.max_review_extensions):
+            return 0.0
+        added = s.review_reserve_s - left
+        self._root_extra[root_id] = self._root_extra.get(root_id, 0.0) + added
+        self._root_grants[root_id] = self._root_grants.get(root_id, 0) + 1
+        return added
+
+    @staticmethod
+    def review_verdict(goal: str, result: TaskResult) -> str | None:
+        """'fail' or 'pass' when `result` answers a request to review or check something, else None. Judged by the
+        words of the answer: an upper-case FAIL (or APPROVE WITH CHANGES) or "approve with conditions" fails it even when
+        some points passed; PASS or APPROVE passes it; without either, wording such as "must fix" fails it."""
+        if result.declined or not result.success or not _REVIEW_GOAL.search((goal or "")[:120]):   # a review says so first
+            return None
+        text = " ".join(filter(None, [result.summary, *result.open_issues]))
+        if _FAIL_UPPER.search(text) or _FAIL_PHRASE.search(text):
+            return "fail"
+        if _PASS.search(text):
+            return "pass"
+        return "fail" if _FAIL_WEAK.search(text) else None
+
+    def open_reviews(self, root_id: str) -> list[str]:
+        """The reviewers whose latest verdict in this request is a fail: nobody has confirmed the fix since."""
+        latest: dict[str, tuple[str, str]] = {}
+        for task in self.state.by_root(root_id):
+            result = self.state.result(task.id)
+            verdict = self.review_verdict(task.goal, result) if result is not None else None
+            if verdict:
+                summary = " ".join(result.summary.split())
+                latest[task.assignee] = (verdict, summary[:220] + ("…" if len(summary) > 220 else ""))
+        return [f"{who}'s latest verdict is not a pass: {text}" for who, (verdict, text) in latest.items()
+                if verdict == "fail"]
 
     # ---- human in the loop -----------------------------------------------
 
