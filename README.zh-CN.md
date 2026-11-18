@@ -226,10 +226,10 @@ You are the software developer on a software development team. You are responsib
 
 | 设置 | 默认值 | 含义 |
 |---|---|---|
-| `max_worker_steps` | 12 | worker 完成一个任务的 ReAct 步数 |
-| `max_lead_steps` | 24 | 牵头者处理一个请求的 ReAct 步数 |
-| `subtask_timeout_s` | 600 | 一个被委派任务的时限（等待人类的时间不计） |
-| `lead_timeout_s` | 1800 | 一个完整请求的时限 |
+| `max_worker_steps` | 30 | worker 完成一个任务的 ReAct 步数 |
+| `max_lead_steps` | 40 | 牵头者处理一个请求的 ReAct 步数 |
+| `subtask_timeout_s` | 900 | 一个被委派任务的时限（等待人类的时间不计） |
+| `lead_timeout_s` | 2400 | 一个完整请求的时限 |
 | `max_delegation_depth`、`max_delegations_per_task`、`max_retries_same_goal` | 2、2、2 | 防止委派失控（worker 再委派的次数、同一目标的重试） |
 | `max_lead_delegations` | 16 | 一个请求的牵头者可以委派的次数 |
 | `memory_recall_k` | 3 | 任务开始时召回的教训条数 |

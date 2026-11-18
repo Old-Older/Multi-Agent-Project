@@ -238,10 +238,10 @@ Every limit is a field of `Settings` in `mas/config.py`. The ones you may want t
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `max_worker_steps` | 12 | ReAct steps of a worker for one task |
-| `max_lead_steps` | 24 | ReAct steps of the lead of a request |
-| `subtask_timeout_s` | 600 | time limit for one delegated task (waiting for a human does not count) |
-| `lead_timeout_s` | 1800 | time limit for a whole request |
+| `max_worker_steps` | 30 | ReAct steps of a worker for one task |
+| `max_lead_steps` | 40 | ReAct steps of the lead of a request |
+| `subtask_timeout_s` | 900 | time limit for one delegated task (waiting for a human does not count) |
+| `lead_timeout_s` | 2400 | time limit for a whole request |
 | `max_delegation_depth`, `max_delegations_per_task`, `max_retries_same_goal` | 2, 2, 2 | guards against runaway delegation (a worker re-delegating one task, same goal retried) |
 | `max_lead_delegations` | 16 | how many times the lead of a request may delegate |
 | `memory_recall_k` | 3 | lessons recalled when a task starts |

@@ -107,7 +107,7 @@ carrying out one part). Then:
 ### 4.3 What the lead does
 
 The lead is an ordinary `WorkerAgent` whose task has no parent. It differs from other members only in
-budget (`max_lead_steps` 24 steps, `lead_timeout_s` 1800 s, up to `max_lead_delegations` 16 delegations)
+budget (`max_lead_steps` 40 steps, `lead_timeout_s` 2400 s, up to `max_lead_delegations` 16 delegations)
 and in a short extra instruction: understand the request, ask the human if it is unclear, split the work,
 delegate, have important results reviewed by a teammate and returned for fixing, finish only when the
 result is good, and write a final answer the human can read. Its tools are the team's `call_<teammate>`
@@ -134,7 +134,7 @@ Every `call_<teammate>` becomes `Router.dispatch(requester, target, goal, contex
    (or from the workspace of the agent that produced them, searched in this root first and then in the
    earlier roots of the session) into the target's `inbox/`.
 3. A `TASK_ASSIGN` is published (in the group, or in the private channel the task belongs to).
-4. The router **waits** for the matching `TASK_RESULT`, with a time limit (`subtask_timeout_s` 600 s, the
+4. The router **waits** for the matching `TASK_RESULT`, with a time limit (`subtask_timeout_s` 900 s, the
    lead's request `lead_timeout_s`). Time spent **waiting for a human does not count**.
 
 The target runs the task in its own ReAct loop. At its first step it may **decline** a task outside its
@@ -278,8 +278,8 @@ Anthropic APIs are not used. Tests use `MockLLM`, a scripted stand-in.
 
 ## 12. Configuration and data layout
 
-All limits are fields of `Settings` (`mas/config.py`): step limits (`max_worker_steps` 12,
-`max_lead_steps` 24), time limits (`subtask_timeout_s` 600, `lead_timeout_s` 1800), delegation limits,
+All limits are fields of `Settings` (`mas/config.py`): step limits (`max_worker_steps` 30,
+`max_lead_steps` 40), time limits (`subtask_timeout_s` 900, `lead_timeout_s` 2400), delegation limits,
 memory recall size, sandbox backend, paths. Keys come from `.env`.
 
 ```

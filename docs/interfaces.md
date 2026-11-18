@@ -302,8 +302,8 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 
 | 字段 | 默认值 | 对应 |
 |---|---|---|
-| `max_worker_steps` / `max_lead_steps` | 12 / 24 | D11、D18 |
-| `subtask_timeout_s` / `lead_timeout_s` | 600 / 1800 | 一个被委派任务 / 一个完整请求，等人类的时间不计 |
+| `max_worker_steps` / `max_lead_steps` | 30 / 40 | D11、D18 |
+| `subtask_timeout_s` / `lead_timeout_s` | 900 / 2400 | 一个被委派任务 / 一个完整请求，等人类的时间不计 |
 | `max_delegation_depth` / `max_delegations_per_task` / `max_lead_delegations` / `max_retries_same_goal` | 2 / 2 / 16 / 2 | §5、D10、D18 |
 | `result_summary_max_chars` / `board_max_chars` / `tool_output_max_chars` | 1500 / 2000 / 4000 | §2.1、§3.1、§6 |
 | `memory_recall_k` / `profile_max_chars` | 3 / 300 | §8、§2.3 |

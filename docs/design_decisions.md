@@ -22,7 +22,7 @@
 | D8 私聊 | 沿用 | |
 | D9 再委派 | 沿用 | 统一经 Router；牵头者的委派次数上限单独设为 `max_lead_delegations` |
 | D10 失败处理 | 沿用 | |
-| D11 循环上限 | **已改** | 取消 Orchestrator 8 轮；牵头者 24 步、worker 12 步；单任务时限 600 秒，整个请求 1800 秒 |
+| D11 循环上限 | **已改** | 取消 Orchestrator 8 轮；牵头者 40 步、worker 30 步（第一次真实运行里 12 步和 24 步都不够，见 report.md）；单任务时限 900 秒，整个请求 2400 秒 |
 | D12 HITL | 沿用 | `AutoResponder` 已实现，但只给固定默认答案 |
 | D13 记忆 | 沿用 | 已验证跨运行保存（`tests/test_memory_across_sessions.py`） |
 | D14 沙箱与产物 | 沿用 | 交接由 Router 完成，汇总到 `data/output/` 由请求层完成 |
