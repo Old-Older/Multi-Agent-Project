@@ -30,7 +30,7 @@ from mas.core.message import GROUP_MAIN, HUMAN, ORCHESTRATOR, MsgType
 from mas.core.task import Task, TaskResult, TaskStatus
 from mas.demo import DemoSandbox, DemoWorker, build_demo_system, demo_brain, demo_settings
 from mas.llm.base import LLMResponse
-from mas.llm.deepseek import DeepSeekClient
+from mas.llm.hkgai import HKGAIClient
 from mas.llm.mock import MockLLM
 from mas.memory.base import JsonlMemory
 
@@ -151,15 +151,40 @@ class WiringTest(TmpDirTest):
 
     def test_making_the_llm_and_the_human(self):
         with self.assertRaises(SystemExit) as e:
-            make_llm(Settings(deepseek_api_key=""))
-        self.assertIn("DEEPSEEK_API_KEY", str(e.exception))
+            make_llm(Settings())
+        self.assertIn("HKGAI_API_KEY", str(e.exception))
         self.assertIn("--demo", str(e.exception))
-        with self.assertRaises(SystemExit):
-            make_llm(Settings(llm_provider="other", deepseek_api_key="k"))
-        llm = make_llm(Settings(deepseek_api_key="k", deepseek_model="m", deepseek_base_url="http://x"))
-        self.assertEqual((type(llm), llm.api_key, llm.model, llm.base_url), (DeepSeekClient, "k", "m", "http://x"))
+        with self.assertRaisesRegex(SystemExit, "HKGAI_MODEL is not set"):
+            make_llm(Settings(hkgai_api_key="fixture", hkgai_model=""))
+        with self.assertRaisesRegex(SystemExit, "LLM_PROVIDER=hkgai"):
+            make_llm(Settings(llm_provider="deepseek"))
         self.assertIsInstance(make_human(Settings()), CliHumanIO)
         self.assertIsInstance(make_human(Settings(auto_hitl=True)), AutoResponder)
+
+    def test_default_provider_ignores_other_providers_settings(self):
+        legacy = {"DEEPSEEK_API_KEY": "legacy-fixture", "DEEPSEEK_MODEL": "legacy-model",
+                  "DEEPSEEK_BASE_URL": "https://legacy.invalid"}
+        with patch.dict(os.environ, legacy, clear=True):
+            settings = Settings.from_env()
+        self.assertEqual(settings.llm_provider, "hkgai")
+        self.assertEqual(settings.hkgai_base_url, "https://api1.hkgai.net/v1")
+        self.assertEqual(settings.hkgai_model, "t2_hkgai-v3_fp8_1m_e7")
+        self.assertEqual(settings.hkgai_api_key, "")
+        with self.assertRaisesRegex(SystemExit, "HKGAI_API_KEY is not set"):
+            make_llm(settings)
+        llm = make_llm(replace(settings, hkgai_api_key="fixture"))
+        self.assertEqual((llm.model, llm.base_url), (settings.hkgai_model, settings.hkgai_base_url))
+
+    def test_hkgai_factory_uses_account_settings_and_model_override(self):
+        env = {"HKGAI_API_KEY": "fixture", "HKGAI_MODEL": "account-model",
+               "HKGAI_BASE_URL": "https://gateway.invalid/v1"}
+        with patch.dict(os.environ, env, clear=True):
+            llm = make_llm(Settings.from_env())
+            selected = make_llm(Settings.from_env(hkgai_model="selected-model"))
+        self.assertIsInstance(llm, HKGAIClient)
+        self.assertEqual((llm.api_key, llm.model, llm.base_url),
+                         ("fixture", "account-model", "https://gateway.invalid/v1"))
+        self.assertEqual(selected.model, "selected-model")
 
 
 class LifecycleTest(TmpDirTest):
@@ -451,7 +476,7 @@ class EntryPointTest(TmpDirTest):
 
     def test_python_dash_m_mas_demo_runs_a_request_end_to_end(self):
         """The real program, started like a user would: a request goes in, files and a report come out."""
-        env = dict(os.environ, PYTHONPATH=str(ROOT), DEEPSEEK_API_KEY="", PYTHONIOENCODING="utf-8")
+        env = dict(os.environ, PYTHONPATH=str(ROOT), HKGAI_API_KEY="", HKGAI_MODEL="", PYTHONIOENCODING="utf-8")
         p = subprocess.Popen([sys.executable, "-m", "mas", "--demo", "--data-dir", str(self.tmp), "--delay", "0"],
                              stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
                              cwd=self.tmp, env=env)
@@ -525,11 +550,11 @@ class EntryPointTest(TmpDirTest):
         self.assertFalse((self.tmp / "demo" / "mas.log").exists())
 
     def test_without_a_key_the_real_system_says_what_to_do(self):
-        env = dict(os.environ, PYTHONPATH=str(ROOT), DEEPSEEK_API_KEY="", LLM_PROVIDER="deepseek")
+        env = dict(os.environ, PYTHONPATH=str(ROOT), HKGAI_API_KEY="", LLM_PROVIDER="")
         r = subprocess.run([sys.executable, "-m", "mas", "--data-dir", str(self.tmp)], input="", capture_output=True,
                            text=True, cwd=self.tmp, env=env, timeout=30)
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("DEEPSEEK_API_KEY is not set", r.stderr + r.stdout)
+        self.assertIn("HKGAI_API_KEY is not set", r.stderr + r.stdout)
 
 
 if __name__ == "__main__":

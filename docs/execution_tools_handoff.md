@@ -1,4 +1,4 @@
-# DeepSeek 与执行工具联调交接
+# HKGAI 与执行工具联调交接
 
 从仓库根目录运行下列命令即可开始。示例创建临时工作区，用 `MockLLM` 把一次 `unittest` 调用交给通用 Worker；打印的是该测试进程的退出码和输出。安装项目已有依赖后，离线联调无需密钥。
 
@@ -18,30 +18,31 @@ system = build_system(settings, llm, human, roles=roles,
                       worker_factory=execution_worker_factory)
 ```
 
-`make_llm(settings)` 已接入 `DeepSeekClient`。默认 `mas.app.build_tools` 仍将 `run_python`、`web_search`、`fetch_url` 和 `git` 列为待实现并跳过，直接启动 CLI 会看到对应警告。以后启用默认接线的最小改动为在 `mas/app.py` 的 `build_tools` 按原顺序实例化这四个工具，并更新 `tests/test_app.py` 中断言跳过工具及默认工厂工具清单的用例。这两处留待团队确认。
+默认 `mas.app.build_tools` 按角色注册文件工具。角色配置中出现 `run_python`、`web_search`、`fetch_url` 或 `git` 时，默认 CLI 会记录跳过警告；联调这四个工具请传入上面的 `execution_worker_factory`。
 
-## DeepSeekClient
+## HKGAIClient
 
-```python
-from mas.app import make_llm
-from mas.config import Settings
-from mas.tools.python import RunPython
+`mas.app.make_llm(Settings.from_env())` 默认创建实现 `LLMClient` 的 `HKGAIClient`。直接导入使用 `from mas.llm.hkgai import HKGAIClient`。课程密钥通过 `HKGAI_API_KEY` 读取，旧版 `DEEPSEEK_*` 配置不会参与认证或选择模型。配置可放在进程环境或本地 `.env` 中，命令行与下方示例会读取仓库根目录的 `.env`。自写脚本直接调用 `Settings.from_env()` 时，可先调用 `dotenv.load_dotenv()`。
 
-# 在已有 async 函数中运行；真实调用会使用 DeepSeek 账户。
-settings = Settings.from_env()
-llm = make_llm(settings)
-reply = await llm.chat(
-    [{"role": "user", "content": "怎样运行工作区里的 unittest？"}],
-    tools=[RunPython().spec()], temperature=settings.temperature,
-)
-for call in reply.tool_calls:
-    print(call.id, call.name)  # 参数对象在 call.arguments
+| 配置项 | 用途 |
+| --- | --- |
+| `LLM_PROVIDER` | 默认 `hkgai`，可省略。使用旧版 `.env` 的队友应更新此项。 |
+| `HKGAI_API_KEY` | 必填，使用课程网关分配的模型密钥。 |
+| `HKGAI_MODEL` | 默认 `t2_hkgai-v3_fp8_1m_e7`，可覆盖为该账号有权访问的其他模型。 |
+| `HKGAI_BASE_URL` | 默认 `https://api1.hkgai.net/v1`。也可填课程发放的裸域名，客户端会补上 `/v1`；带路径的部署地址会保留该路径。 |
+
+课程提供网关 `https://api1.hkgai.net` 和上述模型 ID。客户端通过项目已有的 `openai` Python SDK，向 `https://api1.hkgai.net/v1/chat/completions` 发送兼容格式的请求，密钥通过 Bearer 头传递。联调 Worker 和 Orchestrator 时，所选模型需要能返回项目自定义工具的 `tool_calls`。HKGAI Studio 的公开文档可用于参考聊天协议；课程部署的实际响应需用其账号验证。[HKGAI Studio 模型指南](https://hkgai-studio.prod.hkchat.app/en/docs/modelhub)
+
+配置就绪后可从仓库根目录分别发送一次真实请求。第一条显示文本回复，第二条把 `list_files` 的 schema 发给模型，打印它返回的调用 ID、工具名和参数。示例止于显示模型回复。实际执行和审批由 Worker 负责。[示例源码](../examples/hkgai_chat.py)
+
+```console
+python -X utf8 -m examples.hkgai_chat
+python -X utf8 -m examples.hkgai_chat --with-tools
 ```
 
-- `Settings.from_env()` 读取进程环境。若在自写脚本里使用本地 `.env`，先调用 `dotenv.load_dotenv()`。真实服务使用 `LLM_PROVIDER=deepseek`、`DEEPSEEK_API_KEY`、`DEEPSEEK_BASE_URL`（默认 `https://api.deepseek.com`）和 `DEEPSEEK_MODEL`。安装时沿用项目声明的 `openai` 兼容 SDK，请求发往配置的 DeepSeek 地址。
-- 原项目模型默认值是 `deepseek-chat`，客户端会原样发送模型名。截至 2026-11-18，官方文档列出 `deepseek-flash` 和 `deepseek-v4-pro`；连接当前官方服务时可在环境里设置 `DEEPSEEK_MODEL=deepseek-flash`。请求显式使用非思考模式，以匹配共享消息历史的字段。[DeepSeek API](https://api-docs.deepseek.com/api/create-chat-completion/)
-- `LLMResponse.text` 可以与多个 `tool_calls` 同时出现。每个调用保留 `id`、`name`、`raw_arguments` 及解析后的 `arguments` 字典。客户端可修复 JSON 代码围栏和尾逗号；无法恢复或顶层不是对象时返回空字典。整数用量计数在 `usage`，停止原因在 `finish_reason`。
-- 直接构造时可设置 `timeout`（默认每次请求 60 秒）及 `max_retries`（默认首次请求后最多重试 3 次）。连接、超时、408/409/429 及服务端错误指数退避重试，永久 HTTP 错误或损坏的响应返回 `LLMError`。调用方取消会向上传播。错误信息省略服务响应正文和认证数据。
+`LLMResponse.text` 可以与多个 `tool_calls` 同时出现。每个调用保留 `id`、`name`、`raw_arguments` 及解析后的 `arguments` 字典。客户端可修复 JSON 代码围栏和尾逗号；无法恢复或顶层不是对象时返回空字典。整数用量计数在 `usage`，停止原因在 `finish_reason`。
+
+直接构造时可设置 `timeout`（默认每次请求 60 秒）和 `max_retries`（默认首次请求后最多重试 3 次）。连接超时、限流及瞬时服务错误使用有界重试，遇到 `Retry-After` 会遵守服务端要求的等待时间；超过单次超时预算则直接返回错误。请求格式错误、无效密钥或不可用的模型应先检查配置。最终失败抛出 `LLMError`。调用方取消会向上传播。
 
 ## 工具参数与结果
 
@@ -88,10 +89,14 @@ commit_request = LLMResponse("", [ToolCall("save-notes", "git", {
 ## 验证记录
 
 ```console
-python -X utf8 -m unittest tests.test_deepseek tests.test_run_python tests.test_web_tools tests.test_git_tool tests.test_execution_tools_example
+python -X utf8 -m unittest tests.test_hkgai tests.test_hkgai_integration tests.test_run_python tests.test_web_tools tests.test_git_tool tests.test_execution_tools_example
 python -X utf8 -m unittest
 ```
 
-Windows / Python 3.11.15，主线基线 `8a62a7c`。基线 337 通过、2 跳过。客户端测试使用真实 SDK 与模拟 HTTP 传输；网络工具模拟 DNS、搜索服务和网页；Git 测试使用临时本地仓库和裸库；示例通过真实 Worker 和 LocalSandbox 运行 Python 测试，另有人工拒绝 Git 后不启动命令的回归。新增专项回归 42 项全部通过。最终全量 381 项，379 通过、2 跳过。
+HKGAI 客户端回归使用真实 SDK 与模拟 HTTP 响应，覆盖请求构造、文本及多工具响应、错误和取消。两轮联调用例还让真实 Worker 调用 `read_file`，断言匹配的 `tool_call_id` 和实际文件内容被送回模型。匿名 GET `/v1/models` 返回 HTTP 401；课程账户的权限、配额和模型的真实工具调用能力尚未使用密钥验证。
 
-另做一次免费的公开 HTTPS 冒烟，`fetch_url` 成功从 Cloudflare 公网端点取得正文。当前网络对 `example.com` 返回保留地址，该次请求按地址检查返回失败。DeepSeek 和 Brave 的账号、额度、模型可用性及实时搜索质量尚待持有相应凭据的队友验证。项目远端推送未参与测试。
+本轮在 Windows / Python 3.11.15 上复测，HKGAI 客户端、两轮工具交互和应用接线共 52 项通过；全量 386 项，384 通过、2 跳过。离线工具示例成功运行了一个真实的 Python 单元测试。
+
+**上轮工具交付记录（Windows / Python 3.11.15）**  主线基线 `8a62a7c` 为 337 通过、2 跳过。工具采用模拟 DNS、搜索服务、临时 Git 仓库及裸库；示例通过真实 Worker 和 LocalSandbox 运行 Python 测试，并覆盖人工拒绝 Git 后不启动命令。上轮专项回归 42 项通过，全量 381 项中 379 通过、2 跳过。
+
+上轮另做了一次免费 HTTPS 冒烟，`fetch_url` 从 Cloudflare 公网端点取得了正文。对 `example.com` 的解析返回保留地址，工具按地址检查返回失败。Brave 的实时搜索仍需使用该服务的凭据验证。

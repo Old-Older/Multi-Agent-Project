@@ -1,4 +1,4 @@
-"""DeepSeek contract tests against an in-process HTTP transport."""
+"""HKGAI contract tests against an in-process HTTP transport."""
 import asyncio
 import json
 import unittest
@@ -9,7 +9,7 @@ import httpx
 from openai import AsyncOpenAI
 
 from mas.llm.base import FunctionSpec, LLMError, LLMResponse
-from mas.llm.deepseek import DeepSeekClient
+from mas.llm.hkgai import HKGAIClient
 
 
 def completion(content="done", calls=None, usage=None):
@@ -27,15 +27,15 @@ def tool_call(identifier, raw):
             "function": {"name": "lookup", "arguments": raw}}
 
 
-class DeepSeekTests(unittest.IsolatedAsyncioTestCase):
+class HKGAITests(unittest.IsolatedAsyncioTestCase):
     messages = [{"role": "user", "content": "你好"}]
 
     def transport(self, handler, **settings):
         http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         self.addAsyncCleanup(http.aclose)
         factory = partial(AsyncOpenAI, http_client=http)
-        mocked = self.enter_patch(patch("mas.llm.deepseek.AsyncOpenAI", side_effect=factory))
-        client = DeepSeekClient("test-value", "https://provider.invalid/v1", "example-model",
+        mocked = self.enter_patch(patch("mas.llm.hkgai.AsyncOpenAI", side_effect=factory))
+        client = HKGAIClient("test-value", "https://provider.invalid/v1", "example-model",
                                 **settings)
         return client, http, mocked
 
@@ -48,14 +48,14 @@ class DeepSeekTests(unittest.IsolatedAsyncioTestCase):
         calls = [tool_call("first", raw), tool_call("second", '{"nested": {"score": 1.25}}')]
         spec = FunctionSpec("lookup", "Search", {"type": "object"})
         counts = {"prompt_tokens": 7, "completion_tokens": 4, "total_tokens": 11,
-                  "prompt_cache_hit_tokens": 3}
+                  "cached_tokens": 3}
 
         def handler(request):
             self.assertEqual(str(request.url), "https://provider.invalid/v1/chat/completions")
             self.assertEqual(request.headers["authorization"], "Bearer test-value")
             self.assertEqual(json.loads(request.content),
                              {"messages": self.messages, "temperature": 0.15, "model": "example-model",
-                              "tools": [spec.to_openai()], "thinking": {"type": "disabled"}})
+                              "tools": [spec.to_openai()]})
             usage = {**counts, "prompt_tokens_details": {"cached_tokens": 3}}
             return httpx.Response(200, json=completion("计划", calls, usage))
 
@@ -102,7 +102,7 @@ class DeepSeekTests(unittest.IsolatedAsyncioTestCase):
             return httpx.Response(step, json=completion())
 
         client, _, _ = self.transport(handler, max_retries=4)
-        with patch("mas.llm.deepseek.asyncio.sleep", new_callable=AsyncMock) as sleep:
+        with patch("mas.llm.hkgai.asyncio.sleep", new_callable=AsyncMock) as sleep:
             self.assertEqual((await client.chat(self.messages)).text, "done")
             self.assertEqual(sleep.await_args_list, [call(0.5), call(1.0), call(2.0), call(4.0)])
 
@@ -116,13 +116,38 @@ class DeepSeekTests(unittest.IsolatedAsyncioTestCase):
                     return httpx.Response(status, json={"error": {"message": "test-value private"}})
 
                 client, http, _ = self.transport(handler, max_retries=2)
-                with patch("mas.llm.deepseek.asyncio.sleep", new_callable=AsyncMock), \
+                with patch("mas.llm.hkgai.asyncio.sleep", new_callable=AsyncMock), \
                         self.assertRaisesRegex(LLMError, str(status)) as raised:
                     await client.chat(self.messages)
                 self.assertNotIn("test-value", str(raised.exception))
                 self.assertNotIn("private", str(raised.exception))
                 self.assertEqual(len(requests), attempts)
                 self.assertTrue(http.is_closed)
+
+    async def test_respects_retry_after_without_an_unbounded_sleep(self):
+        for header, retry in [("7", True), ("120", False)]:
+            with self.subTest(header=header):
+                responses = iter([httpx.Response(429, headers={"Retry-After": header}),
+                                  httpx.Response(200, json=completion())])
+                client, _, _ = self.transport(lambda _: next(responses), timeout=20)
+                with patch("mas.llm.hkgai.asyncio.sleep", new_callable=AsyncMock) as sleep:
+                    if retry:
+                        self.assertEqual((await client.chat(self.messages)).text, "done")
+                        sleep.assert_awaited_once_with(7)
+                    else:
+                        with self.assertRaisesRegex(LLMError, "Retry-After"):
+                            await client.chat(self.messages)
+                        sleep.assert_not_awaited()
+
+    async def test_hkgai_request_error_returned_as_http_500_is_not_retried(self):
+        response = httpx.Response(500, json={"error": {"code": "convert_request_failed",
+                                                       "message": "private diagnostic"}})
+        client, _, _ = self.transport(lambda _: response)
+        with patch("mas.llm.hkgai.asyncio.sleep", new_callable=AsyncMock) as sleep:
+            with self.assertRaisesRegex(LLMError, "HTTP 500 .*convert_request_failed") as raised:
+                await client.chat(self.messages)
+            sleep.assert_not_awaited()
+        self.assertNotIn("private", str(raised.exception))
 
     async def test_timeout_cancels_pending_request(self):
         stopped = asyncio.Event()
@@ -171,18 +196,22 @@ class DeepSeekTests(unittest.IsolatedAsyncioTestCase):
         for options in ({"timeout": 0}, {"timeout": float("nan")}, {"max_retries": -1},
                         {"max_retries": 1.1}):
             with self.subTest(options=options), self.assertRaises(ValueError):
-                DeepSeekClient("example", **options)
+                HKGAIClient("example", **options)
 
     def test_configured_base_url_rejects_invalid_authority_without_echoing_it(self):
         for url in ("provider.invalid/v1", "ftp://provider.invalid", "https:///v1",
                     "https://name:private@provider.invalid", "https://provider.invalid:private",
                     "https://provider.invalid:65536", "https://provider.invalid:0",
                     "https://[unclosed", "https://bad host", "http://example.\u200d/",
+                    "https://provider.invalid?key=private", "https://provider.invalid/#fragment",
                     "https://provider.invalid/a\nb"):
             with self.subTest(url=url), self.assertRaises(ValueError) as raised:
-                DeepSeekClient("unused", base_url=url)
-            self.assertEqual(str(raised.exception), "DeepSeek base URL must be an absolute HTTP(S) URL "
-                             "without credentials and with a valid port")
-        for url in ("http://x/", "http://127.0.0.1:8080/v1", "http://[::1]:8080/v1"):
+                HKGAIClient("unused", base_url=url)
+            self.assertEqual(str(raised.exception), "HKGAI base URL must be an absolute HTTP(S) URL "
+                             "without credentials, query or fragment, and with a valid port")
+        for url in ("http://127.0.0.1:8080/v1", "http://[::1]:8080/v1", "https://mock.invalid/api/chat"):
             with self.subTest(url=url):
-                self.assertEqual(DeepSeekClient("unused", base_url=url).base_url, url)
+                self.assertEqual(HKGAIClient("unused", base_url=url).base_url, url)
+        for url in ("https://api1.hkgai.net", "https://api1.hkgai.net/"):
+            with self.subTest(url=url):
+                self.assertEqual(HKGAIClient("unused", base_url=url).base_url, "https://api1.hkgai.net/v1")
