@@ -1,6 +1,22 @@
 # Test Results & Performance Report
 
+本报告按时间顺序记录**实际跑过**的测试，最新的在后面。每一节写明环境、命令、数字和没有测的东西。
+LI Heyang 的两节保持原样；JIAN Yimin 的一节接在后面，并在最后一节汇总课程要求的评测指标现在测到了哪一步。
+
+| 阶段 | 日期 | 负责人 | 环境 | 全仓测试 |
+|---|---|---|---|---|
+| [第一阶段：沙箱与文件工具](#第一阶段验收报告2026-11-13) | 2026-11-13 | LI Heyang | Windows，Python 3.11.15 | 286 项，284 通过，2 跳过，0 失败 |
+| [第二阶段：Worker、HKGAI 与执行工具](#第二阶段worker-hkgai-客户端与执行工具2026-11-17-至-2026-11-18) | 2026-11-17 至 11-18 | LI Heyang | Windows，Python 3.11.15 | 386 项，384 通过，2 跳过，0 失败 |
+| [第三阶段：牵头协作与场景运行](#第三阶段牵头协作请求层场景运行搜索与-deepseek2026-11-18) | 2026-11-18 | JIAN Yimin | macOS，Python 3.14.3 | 421 项，419 通过，2 跳过，0 失败 |
+| [课程评测指标的现状](#课程评测指标的现状) | 2026-11-18 | | | **端到端评测尚未进行** |
+
+单元测试通过率不是任务完成率，测试套件的秒数也不是任务的执行时间；这两项课程指标要用真实模型在测试集上测，见最后一节。
+
+---
+
 ## 第一阶段验收报告（2026-11-13）
+
+> LI Heyang 的原文，未改动。其中 §6 的"仍待完成"是当时的状态，现状见最后一节。
 
 范围：LI Heyang 的 LocalSandbox、四个文件工具、现有系统接线及相关测试；
 按后续请求补修 Windows 下 Agent 内部耗时统计，保持公共接口不变。
@@ -150,3 +166,130 @@ POSIX 命令执行分支也尚未实测。
 | Task failure modes | 尚未开展课程任务集评测 |
 | Memory evolution | 本批未评估记忆进化效果 |
 | Commit history screenshots | 待完成本批提交及后续持续开发后整理 |
+
+---
+
+## 第二阶段：Worker、HKGAI 客户端与执行工具（2026-11-17 至 2026-11-18）
+
+记录人：LI Heyang。以下数字转录自 [execution_tools_handoff.md](execution_tools_handoff.md) 的"验证记录"，
+环境 Windows / Python 3.11.15；原始命令和细节以该文件为准。第三阶段在另一台机器上重跑了全仓测试，见下一节。
+
+| 交付 | 提交 | 专项回归 | 全仓 |
+|---|---|---|---|
+| 通用 Worker、拒绝与超时修复 | `9d65e30`、`75425e9`（PR #5、#6） | `tests/test_worker*.py`、`tests/test_task_lifecycle.py` | 主线 `8a62a7c`：337 通过，2 跳过 |
+| `run_python`、`web_search`、`fetch_url`、`git`（上轮工具交付） | `67f0c71` | 42 项通过 | 381 项：379 通过，2 跳过 |
+| HKGAI 客户端、两轮工具交互、应用接线（本轮） | `88ec982`、`666315e`（PR #7） | 52 项通过 | 386 项：384 通过，2 跳过 |
+
+做了什么验证：HKGAI 客户端用真实的 `openai` SDK 加模拟 HTTP 响应，覆盖请求构造、文本和多工具响应、错误与取消；
+两轮联调用例让真实 Worker 调用 `read_file`，断言匹配的 `tool_call_id` 和实际文件内容被送回模型；
+工具用模拟 DNS、搜索服务、临时 Git 仓库及裸库；示例通过真实 Worker 和 LocalSandbox 运行了一个 Python 单元测试，
+并覆盖人工拒绝 Git 后不启动命令；`fetch_url` 做过一次真实的免费 HTTPS 冒烟（从 Cloudflare 公网端点取得正文），
+对 `example.com` 的解析返回保留地址，工具按地址检查返回失败。
+
+当时没有验证：匿名 `GET /v1/models` 返回 HTTP 401；课程账户的权限、配额和模型的真实工具调用能力没有用密钥验证；
+Brave 的实时搜索没有用凭据验证。
+
+---
+
+## 第三阶段：牵头协作、请求层、场景运行、搜索与 DeepSeek（2026-11-18）
+
+记录人：JIAN Yimin。基线：LI Heyang 的 PR #7 合并后的主线 `295e441`，在此之上的未提交改动。
+
+### 1. 范围
+
+| 内容 | 说明 |
+|---|---|
+| 牵头协作（D18） | 删除 Orchestrator agent 和中心化循环；`LeadSelector` 选牵头者（一次 LLM 调用、按会话缓存、失败退回第一位成员）；牵头者是普通 `WorkerAgent`，多了 `call_<队友>` 和 `ask_human` |
+| 请求层 | `RequestTracker`：总线观察者，处理未指定对象的人类消息、`/status`、`/cancel`，收集交付物，记录 `RootOutcome` |
+| 团队与场景 | `mas/team.py` 读 `01_role_initialization.md` 格式；`mas/scenario.py` 依次发任务；`--team`、`--scenario`、`--auto` |
+| 对话导出、`AutoResponder` | `data/transcripts/` 下完整对话；`AutoResponder` 从空壳实现为可用 |
+| 工具接线 | 八个工具全部接入 `build_tools` |
+| 搜索 | 有 key 用 Brave；没有或 Brave 不可用时用无 key 的多引擎搜索（`ddgs`） |
+| DeepSeek | `DeepSeekClient`，`--llm deepseek` |
+| 跨任务文件 | `Router.locate_file` 能找到同一会话里更早的 root 的产出 |
+| 缺陷修复 | 见 §4 |
+
+### 2. 验证环境与结果
+
+环境：macOS（Darwin 25.4.0），Python 3.14.3；依赖 `openai` 3.55.0、`httpx` 0.28.1、`ddgs` 9.16.1、`prompt_toolkit` 3.0.53、
+`python-dotenv` 1.2.4。测试使用临时目录、脚本化的 `MockLLM` 和模拟 HTTP，不调用真实模型，不需要人工输入。以下均为实际执行记录。
+
+| 验证 | 命令 | 总数 | 通过 | 失败 | 跳过 | 耗时 |
+|---|---|---:|---:|---:|---:|---:|
+| 全仓 | `python -m unittest` | 421 | 419 | 0 | 2 | 22.6 s |
+| 全仓（与第一阶段相同的发现方式） | `python -m unittest discover -s tests -q` | 421 | 419 | 0 | 2 | 22.6 s |
+
+两项跳过都是 Windows 专用的测试（`test_preserves_high_bit_windows_exit_status`、
+`test_root_is_canonical_after_windows_directory_creation`），在 Windows 上由第一、二阶段的环境覆盖。
+
+本阶段新增或重写的测试：
+
+| 模块 | 测试数 | 覆盖 |
+|---|---:|---|
+| `tests/test_lead.py` | 12 | 选牵头者（缓存、失败兜底、无效答案）；真实系统里牵头者委派、以自己的名义提问和汇报、Task 2 读到 Task 1 的文件；牵头失败的汇报 |
+| `tests/test_requests.py` | 22 | 一个请求的完整流程、交付物收集和重名、缺失文件、牵头者崩溃、`/status`、`/cancel`、补充消息、取消后的新请求 |
+| `tests/test_scenario.py` | 9 | 读场景、`AutoResponder`、无人值守地依次发两个任务并写对话记录、命令行选项 |
+| `tests/test_team.py` | 8 | 团队文件解析（顺序、提示词、各种错误） |
+| `tests/test_transcript.py` | 4 | 对话导出的内容与顺序、失败与私聊、自动保存、写不了时不报错 |
+| `tests/test_memory_across_sessions.py` | 3 | 两次完整的程序运行之间记忆保留；失败教训保留；换数据目录就是另一份记忆 |
+| `tests/test_web_tools.py` | 22（其中新增 8） | Brave 失败后的无 key 搜索、各引擎依次尝试、时间范围映射、缺少依赖时的提示 |
+| `tests/test_app.py`、`test_router.py`、`test_human.py`、`test_memory.py` 等 | 改写 | 去掉 Orchestrator 后的接线、八个工具、DeepSeek 选择、牵头者的委派次数上限 |
+
+对 Heyang 在第一阶段留下的**待复核项**的结果：他在 Windows 上因没有符号链接权限而跳过的两项
+（`test_symlink_escape_including_nonexistent_child`、`test_symlink_cannot_redirect_target_outside_inbox`）
+在 macOS 上**实际运行并通过**；POSIX 的进程组清理测试和 `run_python`、`git`、沙箱的 POSIX 命令执行测试也都通过。
+两台机器合起来，所有平台专用测试都至少跑过一次。
+
+### 3. 冒烟与其他检查
+
+| 检查 | 结果 |
+|---|---|
+| `python -m mas --demo`，依次输入一个需要两个角色的请求、`run the tests`、`/status` | 牵头者把部分工作委派给队友并汇总，最终回复署牵头者的名字，交付物收集到 `output/`，对话记录写出；命令行不再显示请求层与牵头者之间的内部消息 |
+| `python -m examples.sandbox_tools`、`python -m examples.execution_tools` | 通过（后者在真实 Worker 和沙箱里运行了一个 Python 单元测试） |
+| 读取课程的三个场景文件夹（软件、新闻、基金） | 每个都读出 4 个成员和 2 个任务 |
+| 真实的无 key 网络搜索，3 个查询（一个带"过去一年"，一个带"过去一个月"） | 每个返回 3 条结果；单个引擎时好时坏，所以做成多个引擎依次尝试 |
+| `python -m compileall -q mas tests examples` | 通过 |
+| `git diff --check` | 发现一个文件末尾多余的空行，已修复，重跑通过 |
+
+### 4. 过程中发现并修复的问题
+
+这些是自查和代码走读发现的，**不是**真实模型运行暴露的。
+
+| 问题 | 后果 | 修复 |
+|---|---|---|
+| 文件交接只在同一个 root 里找 | Task 2 找不到 Task 1 的产出（"在现有系统上加看板"会失败） | `locate_file` 同时查同一会话里更早的 root，更晚的不会反向泄露 |
+| 每个任务最多委派 2 次，牵头者也一样 | 牵头者协调 4 个角色、复核、返工很快就会撞上限 | 牵头者单独的上限 `max_lead_delegations`（16） |
+| 单任务时限默认 180 秒 | 真实模型下一个任务做不完会被误判超时 | 默认改为 600 秒 |
+| HKGAI 参数修复依赖 JSON 错误位置指向括号 | 在 Python 3.14 里该位置指向尾逗号本身（3.13 未测），两个测试失败，运行时带尾逗号的工具参数会被丢成 `{}` | 同时兼容两种行为 |
+| 命令行显示 `[orchestrator] ...` 内部消息 | 对话里出现不属于团队的发言人 | 内部消息不显示，系统消息显示为 `[system]` |
+
+### 5. 没有验证的
+
+- **没有用真实模型运行过任何场景。** 牵头者会不会好好拆任务、该问老师时会不会问、真实的工具调用格式是否稳定，都没有数据。
+  `.env` 里有 DeepSeek 的 key，但没有用它调用过；HKGAI 的 key 也没有验证。
+- Brave 的实时搜索没有用 key 验证；无 key 搜索只测了 3 个查询，没有测在老师的网络下的表现。
+- 新代码没有在 Windows 上重跑；Python 3.10 至 3.13 没有跑过（`requires-python >= 3.10`）。
+- `DockerSandbox` 没有实现；`LocalSandbox` 不是安全边界。
+- 记忆的**效果**（重复运行后是否变好）没有评估，只验证了它被保存和召回。
+- 评测框架 `mas/eval/harness.py` 仍是空的。
+
+---
+
+## 课程评测指标的现状
+
+| 指标 | 状态 |
+|---|---|
+| 任务完成率（Task completion rate） | **未测。** 单元测试通过率不是任务完成率。要用真实模型跑三个场景（各两个任务）及之后发布的测试集 |
+| 端到端执行时间 | **未测。** 上面的秒数是测试套件的耗时。每个请求的耗时已经由 `RootOutcome` 和对话记录里的汇总表记录，等有真实运行即可得到 |
+| 失败模式 | **未测。** 失败模式的分类（`llm_format`、`tool_error`、`timeout`、`max_steps`、`wrong_output`、`crash`）和记录都已实现，但还没有真实的失败样本；上节 §4 是自查发现的问题，不是运行统计 |
+| 记忆进化 | 保存与召回已验证；**效果未评估**。需要对同一批任务在空记忆和有记忆两种情况下各跑一次 |
+| 提交历史截图 | 待整理（课程要求每位成员的持续提交） |
+
+### 下一步怎么测
+
+1. 用真实模型跑三个场景：`python -m mas --scenario "<场景文件夹>" [--llm deepseek] [--auto]`。每次运行产生
+   `data/transcripts/<场景>-<时间>.md`，里面有每个请求的成败、耗时、牵头者、交付物的汇总表。
+2. 把完整对话和交付物交给模型评分（课程的做法），把"是否达成"填回报告。
+3. 对同一场景在清空和保留 `data/memory/` 两种条件下各跑一次，比较完成情况和耗时，作为记忆进化的证据。
+4. 实现 `mas/eval/harness.py`，对测试集自动汇总完成率、耗时的均值/中位数/最大值和失败模式计数。
+5. 在 Windows 上重跑全仓测试，确认新代码在 Heyang 的环境下同样通过。
