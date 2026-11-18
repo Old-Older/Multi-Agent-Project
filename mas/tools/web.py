@@ -1,4 +1,10 @@
-"""Web research tools. Search credentials go only to the fixed Brave API endpoint."""
+"""Web research tools.
+
+web_search uses the Brave Search API when a key is configured (the credential goes only to the
+fixed Brave endpoint) and otherwise, or when Brave cannot be reached or refuses (key rejected, quota
+used up, server error), a keyless search through DuckDuckGo, Bing and other engines (the `ddgs`
+package). The keyless path is what makes the system work on a machine that has no search key.
+"""
 from __future__ import annotations
 
 import asyncio
@@ -6,6 +12,7 @@ import codecs
 import html
 import ipaddress
 import json
+import logging
 import re
 import socket
 import zlib
@@ -18,11 +25,43 @@ from mas.sandbox.base import Sandbox
 from mas.tools.base import Tool, ToolResult
 
 
+log = logging.getLogger(__name__)
+
 _TIMEOUT = 20.0
+_SEARCH_TIMEOUT = 60.0              # the keyless search may try several engines one after another
 _MAX_BYTES = 1_048_576
 _SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 _FRESHNESS = ("pd", "pw", "pm", "py")
 _REDIRECTS = {301, 302, 303, 307, 308}
+# Engines tried in turn by the keyless search: each one fails now and then from some networks,
+# so one engine's failure is not the search's failure.
+_KEYLESS_ENGINES = ("auto", "bing", "duckduckgo", "brave", "yahoo")
+_KEYLESS_TIMELIMIT = {"pd": "d", "pw": "w", "pm": "m", "py": "y"}
+
+
+class _SearchUnavailable(Exception):
+    """Brave could not answer (rejected key, quota, server or network trouble): try another way."""
+
+
+def _keyless_text(query: str, count: int, freshness: str) -> list[dict[str, str]]:
+    """Search without a key. Blocking: run it in a thread. Raises ValueError if no engine answers."""
+    try:
+        from ddgs import DDGS
+    except ImportError:
+        raise ValueError("keyless search needs the 'ddgs' package: python -m pip install ddgs "
+                         "(or set SEARCH_API_KEY to a Brave Search API key)") from None
+    options = {"timelimit": _KEYLESS_TIMELIMIT[freshness]} if freshness else {}
+    for engine in _KEYLESS_ENGINES:
+        try:
+            rows = DDGS(timeout=10).text(query, max_results=count, backend=engine, **options)
+        except Exception as exc:                         # ddgs raises its own types; all mean "try the next"
+            log.debug("keyless search: engine %s failed: %s", engine, type(exc).__name__)
+            continue
+        if rows:
+            return [{"title": str(r.get("title") or ""), "url": str(r.get("href") or ""),
+                     "description": str(r.get("body") or "")} for r in rows if isinstance(r, dict)]
+    raise ValueError("no search engine answered (they may be rate limiting this network); "
+                     "rephrase the query, try again in a moment, or fetch_url a page you already know")
 
 
 def _integer(value: int, name: str, maximum: int) -> None:
@@ -75,9 +114,11 @@ async def _bounded_body(response: httpx.Response) -> tuple[bytes, bool]:
 
 
 class _WebTool(Tool):
+    timeout = _TIMEOUT
+
     async def run(self, sandbox: Sandbox, **kwargs: Any) -> ToolResult:
         try:
-            result = await asyncio.wait_for(self._request(**kwargs), timeout=_TIMEOUT)
+            result = await asyncio.wait_for(self._request(**kwargs), timeout=self.timeout)
             return ToolResult(True, json.dumps(result, ensure_ascii=False))
         except (asyncio.TimeoutError, httpx.TimeoutException):
             return ToolResult(False, f"{self.name}: request timed out")
@@ -91,6 +132,7 @@ class _WebTool(Tool):
 class WebSearch(_WebTool):
     name = "web_search"
     description = "Search the web for titles, source URLs and snippets. Filter recent coverage with freshness."
+    timeout = _SEARCH_TIMEOUT
     parameters = {
         "type": "object",
         "properties": {
@@ -114,19 +156,29 @@ class WebSearch(_WebTool):
             if freshness not in _FRESHNESS:
                 raise ValueError("freshness must be pd, pw, pm or py")
             params["freshness"] = freshness
-        if not isinstance(self._api_key, str) or not self._api_key:
-            raise ValueError("set SEARCH_API_KEY to a Brave Search API key")
-        if not self._api_key.isascii() or not self._api_key.isprintable() or " " in self._api_key:
-            raise ValueError("invalid SEARCH_API_KEY")
+        if self._api_key:
+            if not isinstance(self._api_key, str) or not self._api_key.isascii() \
+                    or not self._api_key.isprintable() or " " in self._api_key:
+                raise ValueError("invalid SEARCH_API_KEY")
+            try:
+                return await self._brave(params, count)
+            except _SearchUnavailable as exc:
+                log.warning("Brave Search unavailable (%s); using the keyless search instead", exc)
+        rows = await asyncio.to_thread(_keyless_text, query.strip(), count, freshness)
+        return self._clean(rows, count)
 
+    async def _brave(self, params: dict[str, str], count: int) -> list[dict[str, str]]:
         headers = {"X-Subscription-Token": self._api_key, "Accept": "application/json",
                    "Accept-Encoding": "gzip, identity"}
-        async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-            async with client.stream("GET", _SEARCH_URL, params=params, headers=headers,
-                                     follow_redirects=False) as response:
-                if not response.is_success:
-                    raise ValueError(f"Brave Search returned HTTP {response.status_code}")
-                body, truncated = await _bounded_body(response)
+        try:
+            async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
+                async with client.stream("GET", _SEARCH_URL, params=params, headers=headers,
+                                         follow_redirects=False) as response:
+                    if not response.is_success:
+                        raise _SearchUnavailable(f"HTTP {response.status_code}")
+                    body, truncated = await _bounded_body(response)
+        except (httpx.TimeoutException, httpx.RequestError) as exc:
+            raise _SearchUnavailable(type(exc).__name__) from None
         if truncated:
             raise ValueError("Brave Search response exceeded the byte limit")
         try:
@@ -139,7 +191,11 @@ class WebSearch(_WebTool):
         rows = web.get("results", []) if isinstance(web, dict) else None
         if not isinstance(rows, list):
             raise ValueError("invalid Brave Search results")
+        return self._clean(rows, count)
 
+    @staticmethod
+    def _clean(rows: list, count: int) -> list[dict[str, str]]:
+        """Keep rows with a title and an http(s) URL, unescape the text, return at most `count`."""
         results = []
         for row in rows:
             if not isinstance(row, dict) or not isinstance(row.get("title"), str):

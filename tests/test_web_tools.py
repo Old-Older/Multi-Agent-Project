@@ -44,6 +44,9 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
             return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port))
                     for ip in self.records[host]]
 
+        # No test may reach a real search engine: the keyless search is replaced, and fails unless a test says otherwise.
+        self.keyless = Mock(side_effect=ValueError("no search engine answered"))
+        self.enter_patch(patch("mas.tools.web._keyless_text", self.keyless))
         self.enter_patch(patch("mas.tools.web.httpx.AsyncClient", side_effect=make_client))
         self.enter_patch(patch.object(asyncio.get_running_loop(), "getaddrinfo", side_effect=resolve))
 
@@ -90,14 +93,13 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await self.search(query="topic")).ok)
 
     async def test_search_configuration_and_model_arguments(self):
-        result = await WebSearch("").run(self.sandbox, query="Public records")
-        self.assertFalse(result.ok)
-        self.assertIn("SEARCH_API_KEY", result.output)
         for kwargs in ({}, {"query": " "}, {"query": 22}, {"query": "q", "count": True},
                        {"query": "q", "count": 11}, {"query": "q", "freshness": "soon"},
                        {"query": "q", "unexpected": True}):
             self.assertFalse((await self.search(**kwargs)).ok)
         self.assertEqual(self.requests, [])
+        self.assertFalse((await WebSearch("bad key").run(self.sandbox, query="q")).ok)    # a key with a space
+        self.keyless.assert_not_called()
 
     async def test_gzip_search_and_html_page(self):
         payload = {"web": {"results": [{"title": "News", "url": "https://one.example/story"}]}}
@@ -152,12 +154,46 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
         self.responses.extend([response(status=302, Location="https://two.example"),
                                response(b"test-token", status=429),
                                httpx.RemoteProtocolError("test-token")])
-        for expected in ("302", "429", "RemoteProtocolError"):
-            result = await self.search(query="q")
+        for expected in ("HTTP 302", "HTTP 429", "RemoteProtocolError"):
+            with self.assertLogs("mas.tools.web", level="WARNING") as logs:
+                result = await self.search(query="q")              # the keyless search is down too in this test
             self.assertFalse(result.ok)
-            self.assertIn(expected, result.output)
-            self.assertNotIn("test-token", result.output)
+            self.assertIn(expected, logs.output[0])
+            self.assertNotIn("test-token", result.output + "".join(logs.output))
         self.assertEqual([r.url.host for r in self.requests], ["api.search.brave.com"] * 3)
+
+    async def test_when_brave_cannot_answer_the_keyless_search_does(self):
+        self.keyless.side_effect = None
+        self.keyless.return_value = [{"title": "Found &amp; kept", "url": "https://one.example/a", "description": "d"},
+                                     {"title": "Unsafe", "url": "file:///etc/passwd", "description": ""}]
+        for failure in (response(status=429), response(status=402), httpx.ConnectError("down")):
+            self.responses.append(failure)
+            with self.assertLogs("mas.tools.web", level="WARNING"):
+                result = await self.search(query="q", count=3, freshness="pw")
+            self.assertTrue(result.ok, result.output)
+            self.assertEqual(json.loads(result.output),
+                             [{"title": "Found & kept", "url": "https://one.example/a", "description": "d"}])
+        self.keyless.assert_called_with("q", 3, "pw")
+
+    async def test_a_bad_brave_answer_is_an_error_not_a_reason_to_search_elsewhere(self):
+        self.responses.append(response(b"{not json"))
+        result = await self.search(query="q")
+        self.assertFalse(result.ok)
+        self.keyless.assert_not_called()
+
+    async def test_without_a_key_only_the_keyless_search_is_used(self):
+        self.keyless.side_effect = None
+        self.keyless.return_value = [{"title": "T", "url": "https://two.example", "description": "x"}]
+        result = await WebSearch("").run(self.sandbox, query=" Public records ", count=2)
+        self.assertTrue(result.ok, result.output)
+        self.assertEqual(json.loads(result.output)[0]["url"], "https://two.example")
+        self.keyless.assert_called_once_with("Public records", 2, "")
+        self.assertEqual(self.requests, [])                           # nothing went to Brave
+
+    async def test_when_no_engine_answers_the_error_says_what_to_do(self):
+        result = await WebSearch("").run(self.sandbox, query="q")
+        self.assertFalse(result.ok)
+        self.assertIn("no search engine answered", result.output)
 
     async def test_fetch_redirects_to_the_final_source_and_pins_its_tls_hostname(self):
         page = ('<head><title>新闻 &amp; 研究</title><style>hidden</style></head>'
@@ -244,3 +280,56 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
         result = await self.fetch(url="https://two.example")
         self.assertTrue(result.ok, result.output)
         self.assertEqual(self.requests[-1].url.host, "8.8.8.8")
+
+
+class KeylessEnginesTest(unittest.TestCase):
+    """The blocking helper that talks to ddgs, with ddgs replaced."""
+
+    def run_with(self, behaviour, **kwargs):
+        import sys
+        import types
+
+        calls = []
+
+        class FakeDDGS:
+            def __init__(self, **options):
+                self.options = options
+
+            def text(self, query, **options):
+                calls.append((query, options))
+                result = behaviour[options["backend"]]
+                if isinstance(result, Exception):
+                    raise result
+                return result
+
+        fake = types.ModuleType("ddgs")
+        fake.DDGS = FakeDDGS
+        with patch.dict(sys.modules, {"ddgs": fake}):
+            from mas.tools.web import _keyless_text
+            return _keyless_text("q", kwargs.get("count", 3), kwargs.get("freshness", "")), calls
+
+    def test_the_next_engine_is_tried_when_one_fails_or_finds_nothing(self):
+        row = {"title": "T", "href": "https://a.example", "body": "B"}
+        rows, calls = self.run_with({"auto": RuntimeError("blocked"), "bing": [], "duckduckgo": [row]})
+        self.assertEqual(rows, [{"title": "T", "url": "https://a.example", "description": "B"}])
+        self.assertEqual([c[1]["backend"] for c in calls], ["auto", "bing", "duckduckgo"])
+        self.assertTrue(all(c[1]["max_results"] == 3 for c in calls))
+
+    def test_freshness_becomes_the_engines_time_limit(self):
+        row = {"title": "T", "href": "https://a.example", "body": "B"}
+        _, calls = self.run_with({"auto": [row]}, freshness="pm")
+        self.assertEqual(calls[0][1]["timelimit"], "m")
+        _, calls = self.run_with({"auto": [row]})
+        self.assertNotIn("timelimit", calls[0][1])
+
+    def test_every_engine_failing_is_one_clear_error(self):
+        down = RuntimeError("down")
+        with self.assertRaisesRegex(ValueError, "no search engine answered"):
+            self.run_with({"auto": down, "bing": down, "duckduckgo": down, "brave": down, "yahoo": []})
+
+    def test_a_missing_package_says_how_to_install_it(self):
+        import sys
+        with patch.dict(sys.modules, {"ddgs": None}):
+            from mas.tools.web import _keyless_text
+            with self.assertRaisesRegex(ValueError, "pip install ddgs"):
+                _keyless_text("q", 3, "")
