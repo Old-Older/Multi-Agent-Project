@@ -125,6 +125,7 @@ cp .env.example .env                # 然后编辑 .env
 | `HKGAI_BASE_URL`、`HKGAI_MODEL` | 可选 | 默认 `https://api1.hkgai.net/v1` 和 `t2_hkgai-v3_fp8_1m_e7` |
 | `DEEPSEEK_API_KEY` | 使用 `deepseek` 的真实运行 | 你的 DeepSeek key |
 | `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` | 可选 | 默认 `https://api.deepseek.com` 和 `deepseek-chat` |
+| `DEEPSEEK_THINKING` | 可选 | `off`（默认）要求 DeepSeek 不先思考再回答：更快，而且 agent 每一步都在调用工具；`default` 交给服务自己决定 |
 | `SEARCH_API_KEY` | 可选 | Brave Search 令牌。没有它 `web_search` 仍可用，走 DuckDuckGo、Bing 等引擎（不需要 key 和账号，但稳定性稍差）；有它就优先用 Brave，Brave 拒绝或不可用时自动改用无 key 搜索 |
 | `GITHUB_TOKEN` | `git push` 到 GitHub | 只会通过 HTTPS 发给 github.com |
 

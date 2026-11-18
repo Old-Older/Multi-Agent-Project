@@ -133,6 +133,7 @@ cp .env.example .env                # then edit .env
 | `HKGAI_BASE_URL`, `HKGAI_MODEL` | optional | default `https://api1.hkgai.net/v1` and `t2_hkgai-v3_fp8_1m_e7` |
 | `DEEPSEEK_API_KEY` | real runs with `deepseek` | your DeepSeek key |
 | `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL` | optional | default `https://api.deepseek.com` and `deepseek-chat` |
+| `DEEPSEEK_THINKING` | optional | `off` (default) asks DeepSeek not to think before answering: faster, and the agents call tools at every step; `default` leaves it to the service |
 | `SEARCH_API_KEY` | optional | Brave Search token. Without it `web_search` still works through DuckDuckGo, Bing and other engines (no key, no account, but less reliable); with it Brave is used first, and the keyless search takes over if Brave refuses or is down |
 | `GITHUB_TOKEN` | `git push` to GitHub | sent only to github.com over HTTPS |
 

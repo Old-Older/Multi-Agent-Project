@@ -113,7 +113,8 @@ def make_llm(settings: Settings) -> LLMClient:
     if not model.strip():
         raise SystemExit(f"{var}_MODEL is not set. Set it to a model ID available to your {name} account.")
     if provider == "deepseek":
-        return DeepSeekClient(api_key=key, base_url=settings.deepseek_base_url, model=model)
+        return DeepSeekClient(api_key=key, base_url=settings.deepseek_base_url, model=model,
+                              thinking=settings.deepseek_thinking)
     return HKGAIClient(api_key=key, base_url=settings.hkgai_base_url, model=model)
 
 

@@ -247,3 +247,36 @@ class DeepSeekClientTests(unittest.IsolatedAsyncioTestCase):
                 else:
                     with self.assertRaisesRegex(LLMError, expect):
                         await client.chat([{"role": "user", "content": "hi"}])
+
+
+class ThinkingSwitchTests(unittest.IsolatedAsyncioTestCase):
+    """DeepSeek is asked not to think (the agents call tools at every step); other providers get nothing extra."""
+
+    async def body_sent_by(self, make_client) -> dict:
+        sent = []
+
+        def handler(request):
+            sent.append(json.loads(request.content))
+            return httpx.Response(200, json=completion("ok", None, {"prompt_tokens": 1}))
+        http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        self.addAsyncCleanup(http.aclose)
+        with patch("mas.llm.hkgai.AsyncOpenAI", side_effect=partial(AsyncOpenAI, http_client=http)):
+            await make_client().chat([{"role": "user", "content": "hi"}])
+        return sent[0]
+
+    async def test_deepseek_is_told_not_to_think_by_default(self):
+        from mas.llm.deepseek import DeepSeekClient
+        body = await self.body_sent_by(lambda: DeepSeekClient("k", "https://provider.invalid/v1", "m"))
+        self.assertEqual(body["thinking"], {"type": "disabled"})
+
+    async def test_default_leaves_the_choice_to_the_service_and_other_providers_get_nothing(self):
+        from mas.llm.deepseek import DeepSeekClient
+        body = await self.body_sent_by(lambda: DeepSeekClient("k", "https://provider.invalid/v1", "m", thinking="default"))
+        self.assertNotIn("thinking", body)
+        body = await self.body_sent_by(lambda: HKGAIClient("k", "https://provider.invalid/v1", "m"))
+        self.assertNotIn("thinking", body)
+
+    def test_only_known_values_are_accepted(self):
+        from mas.llm.deepseek import DeepSeekClient
+        with self.assertRaisesRegex(ValueError, "thinking must be"):
+            DeepSeekClient("k", thinking="on")

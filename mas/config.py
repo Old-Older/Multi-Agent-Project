@@ -26,6 +26,7 @@ class Settings:
     deepseek_api_key: str = ""
     deepseek_base_url: str = DEFAULT_DEEPSEEK_BASE_URL
     deepseek_model: str = DEFAULT_DEEPSEEK_MODEL
+    deepseek_thinking: str = "off"            # "off": ask DeepSeek not to think; "default": leave it to the service
     temperature: float = 0.1
 
     # loop limits (D10, D11, §5)
@@ -83,6 +84,7 @@ class Settings:
             "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY"),
             "deepseek_base_url": os.getenv("DEEPSEEK_BASE_URL"),
             "deepseek_model": os.getenv("DEEPSEEK_MODEL"),
+            "deepseek_thinking": os.getenv("DEEPSEEK_THINKING"),
             "github_token": os.getenv("GITHUB_TOKEN"),
             "search_api_key": os.getenv("SEARCH_API_KEY"),
         }

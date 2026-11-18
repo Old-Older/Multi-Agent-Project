@@ -203,6 +203,9 @@ class WiringTest(TmpDirTest):
         self.assertIsInstance(chosen, DeepSeekClient)
         self.assertEqual((chosen.api_key, chosen.model, chosen.base_url),
                          ("ds-fixture", "deepseek-chat", "https://api.deepseek.com/v1"))
+        self.assertEqual(chosen.thinking, "off")
+        with patch.dict(os.environ, {"DEEPSEEK_API_KEY": "k", "DEEPSEEK_THINKING": "default"}, clear=True):
+            self.assertEqual(make_llm(Settings.from_env(llm_provider="deepseek")).thinking, "default")
 
     def test_deepseek_settings_come_from_the_environment_and_errors_name_deepseek(self):
         env = {"LLM_PROVIDER": "deepseek", "DEEPSEEK_API_KEY": "ds-fixture", "DEEPSEEK_MODEL": "deepseek-reasoner",

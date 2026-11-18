@@ -133,6 +133,10 @@ class HKGAIClient(LLMClient):
         self.timeout = timeout
         self.max_retries = max_retries
 
+    def _extra_request(self) -> dict[str, Any]:
+        """Provider-specific fields added to every request (none for the base client)."""
+        return {}
+
     async def chat(self, messages: list[ChatMessage],
                    tools: list[FunctionSpec] | None = None,
                    temperature: float = 0.2) -> LLMResponse:
@@ -141,6 +145,7 @@ class HKGAIClient(LLMClient):
         }
         if tools:
             request["tools"] = [tool.to_openai() for tool in tools]
+        request.update(self._extra_request())
 
         # A chat owns its transport, including on cancellation. There is no
         # process-wide client or second layer of SDK retries to keep track of.

@@ -278,7 +278,9 @@ transcript. `docs/report.md` states what has been measured so far.
 
 Both course-approved backends speak the OpenAI chat-completions protocol with function calling:
 HKGAI (default, `HKGAIClient`) and DeepSeek (`DeepSeekClient`, the same client with DeepSeek's defaults),
-chosen with `LLM_PROVIDER` or `--llm`. The client retries timeouts, rate limits and server errors with
+chosen with `LLM_PROVIDER` or `--llm`. DeepSeek is asked not to think (`DEEPSEEK_THINKING=off`): every step of an agent
+is a tool call, thinking makes each call slower, and a thinking model's reasoning text must be sent back with every later request or the API
+refuses it. The client retries timeouts, rate limits and server errors with
 exponential backoff and `Retry-After`, repairs tool-call arguments that are fenced or have trailing commas,
 validates every response, and returns an `LLMError` only after the retries are exhausted. OpenAI and
 Anthropic APIs are not used. Tests use `MockLLM`, a scripted stand-in.

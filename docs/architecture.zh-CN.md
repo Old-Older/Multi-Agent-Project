@@ -234,7 +234,8 @@ worker 在下一步读到。
 ## 11. LLM 后端
 
 课程允许的两个后端都使用 OpenAI 的 chat-completions 协议和 function calling：HKGAI（默认，`HKGAIClient`）和
-DeepSeek（`DeepSeekClient`，即用 DeepSeek 默认值的同一个客户端），用 `LLM_PROVIDER` 或 `--llm` 选择。客户端对超时、限流和服务端错误做指数退避重试并遵守
+DeepSeek（`DeepSeekClient`，即用 DeepSeek 默认值的同一个客户端），用 `LLM_PROVIDER` 或 `--llm` 选择。DeepSeek 默认被要求不思考（`DEEPSEEK_THINKING=off`）：agent 的每一步都是工具调用，思考会让每次调用更慢，
+而且思考模型的推理文本必须随之后的每个请求一起发回去，否则接口会拒绝。客户端对超时、限流和服务端错误做指数退避重试并遵守
 `Retry-After`，修复带围栏或带尾逗号的工具调用参数，校验每个响应，重试用尽后才返回 `LLMError`。不使用 OpenAI 和 Anthropic 的 API。
 测试使用 `MockLLM`，一个脚本化的替身。
 
