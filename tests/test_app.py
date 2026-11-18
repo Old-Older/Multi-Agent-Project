@@ -142,6 +142,17 @@ class WiringTest(TmpDirTest):
         self.assertTrue(git.requires_approval)                      # a push waits for the human
         self.assertFalse(python.requires_approval)
 
+    def test_fetch_url_allows_the_fake_ip_range_only_when_the_settings_say_so(self):
+        role = replace(ROLES["researcher"], tool_names=["fetch_url"])
+        [off] = build_tools(role, self.settings)
+        [on] = build_tools(role, replace(self.settings, fetch_allow_fake_ip=True))
+        self.assertEqual((off._allow_fake_ip, on._allow_fake_ip), (False, True))
+        with patch.dict(os.environ, {"FETCH_ALLOW_FAKE_IP": "1"}, clear=True):
+            self.assertTrue(Settings.from_env().fetch_allow_fake_ip)
+        for value in ("", "0", "no"):
+            with patch.dict(os.environ, {"FETCH_ALLOW_FAKE_IP": value}, clear=True):
+                self.assertFalse(Settings.from_env().fetch_allow_fake_ip)
+
     def test_web_search_without_a_key_still_works_through_the_keyless_search(self):
         role = replace(ROLES["researcher"], tool_names=["fetch_url", "web_search"])
         with self.assertNoLogs("mas.app", level="WARNING"):

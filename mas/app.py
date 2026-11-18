@@ -69,7 +69,8 @@ def build_tools(role: RoleConfig, settings: Settings) -> list[Tool]:
     constructors: dict[str, Callable[[], Tool]] = {
         ReadFile.name: ReadFile, WriteFile.name: WriteFile,
         DeleteFile.name: DeleteFile, ListFiles.name: ListFiles,
-        RunPython.name: RunPython, FetchURL.name: FetchURL,
+        RunPython.name: RunPython,
+        FetchURL.name: lambda: FetchURL(allow_fake_ip=settings.fetch_allow_fake_ip),
         WebSearch.name: lambda: WebSearch(api_key=settings.search_api_key),
         Git.name: lambda: Git(github_token=settings.github_token),
     }

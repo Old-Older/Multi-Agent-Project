@@ -59,6 +59,9 @@ class Settings:
     # tools
     github_token: str = ""
     search_api_key: str = ""
+    # fetch_url refuses hosts that resolve to non-public addresses. A machine behind a proxy that
+    # answers DNS itself (Clash "fake-IP" mode) gets 198.18.x.x for every site; set this to allow that range.
+    fetch_allow_fake_ip: bool = False
 
     @property
     def memory_dir(self) -> Path:
@@ -85,6 +88,7 @@ class Settings:
             "deepseek_model": os.getenv("DEEPSEEK_MODEL"),
             "github_token": os.getenv("GITHUB_TOKEN"),
             "search_api_key": os.getenv("SEARCH_API_KEY"),
+            "fetch_allow_fake_ip": os.getenv("FETCH_ALLOW_FAKE_IP", "").strip().lower() in ("1", "true", "yes", "on"),
         }
         values = {k: v for k, v in env.items() if v}
         values.update(overrides)
