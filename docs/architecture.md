@@ -140,8 +140,9 @@ Every `call_<teammate>` becomes `Router.dispatch(requester, target, goal, contex
 The target runs the task in its own ReAct loop. At its first step it may **decline** a task outside its
 abilities and suggest a better member; a decline is returned to the caller (with the suggestion) and is
 not a failure, so the caller can reassign. Teammates can delegate in turn, within the limits above.
-Calls to different agents made by the same caller are independent tasks; calls to one agent share that
-agent's workspace.
+Delegations a member sends together in one reply run **at the same time** (to different teammates in parallel; to one
+teammate one after the other, because they share its workspace); any other tool call in the reply keeps its order. A job
+that needs another's result is sent in a later reply.
 
 ### 4.5 Finishing a request
 
@@ -303,8 +304,6 @@ data/mas.log               the log (stack traces of internal errors)
   but not the earlier requests of the conversation.
 - The unattended `AutoResponder` answers every question with a fixed default, so it cannot stand in for a
   human who has real preferences (for example an investor's risk tolerance).
-- A lead's delegations run one after another within a single step; independent delegations could run in
-  parallel to save time.
 - Keyless web search depends on third-party engines that sometimes rate-limit or change.
 - Recall is keyword-based, and lessons are only learned from failures.
 - No end-to-end evaluation on a test set has been run with a real model yet (see the report).

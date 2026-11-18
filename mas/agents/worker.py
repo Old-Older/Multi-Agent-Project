@@ -53,7 +53,9 @@ automatically. Do not call finish; return the JSON object directly."""
 
 _TEAM = """You work in a team. The other members are available as call_<agent> tools: one call
 hands one goal to one teammate, who works in their own workspace and answers with a summary and
-file names (pass files you want them to use in `files`). Delegate what a teammate is better
+file names (pass files you want them to use in `files`). Calls you make in the same reply run at the same
+time (different teammates in parallel, one teammate's calls one after the other), so send independent jobs
+together in one reply, and make a call that needs another's result in a later reply. Delegate what a teammate is better
 placed to do, ask for a review when quality matters, and do not call a teammate for something
 you can do yourself. Use ask_human when you need the human's requirements, preferences or
 permission and cannot reasonably infer them; do not guess and do not ask twice for the same thing."""
@@ -264,17 +266,28 @@ class WorkerAgent(Agent):
                         "ok": False, "output": "No tools ran: decline must be called alone on step 1.",
                     })})
                 continue
-            # One workspace: preserve the model's order for dependent file operations.
+            # One workspace: preserve the model's order for dependent file operations. Delegations to
+            # teammates that follow each other are independent jobs the model sent together: they run together.
             replan_reason = ""
-            for call in response.tool_calls:
+            for segment in self._segments(response.tool_calls):
                 self._ensure_running(task)
                 if replan_reason:
-                    messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps({
-                        "ok": False, "skipped": True,
-                        "output": f"Not executed: {replan_reason} "
-                                  "Replan using that response before calling more tools.",
-                    })})
+                    for call in segment:
+                        messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps({
+                            "ok": False, "skipped": True,
+                            "output": f"Not executed: {replan_reason} "
+                                      "Replan using that response before calling more tools.",
+                        })})
                     continue
+                if self._is_delegation(segment[0]):
+                    for call, observation in zip(segment, await self._delegate_together(task, segment, run)):
+                        if observation.get("cancelled"):
+                            return self._cancelled(task)
+                        messages.append({"role": "tool", "tool_call_id": call.id,
+                                         "content": json.dumps(observation, ensure_ascii=False)})
+                    self._ensure_running(task)
+                    continue
+                call = segment[0]
                 if call.name == DECLINE and step == 1 and len(response.tool_calls) == 1:
                     args = call.arguments
                     if (isinstance(args, dict) and isinstance(args.get("reason"), str)
@@ -423,6 +436,45 @@ class WorkerAgent(Agent):
             return {"cancelled": True}
         return {"ok": True, "output": answer}
 
+    def _is_delegation(self, call: ToolCall) -> bool:
+        return self.peers is not None and target_of(call.name) is not None and call.name not in self.tools
+
+    def _segments(self, calls: list[ToolCall]) -> list[list[ToolCall]]:
+        """The calls of one reply as runs: consecutive delegations are one run, any other call is a run alone."""
+        runs: list[list[ToolCall]] = []
+        for call in calls:
+            if runs and self._is_delegation(call) and self._is_delegation(runs[-1][0]):
+                runs[-1].append(call)
+            else:
+                runs.append([call])
+        return runs
+
+    async def _delegate_together(self, task: Task, calls: list[ToolCall], run: _Run) -> list[dict]:
+        """Run delegations at the same time and return their observations in the order of `calls`. Jobs for
+        different teammates run in parallel; jobs for one teammate run one after the other, because they
+        share that teammate's workspace. If one of them ends the task (cancelled, timed out), the rest are stopped."""
+        by_target: dict[str, list[int]] = {}
+        for index, call in enumerate(calls):
+            by_target.setdefault(target_of(call.name) or "", []).append(index)
+        observations: list[dict] = [{} for _ in calls]
+
+        async def one_teammate(indices: list[int]) -> None:
+            for index in indices:
+                observations[index] = await self._tool(task, calls[index], run)
+
+        started = time.perf_counter()
+        jobs = [asyncio.create_task(one_teammate(indices)) for indices in by_target.values()]
+        try:
+            await asyncio.gather(*jobs)
+        except BaseException:
+            for job in jobs:
+                job.cancel()
+            await asyncio.gather(*jobs, return_exceptions=True)
+            raise
+        finally:
+            run.delegation_s += time.perf_counter() - started      # the time the worker waited, not the sum of the jobs
+        return observations
+
     async def _tool_call_peer(self, task: Task, run: _Run, target: str, args: dict) -> dict:
         """call_<teammate>: delegate one goal through the Router and report what came back."""
         if not self.peers or target not in self.peers:
@@ -434,12 +486,8 @@ class WorkerAgent(Agent):
             return {"ok": False, "output": "missing argument goal"}
         if not isinstance(files, list) or not isinstance(context, str):
             return {"ok": False, "output": "files must be an array and context a string"}
-        started = time.perf_counter()
-        try:
-            result = await self._active(
-                lambda: self.call_agent(task, target, goal.strip(), context, [str(f) for f in files]), task, run)
-        finally:
-            run.delegation_s += time.perf_counter() - started
+        result = await self._active(
+            lambda: self.call_agent(task, target, goal.strip(), context, [str(f) for f in files]), task, run)
         if result.error == CANCELLED_ANSWER:
             return {"cancelled": True}
         out: dict[str, object] = {"ok": result.success}
