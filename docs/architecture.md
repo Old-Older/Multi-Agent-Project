@@ -114,16 +114,7 @@ result is good, and write a final answer the human can read. Its tools are the t
 tools, `ask_human`, and its own tools. What it replies at the end is the message the human reads, and the
 files it lists are the deliverables.
 
-**When a member stops.** A task ends when the member answers without calling a tool; the step limit (`max_worker_steps`
-30, `max_lead_steps` 40) is only a cap, and a member that finds what it needs is told to write the result and finish.
-Several things push it to stop early instead of researching until the cap. They are nudges, not rules, and can be switched
-off together (`EARLY_STOP_NUDGES=0`, or `python -m mas.eval --early-stop off`) to measure what they change: a repeated
-successful search or fetch is noted as a repeat (identical searches and page fetches are cached, so they cost nothing);
-after 12 searches or fetches, and every 6 after that (`research_note_after`, `research_note_every`), the observation says to stop
-researching unless one specific fact is missing; at half the steps, a worker that has written no file is asked to write what it
-has, and a lead is told when no file exists yet anywhere in the request, so someone must be assigned to write the deliverable.
-The safety net is always on: with 3 steps left the member is told so, and its last step has no tools, so it has to answer with what
-it has and say what is missing.
+Its budget and when it stops are in [4.5](#45-budgets-parallelism-and-stopping).
 
 ### 4.4 Delegation (`Router.dispatch`)
 
@@ -151,11 +142,47 @@ Every `call_<teammate>` becomes `Router.dispatch(requester, target, goal, contex
 The target runs the task in its own ReAct loop. At its first step it may **decline** a task outside its
 abilities and suggest a better member; a decline is returned to the caller (with the suggestion) and is
 not a failure, so the caller can reassign. Teammates can delegate in turn, within the limits above.
-Delegations a member sends together in one reply run **at the same time** (to different teammates in parallel; to one
-teammate one after the other, because they share its workspace); any other tool call in the reply keeps its order. A job
-that needs another's result is sent in a later reply.
+Delegations a member sends together in one reply run in parallel; see [4.5](#45-budgets-parallelism-and-stopping).
 
-### 4.5 Finishing a request
+### 4.5 Budgets, parallelism and stopping
+
+**Limits.** All are fields of `Settings` (`mas/config.py`).
+
+| Limit | Default | What it bounds |
+|---|---:|---|
+| `max_worker_steps` | 30 | ReAct steps (model calls) of a member for one task |
+| `max_lead_steps` | 40 | the same, for the lead of a request |
+| `subtask_timeout_s` | 900 s | one delegated task; time spent waiting for a human does not count |
+| `lead_timeout_s` | 2400 s | a whole request |
+| `max_lead_delegations` | 16 | delegations made by the lead of a request |
+| `max_delegations_per_task` | 2 | delegations made by any other member for one task |
+| `max_delegation_depth` | 2 | how deep delegations can nest below the lead |
+| `max_retries_same_goal` | 2 | retries of the same goal on the same agent in one request |
+
+**Parallel delegation.** Delegations a member sends together in one reply run **at the same time**: jobs for
+different teammates in parallel, jobs for one teammate one after the other (they share its workspace). The answers
+come back in the order asked; if one of the jobs ends the task (cancelled, timed out), the others are stopped. Any other tool
+call in the reply keeps its order, because a later delegation may depend on a file an earlier call wrote. A job that needs
+another's result goes in a later reply; the instructions say so. The time a member waits for teammates is recorded as the wall clock of
+the wait, not the sum of the jobs.
+
+**When a member stops.** A task ends when the member answers without calling a tool. The step limit is only a cap, and
+a member that has what it needs is told to write the result and finish. Several nudges push it to stop early instead of
+researching until the cap. They are suggestions in the conversation, not rules, and can be switched off together
+(`early_stop_nudges`: `EARLY_STOP_NUDGES=0`, or `python -m mas.eval --early-stop off`) to measure what they change.
+
+| Nudge | When | What the member sees |
+|---|---|---|
+| repeat note | a successful search or page fetch is repeated | "same call as step N, same result: use what you have" (the call still runs; searches and fetches are cached, so it costs nothing) |
+| research note | after `research_note_after` (12) searches or fetches, then every `research_note_every` (6) | "stop researching unless one specific fact is missing; write up what you have" |
+| progress check, worker | half the steps used and no file written | "write what you have and finish, or say what is missing" |
+| progress check, lead | half the steps used and no file exists anywhere in the request | "make sure the deliverable is being written: assign it now before more research or review" |
+
+A failed call never counts as done, so it can always be retried. The safety net is not switchable: with 3 steps left the
+member is told so, and its last step has no tools, so it must answer with what it has and say what is missing, instead of
+ending with "step limit reached".
+
+### 4.6 Finishing a request
 
 When the lead's task returns, the `RequestTracker`:
 
@@ -170,7 +197,7 @@ A lead that fails, times out or crashes still produces a reply, with the failure
 `tool_error`, `timeout`, `max_steps`, `wrong_output`, `crash`). A cancelled request produces no reply
 (`/cancel` has already said what was cancelled).
 
-### 4.6 Cancellation
+### 4.7 Cancellation
 
 `/cancel` marks every unfinished task of the root as cancelled, wakes everything that waits for it
 (delegations, human questions) and refuses further calls. The router cannot stop a running agent, so
