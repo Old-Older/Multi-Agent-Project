@@ -45,6 +45,9 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
                     for ip in self.records[host]]
 
         # No test may reach a real search engine: the keyless search is replaced, and fails unless a test says otherwise.
+        from mas.tools import web
+        web._SEARCH_CACHE.clear()
+        self.addCleanup(web._SEARCH_CACHE.clear)
         self.keyless = Mock(side_effect=ValueError("no search engine answered"))
         self.enter_patch(patch("mas.tools.web._keyless_text", self.keyless))
         self.enter_patch(patch("mas.tools.web.httpx.AsyncClient", side_effect=make_client))
@@ -166,14 +169,51 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
         self.keyless.side_effect = None
         self.keyless.return_value = [{"title": "Found &amp; kept", "url": "https://one.example/a", "description": "d"},
                                      {"title": "Unsafe", "url": "file:///etc/passwd", "description": ""}]
-        for failure in (response(status=429), response(status=402), httpx.ConnectError("down")):
+        for n, failure in enumerate((response(status=429), response(status=402), httpx.ConnectError("down"))):
             self.responses.append(failure)
             with self.assertLogs("mas.tools.web", level="WARNING"):
-                result = await self.search(query="q", count=3, freshness="pw")
+                result = await self.search(query=f"q{n}", count=3, freshness="pw")
             self.assertTrue(result.ok, result.output)
             self.assertEqual(json.loads(result.output),
                              [{"title": "Found & kept", "url": "https://one.example/a", "description": "d"}])
-        self.keyless.assert_called_with("q", 3, "pw")
+        self.keyless.assert_called_with("q2", 3, "pw")
+
+    async def test_a_repeated_search_is_answered_from_the_cache(self):
+        payload = {"web": {"results": [{"title": "A", "url": "https://one.example/a", "description": "d"}]}}
+        self.responses.append(response(json.dumps(payload).encode(), content_type="application/json"))
+        first = await self.search(query="  Chip  Outlook ", count=2)
+        again = await self.search(query="chip outlook", count=2)               # same words, other spacing and case
+        self.assertEqual((first.ok, again.ok, again.output), (True, True, first.output))
+        self.assertEqual(len(self.requests), 1)                                  # only the first one went out
+        self.responses.append(response(json.dumps(payload).encode(), content_type="application/json"))
+        await self.search(query="chip outlook", count=3)                         # another count: another search
+        self.assertEqual(len(self.requests), 2)
+
+    async def test_the_cache_keeps_results_not_failures_and_forgets_after_a_while(self):
+        from mas.tools import web
+        self.responses.extend([response(status=500), response(status=500)])
+        self.keyless.side_effect = ValueError("no search engine answered")
+        for _ in range(2):
+            with self.assertLogs("mas.tools.web", level="WARNING"):
+                self.assertFalse((await self.search(query="down")).ok)
+        self.assertEqual(len(self.requests), 2)                                  # a failure is tried again
+        self.assertEqual(web._SEARCH_CACHE, {})
+        self.keyless.reset_mock()
+        self.keyless.side_effect = None
+        self.keyless.return_value = [{"title": "T", "url": "https://two.example", "description": ""}]
+        await WebSearch("").run(self.sandbox, query="old")
+        await WebSearch("").run(self.sandbox, query="old")
+        self.assertEqual(self.keyless.call_count, 1)
+        with patch("mas.tools.web.time.monotonic", return_value=web.time.monotonic() + web._SEARCH_CACHE_TTL + 1):
+            await WebSearch("").run(self.sandbox, query="old")
+        self.assertEqual(self.keyless.call_count, 2)                             # after the time limit it asks again
+
+    async def test_a_cached_answer_cannot_be_changed_by_a_caller(self):
+        self.keyless.side_effect = None
+        self.keyless.return_value = [{"title": "T", "url": "https://two.example", "description": ""}]
+        first = json.loads((await WebSearch("").run(self.sandbox, query="same")).output)
+        first[0]["title"] = "changed"
+        self.assertEqual(json.loads((await WebSearch("").run(self.sandbox, query="same")).output)[0]["title"], "T")
 
     async def test_a_bad_brave_answer_is_an_error_not_a_reason_to_search_elsewhere(self):
         self.responses.append(response(b"{not json"))
@@ -307,18 +347,23 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
 class KeylessEnginesTest(unittest.TestCase):
     """The blocking helper that talks to ddgs, with ddgs replaced."""
 
-    def run_with(self, behaviour, **kwargs):
+    def run_with(self, behaviour, delays=None, **kwargs):
         import sys
+        import threading
+        import time
         import types
 
         calls = []
+        lock = threading.Lock()
 
         class FakeDDGS:
             def __init__(self, **options):
                 self.options = options
 
             def text(self, query, **options):
-                calls.append((query, options))
+                with lock:
+                    calls.append((query, options))
+                time.sleep((delays or {}).get(options["backend"], 0))
                 result = behaviour[options["backend"]]
                 if isinstance(result, Exception):
                     raise result
@@ -330,24 +375,44 @@ class KeylessEnginesTest(unittest.TestCase):
             from mas.tools.web import _keyless_text
             return _keyless_text("q", kwargs.get("count", 3), kwargs.get("freshness", "")), calls
 
-    def test_the_next_engine_is_tried_when_one_fails_or_finds_nothing(self):
-        row = {"title": "T", "href": "https://a.example", "body": "B"}
-        rows, calls = self.run_with({"auto": RuntimeError("blocked"), "bing": [], "duckduckgo": [row]})
+    ROW = {"title": "T", "href": "https://a.example", "body": "B"}
+
+    def test_every_engine_is_asked_at_once_and_the_first_with_results_wins(self):
+        from mas.tools.web import _KEYLESS_ENGINES
+        down = RuntimeError("blocked")
+        rows, calls = self.run_with({"bing": down, "yahoo": [], "google": [self.ROW], "duckduckgo": down},
+                                    delays={"google": 0.2})            # the others have all been asked by then
         self.assertEqual(rows, [{"title": "T", "url": "https://a.example", "description": "B"}])
-        self.assertEqual([c[1]["backend"] for c in calls], ["auto", "bing", "duckduckgo"])
-        self.assertTrue(all(c[1]["max_results"] == 3 for c in calls))
+        self.assertEqual(sorted(c[1]["backend"] for c in calls), sorted(_KEYLESS_ENGINES))
+        self.assertTrue(all(c[1]["max_results"] == 3 and c[0] == "q" for c in calls))
+
+    def test_it_does_not_wait_for_a_slow_engine_once_another_has_answered(self):
+        import time
+        started = time.monotonic()
+        rows, _ = self.run_with({"bing": [self.ROW], "yahoo": [self.ROW], "google": [self.ROW], "duckduckgo": [self.ROW]},
+                                delays={"bing": 5.0, "yahoo": 0.05, "google": 5.0, "duckduckgo": 5.0})
+        self.assertLess(time.monotonic() - started, 2.0)
+        self.assertEqual(rows[0]["url"], "https://a.example")
 
     def test_freshness_becomes_the_engines_time_limit(self):
-        row = {"title": "T", "href": "https://a.example", "body": "B"}
-        _, calls = self.run_with({"auto": [row]}, freshness="pm")
-        self.assertEqual(calls[0][1]["timelimit"], "m")
-        _, calls = self.run_with({"auto": [row]})
-        self.assertNotIn("timelimit", calls[0][1])
+        _, calls = self.run_with({e: [self.ROW] for e in ("bing", "yahoo", "google", "duckduckgo")}, freshness="pm")
+        self.assertTrue(all(c[1]["timelimit"] == "m" for c in calls))
+        _, calls = self.run_with({e: [self.ROW] for e in ("bing", "yahoo", "google", "duckduckgo")})
+        self.assertTrue(all("timelimit" not in c[1] for c in calls))
 
     def test_every_engine_failing_is_one_clear_error(self):
         down = RuntimeError("down")
         with self.assertRaisesRegex(ValueError, "no search engine answered"):
-            self.run_with({"auto": down, "bing": down, "duckduckgo": down, "brave": down, "yahoo": []})
+            self.run_with({"bing": down, "yahoo": [], "google": down, "duckduckgo": []})
+
+    def test_engines_that_never_answer_end_at_the_deadline(self):
+        import time
+        started = time.monotonic()
+        with patch("mas.tools.web._KEYLESS_DEADLINE", 0.3):
+            with self.assertRaisesRegex(ValueError, "no search engine answered"):
+                self.run_with({e: [self.ROW] for e in ("bing", "yahoo", "google", "duckduckgo")},
+                              delays={e: 2.0 for e in ("bing", "yahoo", "google", "duckduckgo")})
+        self.assertLess(time.monotonic() - started, 1.5)
 
     def test_a_missing_package_says_how_to_install_it(self):
         import sys

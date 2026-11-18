@@ -15,7 +15,9 @@ import json
 import logging
 import re
 import socket
+import time
 import zlib
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout, as_completed
 from html.parser import HTMLParser
 from typing import Any
 
@@ -28,15 +30,41 @@ from mas.tools.base import Tool, ToolResult
 log = logging.getLogger(__name__)
 
 _TIMEOUT = 20.0
-_SEARCH_TIMEOUT = 60.0              # the keyless search may try several engines one after another
+_SEARCH_TIMEOUT = 30.0              # more than the keyless search's own deadline
 _MAX_BYTES = 1_048_576
 _SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 _FRESHNESS = ("pd", "pw", "pm", "py")
 _REDIRECTS = {301, 302, 303, 307, 308}
-# Engines tried in turn by the keyless search: each one fails now and then from some networks,
-# so one engine's failure is not the search's failure.
-_KEYLESS_ENGINES = ("auto", "bing", "duckduckgo", "brave", "yahoo")
+# The keyless search asks several engines at the same time and takes the first answer. Asked one after the
+# other, a search took 19 s on average (each failing engine costs its timeout, and "auto" fans out into
+# dozens of requests); measured on one network, bing, yahoo and google answered in 1.5 to 4.5 s when they
+# answered at all, and "auto", brave, mojeek and startpage did not. Each engine gets one request per search.
+_KEYLESS_ENGINES = ("bing", "yahoo", "google", "duckduckgo")
+_KEYLESS_ENGINE_TIMEOUT = 6.0       # one engine's own time limit
+_KEYLESS_DEADLINE = 10.0            # the whole search: first answer, or give up
 _KEYLESS_TIMELIMIT = {"pd": "d", "pw": "w", "pm": "m", "py": "y"}
+
+# Answers are kept for a while: agents repeat searches (retries, two members researching the same thing), and a
+# repeated search is free. Only answers with results are kept, never failures.
+_SEARCH_CACHE: dict[tuple[str, int, str], tuple[float, list[dict[str, str]]]] = {}
+_SEARCH_CACHE_TTL = 1800.0
+_SEARCH_CACHE_SIZE = 256
+
+
+def _cached(key: tuple[str, int, str]) -> list[dict[str, str]] | None:
+    hit = _SEARCH_CACHE.get(key)
+    if hit and time.monotonic() - hit[0] < _SEARCH_CACHE_TTL:
+        return [dict(row) for row in hit[1]]
+    _SEARCH_CACHE.pop(key, None)
+    return None
+
+
+def _remember(key: tuple[str, int, str], rows: list[dict[str, str]]) -> None:
+    if not rows:
+        return
+    if len(_SEARCH_CACHE) >= _SEARCH_CACHE_SIZE:
+        _SEARCH_CACHE.pop(min(_SEARCH_CACHE, key=lambda k: _SEARCH_CACHE[k][0]))
+    _SEARCH_CACHE[key] = (time.monotonic(), [dict(row) for row in rows])
 
 
 class _SearchUnavailable(Exception):
@@ -44,22 +72,34 @@ class _SearchUnavailable(Exception):
 
 
 def _keyless_text(query: str, count: int, freshness: str) -> list[dict[str, str]]:
-    """Search without a key. Blocking: run it in a thread. Raises ValueError if no engine answers."""
+    """Search without a key: every engine at once, the first one with results wins. Blocking: run it in a
+    thread. Raises ValueError if no engine answers in time."""
     try:
         from ddgs import DDGS
     except ImportError:
         raise ValueError("keyless search needs the 'ddgs' package: python -m pip install ddgs "
                          "(or set SEARCH_API_KEY to a Brave Search API key)") from None
     options = {"timelimit": _KEYLESS_TIMELIMIT[freshness]} if freshness else {}
-    for engine in _KEYLESS_ENGINES:
-        try:
-            rows = DDGS(timeout=10).text(query, max_results=count, backend=engine, **options)
-        except Exception as exc:                         # ddgs raises its own types; all mean "try the next"
-            log.debug("keyless search: engine %s failed: %s", engine, type(exc).__name__)
-            continue
-        if rows:
-            return [{"title": str(r.get("title") or ""), "url": str(r.get("href") or ""),
-                     "description": str(r.get("body") or "")} for r in rows if isinstance(r, dict)]
+
+    def ask(engine: str) -> list[dict]:
+        return DDGS(timeout=_KEYLESS_ENGINE_TIMEOUT).text(query, max_results=count, backend=engine, **options)
+
+    pool = ThreadPoolExecutor(max_workers=len(_KEYLESS_ENGINES), thread_name_prefix="keyless-search")
+    futures = {pool.submit(ask, engine): engine for engine in _KEYLESS_ENGINES}
+    try:
+        for future in as_completed(futures, timeout=_KEYLESS_DEADLINE):
+            try:
+                rows = future.result()
+            except Exception as exc:                     # ddgs raises its own types; all mean "not this one"
+                log.debug("keyless search: %s failed: %s", futures[future], type(exc).__name__)
+                continue
+            if rows:
+                return [{"title": str(r.get("title") or ""), "url": str(r.get("href") or ""),
+                         "description": str(r.get("body") or "")} for r in rows if isinstance(r, dict)]
+    except FuturesTimeout:
+        pass
+    finally:
+        pool.shutdown(wait=False, cancel_futures=True)   # a slow engine finishes by itself; nobody waits for it
     raise ValueError("no search engine answered (they may be rate limiting this network); "
                      "rephrase the query, try again in a moment, or fetch_url a page you already know")
 
@@ -156,16 +196,23 @@ class WebSearch(_WebTool):
             if freshness not in _FRESHNESS:
                 raise ValueError("freshness must be pd, pw, pm or py")
             params["freshness"] = freshness
+        key = (" ".join(query.lower().split()), count, freshness)
+        if (hit := _cached(key)) is not None:
+            return hit
         if self._api_key:
             if not isinstance(self._api_key, str) or not self._api_key.isascii() \
                     or not self._api_key.isprintable() or " " in self._api_key:
                 raise ValueError("invalid SEARCH_API_KEY")
             try:
-                return await self._brave(params, count)
+                results = await self._brave(params, count)
+                _remember(key, results)
+                return results
             except _SearchUnavailable as exc:
                 log.warning("Brave Search unavailable (%s); using the keyless search instead", exc)
         rows = await asyncio.to_thread(_keyless_text, query.strip(), count, freshness)
-        return self._clean(rows, count)
+        results = self._clean(rows, count)
+        _remember(key, results)
+        return results
 
     async def _brave(self, params: dict[str, str], count: int) -> list[dict[str, str]]:
         headers = {"X-Subscription-Token": self._api_key, "Accept": "application/json",
