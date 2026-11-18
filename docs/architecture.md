@@ -212,7 +212,7 @@ numbered (`h1`, `h2`, ...) so several can be open at once:
 | Situation | Kind | Who asks |
 |---|---|---|
 | the request or a step is ambiguous | `clarify` | any member, with the `ask_human` tool (the lead mostly) |
-| before a tool marked `requires_approval` (`git`, `delete_file`) | `approval` | the worker, automatically |
+| before a tool marked `requires_approval` (`git`, `delete_file`); deleting a file the task itself wrote (a scratch script) needs no approval | `approval` | the worker, automatically |
 | the same tool failed twice in a row | `advice` | the worker, automatically |
 
 The human answers with `/reply <id> <answer>` (just `/reply <answer>` when only one is open). Waiting for

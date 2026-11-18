@@ -409,6 +409,33 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse((await asyncio.wait_for(pending, 2)).success)
         self.assertEqual(tool.calls, [])
 
+    async def test_a_file_the_task_wrote_itself_can_be_deleted_without_asking(self):
+        writer = ScriptedTool("write_file", [ToolResult(True, "wrote", ["scratch.py"])])
+        delete = ScriptedTool("delete_file", approval=True)
+        worker, _ = self.worker([call("write_file", "c1", value="x"), call("delete_file", "c2", path="./scratch.py"),
+                                 final()], [writer, delete])
+        result = await asyncio.wait_for(worker.handle_task(self.task()), 2)
+        self.assertTrue(result.success)
+        self.assertEqual([kw["path"] for _, kw in delete.calls], ["./scratch.py"])         # it ran
+        self.assertEqual(self.messages(MsgType.HITL_REQUEST), [])                           # and nobody was asked
+
+    async def test_any_other_file_still_needs_the_humans_approval(self):
+        writer = ScriptedTool("write_file", [ToolResult(True, "wrote", ["scratch.py"])])
+        delete = ScriptedTool("delete_file", approval=True)
+        worker, _ = self.worker([call("write_file", "c1", value="x"), call("delete_file", "c2", path="report.md"),
+                                 final()], [writer, delete])
+        pending = self.spawn(worker.handle_task(self.task()))
+        request = await self.answer_request("no")
+        self.assertEqual(request.payload["kind"], HitlKind.APPROVAL.value)
+        await asyncio.wait_for(pending, 2)
+        self.assertEqual(delete.calls, [])
+
+    async def test_the_instructions_say_that_workspaces_are_private(self):
+        worker, llm = self.worker([final()], [])
+        worker.peers = {"worker": worker.role, "mate": RoleConfig("mate", "Mate", "Helps.", "")}
+        await asyncio.wait_for(worker.handle_task(self.task()), 2)
+        self.assertIn("list every file it needs in\n`files`", prompt_text(llm.calls[0][0]))
+
     async def test_approved_tool_runs_after_the_answer(self):
         tool = ScriptedTool("delete_file", approval=True)
         worker, _ = self.worker([call(tool.name), final()], [tool])

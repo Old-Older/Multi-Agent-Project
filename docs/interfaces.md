@@ -233,7 +233,7 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 - **完成协议**：模型不调用工具时，返回 JSON 对象，必填 `success: bool`、`summary: str`；可选 `artifacts: list[str]`、`refs: dict[str, str]`、`open_issues: list[str]`、`error: str | null`、`failure_mode`（已有枚举值或 null）。可接受外层 Markdown JSON 代码块。非法结果最多给两次纠正机会，仍不合法返回 `LLM_FORMAT`，纠正也计入步数。
 - `TaskResult.artifacts` 与工具记录合并后，按沙箱内规范化路径去重，只保留结束时仍存在的文件；已删除、越界或不存在的路径即使由模型再次声明也不会交付。删除后重新生成的文件正常保留。`refs` 冲突时工具实际返回的值优先；失败也保留部分产物，填入步数、耗时和失败模式。步数耗尽为 `MAX_STEPS`；执行超时为 `TIMEOUT`；LLM 重试耗尽为 `CRASH`（与 请求层 一致）。
 - `decline` 必须在第一步单独调用并提供非空 reason；与其他调用混用时整批不执行，返回纠正提示。`handle_chat` 直接继承基类的私聊/@任务登记、回复和 `/cancel` 行为。
-- 授权工具先经 `ask_human(APPROVAL)` 获得明确批准；拒绝后跳过本批全部剩余调用，仍为每个 `tool_call_id` 补齐观察，让模型看到拒绝后再重新规划。每步、LLM/工具执行前后和人工答复后重新检查终态；Router 已保存的 `TIMEOUT` 保留原有失败模式，不误报为取消。LLM 与工具执行共享 `subtask_timeout_s`，同时受 Router 剩余预算约束，排队不会获得新的完整预算，等待人类不消耗预算；程序关闭产生的 asyncio 取消继续向上传播。
+- 授权工具先经 `ask_human(APPROVAL)` 获得明确批准（`delete_file` 删除本任务自己写过的文件除外）；牵头和队友的提示词明确说"工作区是私有的，队友需要的文件必须列在 `files` 里"；拒绝后跳过本批全部剩余调用，仍为每个 `tool_call_id` 补齐观察，让模型看到拒绝后再重新规划。每步、LLM/工具执行前后和人工答复后重新检查终态；Router 已保存的 `TIMEOUT` 保留原有失败模式，不误报为取消。LLM 与工具执行共享 `subtask_timeout_s`，同时受 Router 剩余预算约束，排队不会获得新的完整预算，等待人类不消耗预算；程序关闭产生的 asyncio 取消继续向上传播。
 - 成功或实际失败写一条 `Experience`，标签来自工具和产物；decline/cancel 不写入，遇到 Router 已结束的任务直接返回权威结果，不继续执行或写入记忆。记忆持久化异常记录日志，仍返回已形成的任务结果与产物。失败返回后异步 `reflect()` 调用一次 LLM，以同一 task_id 更新教训，不拖慢结果返回；反思失败保留原记录，Worker 运行循环停止时清理后台反思。
 - 验证：`python -m unittest tests.test_worker tests.test_worker_regressions tests.test_task_lifecycle`，使用一个自定义 `worker`、`MockLLM` 以及真实 Router/JsonlMemory；回归测试另用真实 LocalSandbox/文件工具覆盖拒绝审批、过期任务、inbox 路径和产物生命周期，不需要 API key。LocalSandbox 与四个文件工具已从主线同步；默认 CLI 仍需完成 DeepSeekClient 才能使用真实模型。
 

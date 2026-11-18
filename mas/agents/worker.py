@@ -54,7 +54,8 @@ automatically. Do not call finish; return the JSON object directly."""
 
 _TEAM = """You work in a team. The other members are available as call_<agent> tools: one call
 hands one goal to one teammate, who works in their own workspace and answers with a summary and
-file names (pass files you want them to use in `files`). Calls you make in the same reply run at the same
+file names. Workspaces are private: a teammate cannot read your files, so list every file it needs in
+`files` (it finds them in its `inbox/`), and never say "see the shared workspace". Calls you make in the same reply run at the same
 time (different teammates in parallel, one teammate's calls one after the other), so send independent jobs
 together in one reply, and make a call that needs another's result in a later reply. Delegate what a teammate is better
 placed to do, ask for a review when quality matters, and do not call a teammate for something
@@ -389,7 +390,7 @@ class WorkerAgent(Agent):
         tool = self.tools.get(call.name)
         if tool is None:
             return {"ok": False, "output": f"Unknown tool: {call.name}"}
-        if tool.requires_approval:
+        if tool.requires_approval and not self._deletes_own_file(call.name, args, run):
             answer = await self._ask(task, run,
                                      f"Run {call.name} with arguments {json.dumps(args, ensure_ascii=False)}?",
                                      HitlKind.APPROVAL, ["yes", "no"])
@@ -471,6 +472,16 @@ class WorkerAgent(Agent):
         if answer == CANCELLED_ANSWER or self.is_cancelled(task):
             return {"cancelled": True}
         return {"ok": True, "output": answer}
+
+    @staticmethod
+    def _deletes_own_file(tool: str, args: dict, run: _Run) -> bool:
+        """Deleting a file this task itself wrote (a scratch script, a draft) needs nobody's permission; the human is
+        asked only about files that were there before."""
+        path = args.get("path")
+        if tool != "delete_file" or not isinstance(path, str):
+            return False
+        wanted = path[2:] if path.startswith("./") else path
+        return wanted in run.artifacts
 
     def _is_delegation(self, call: ToolCall) -> bool:
         return self.peers is not None and target_of(call.name) is not None and call.name not in self.tools

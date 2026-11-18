@@ -180,7 +180,7 @@ agent 在三种情况下会暂停并询问人类；提问都出现在请求开�
 | 情况 | 类型 | 谁问 |
 |---|---|---|
 | 请求或某一步有歧义 | `clarify` | 任何成员，用 `ask_human` 工具（主要是牵头者） |
-| 执行标有 `requires_approval` 的工具之前（`git`、`delete_file`） | `approval` | worker，自动 |
+| 执行标有 `requires_approval` 的工具之前（`git`、`delete_file`）；删除本任务自己写的文件（比如临时脚本）不需要批准 | `approval` | worker，自动 |
 | 同一个工具连续失败两次 | `advice` | worker，自动 |
 
 人类用 `/reply <id> <答案>` 回答（只有一个未答问题时可只写 `/reply <答案>`）。等待人类时任务的计时暂停。命令行是 `CliHumanIO`；

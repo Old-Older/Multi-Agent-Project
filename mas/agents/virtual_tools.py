@@ -29,7 +29,7 @@ def call_agent_spec(role: RoleConfig, profile: str = "") -> FunctionSpec:
                 "context": {"type": "string",
                             "description": "Notes specific to this call. Session progress is shared automatically."},
                 "files": {"type": "array", "items": {"type": "string"},
-                          "description": "Files from earlier results to hand over."},
+                          "description": "Names of the files the teammate needs. Workspaces are private: it cannot read yours, so a file you do not list here does not exist for it. Listed files arrive in its inbox/."},
             },
             "required": ["goal"],
         },
