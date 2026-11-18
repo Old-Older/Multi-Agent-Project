@@ -34,9 +34,37 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--time-budget", type=float, default=None, metavar="SECONDS",
                    help="seconds one request may take (the human's waiting time not counted): members stop starting "
                         "new work and hand in what they have as it runs out (default: no budget)")
+    p.add_argument("--research-limit", type=int, default=None, metavar="N",
+                   help="most searches and page fetches one task may make (default 14; 0: no limit). The reminders to stop "
+                        "researching move with it")
+    p.add_argument("--min-use", type=float, default=None, metavar="FRACTION",
+                   help="the share of the time budget a lead must have used before it may hand in (default 0.5; 0: off). "
+                        "With a generous budget, 0")
     p.add_argument("--timeout", type=float, default=3600.0, help="seconds allowed for one scenario run")
     p.add_argument("--out", type=Path, default=None, help="where results go (default eval_results/<time>)")
     return p.parse_args(argv)
+
+
+def settings_overrides(args: argparse.Namespace) -> dict[str, object]:
+    """The settings the command line changes."""
+    overrides: dict[str, object] = {"llm_provider": args.llm} if args.llm else {}
+    if args.early_stop == "off":
+        overrides["early_stop_nudges"] = False
+    if args.time_budget is not None:
+        overrides["request_budget_s"] = args.time_budget
+    if args.research_limit is not None:
+        if args.research_limit < 0:
+            raise SystemExit("--research-limit must be 0 or more")
+        overrides["research_max_calls"] = args.research_limit
+        if args.research_limit:
+            # the reminders to stop come at 60% of the limit and then every 15% (6 and 2 for the default 14)
+            overrides["research_note_after"] = max(6, round(args.research_limit * 0.6))
+            overrides["research_note_every"] = max(2, round(args.research_limit * 0.15))
+    if args.min_use is not None:
+        if not 0 <= args.min_use < 1:
+            raise SystemExit("--min-use must be from 0 up to (not including) 1")
+        overrides["finish_not_before"] = args.min_use
+    return overrides
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -46,12 +74,7 @@ def main(argv: list[str] | None = None) -> int:
         load_dotenv()
     except ImportError:
         pass
-    overrides: dict[str, object] = {"llm_provider": args.llm} if args.llm else {}
-    if args.early_stop == "off":
-        overrides["early_stop_nudges"] = False
-    if args.time_budget is not None:
-        overrides["request_budget_s"] = args.time_budget
-    settings = Settings.from_env(**overrides)
+    settings = Settings.from_env(**settings_overrides(args))
     logging.basicConfig(level=logging.WARNING)
     try:
         scenarios = [load_scenario(path) for path in args.scenarios]
@@ -72,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
     info = {"model provider": settings.llm_provider, "answers to questions": args.human,
             "graded by a model": args.judge, "runs per scenario": args.repeat, "memory kept between runs": args.keep_memory, "early-stop nudges": args.early_stop,
             "time budget per request (s)": settings.request_budget_s or "none",
+            "research limit per task": settings.research_max_calls or "none",
+            "lead may hand in after (share of budget)": settings.finish_not_before,
             "wall time (s)": round(time.monotonic() - started)}
     save_results(records, out, info=info)
     print(render_report(records, info=info))

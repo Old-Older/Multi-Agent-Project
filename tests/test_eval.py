@@ -238,6 +238,30 @@ class CommandLineTest(unittest.TestCase):
         self.assertIn("scenario folder not found", r.stderr + r.stdout)
 
 
+class CommandLineSettingsTest(unittest.TestCase):
+    def overrides(self, *argv):
+        from mas.eval.__main__ import parse_args, settings_overrides
+        return settings_overrides(parse_args(["somewhere", *argv]))
+
+    def test_nothing_given_changes_nothing(self):
+        self.assertEqual(self.overrides(), {})
+
+    def test_the_full_profile(self):
+        got = self.overrides("--time-budget", "900", "--min-use", "0", "--research-limit", "28")
+        self.assertEqual(got, {"request_budget_s": 900.0, "finish_not_before": 0.0, "research_max_calls": 28,
+                               "research_note_after": 17, "research_note_every": 4})
+
+    def test_the_reminders_follow_the_limit_but_not_below_the_defaults(self):
+        self.assertEqual(self.overrides("--research-limit", "14")["research_note_after"], 8)    # 60% of 14
+        self.assertEqual(self.overrides("--research-limit", "6")["research_note_after"], 6)
+        self.assertNotIn("research_note_after", self.overrides("--research-limit", "0"))       # no limit, defaults stay
+
+    def test_values_that_make_no_sense_are_refused(self):
+        for bad in (("--research-limit", "-1"), ("--min-use", "1"), ("--min-use", "-0.1")):
+            with self.assertRaises(SystemExit):
+                self.overrides(*bad)
+
+
 if __name__ == "__main__":
     unittest.main()
 
