@@ -93,7 +93,7 @@ class MockLLMTest(unittest.TestCase):
 class SettingsTest(unittest.TestCase):
     def test_defaults_match_design(self):
         s = Settings()
-        self.assertEqual(s.max_orchestrator_rounds, 8)
+        self.assertEqual(s.max_lead_steps, 24)
         self.assertEqual(s.max_worker_steps, 12)
         self.assertEqual(s.max_delegation_depth, 2)
         self.assertEqual(s.memory_dir.name, "memory")
@@ -106,11 +106,13 @@ class SettingsTest(unittest.TestCase):
 
 class ImportTest(unittest.TestCase):
     def test_every_module_imports(self):
-        import mas.agents.orchestrator  # noqa: F401
         import mas.agents.worker  # noqa: F401
         import mas.core.board  # noqa: F401
         import mas.core.bus  # noqa: F401
         import mas.core.human  # noqa: F401
+        import mas.core.lead  # noqa: F401
+        import mas.core.requests  # noqa: F401
+        import mas.team  # noqa: F401
         import mas.core.router  # noqa: F401
         import mas.core.state  # noqa: F401
         import mas.eval.harness  # noqa: F401

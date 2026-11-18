@@ -3,8 +3,7 @@
 Owner: JIAN Yimin.
 
 They are handled by the agents themselves (through the Router), not by a
-sandbox. Keeping the schemas here means the Orchestrator and the workers
-expose exactly the same call_<agent> tool.
+sandbox. Every worker exposes the same call_<teammate> tool.
 """
 from __future__ import annotations
 
@@ -15,7 +14,6 @@ CALL_PREFIX = "call_"
 DECLINE = "decline"
 READ_GROUP = "read_group"
 ASK_HUMAN = "ask_human"
-FINISH = "finish"
 
 
 def call_agent_spec(role: RoleConfig, profile: str = "") -> FunctionSpec:
@@ -75,18 +73,5 @@ ASK_HUMAN_SPEC = FunctionSpec(
             "options": {"type": "array", "items": {"type": "string"}},
         },
         "required": ["question"],
-    },
-)
-
-FINISH_SPEC = FunctionSpec(
-    name=FINISH,
-    description="Finish the request and report to the human.",
-    parameters={
-        "type": "object",
-        "properties": {
-            "summary": {"type": "string"},
-            "deliverables": {"type": "array", "items": {"type": "string"}},
-        },
-        "required": ["summary"],
     },
 )

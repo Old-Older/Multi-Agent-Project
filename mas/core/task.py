@@ -3,7 +3,7 @@
 Owner: JIAN Yimin. Changes need agreement from both members.
 
 One Task is created for every call_<agent> tool call, whether it comes from
-the Orchestrator or from a Worker re-delegating.
+the request layer or from a Worker re-delegating.
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ class Task:
 
     @property
     def depth(self) -> int:
-        """Delegation depth: 0 for a task issued by the Orchestrator or a human."""
+        """Delegation depth: 0 for a task issued by the request layer or a human."""
         return max(len(self.chain) - 1, 0)
 
     def to_dict(self) -> dict[str, Any]:

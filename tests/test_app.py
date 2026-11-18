@@ -20,16 +20,17 @@ from pathlib import Path
 from unittest.mock import patch
 
 from mas.agents.base import Agent
-from mas.agents.orchestrator import Orchestrator
 from mas.agents.roles import ROLES
 from mas.app import System, WorkerParts, build_system, build_tools, default_worker_factory, make_human, make_llm
 from mas.__main__ import configure_logging, parse_args
 from mas.config import Settings
 from mas.core.human import AutoResponder, CliHumanIO
+from mas.core.lead import CHOOSE_LEAD
 from mas.core.message import GROUP_MAIN, HUMAN, ORCHESTRATOR, MsgType
 from mas.core.task import Task, TaskResult, TaskStatus
 from mas.demo import DemoSandbox, DemoWorker, build_demo_system, demo_brain, demo_settings
 from mas.llm.base import LLMResponse
+from mas.llm.deepseek import DeepSeekClient
 from mas.llm.hkgai import HKGAIClient
 from mas.llm.mock import MockLLM
 from mas.memory.base import JsonlMemory
@@ -63,16 +64,16 @@ class WiringTest(TmpDirTest):
             return TaskResult(task.id, True, "ok")
 
     def build(self, **kw):
-        return build_system(self.settings, MockLLM(), CliHumanIO(), worker_factory=lambda role, parts: self.Stub(
+        return build_system(self.settings, MockLLM(), CliHumanIO(), roles=ROLES, worker_factory=lambda role, parts: self.Stub(
             role.agent_id, parts.bus, parts.router, parts.settings),
             sandbox_factory=lambda agent_id, root: DemoSandbox(agent_id, root), **kw)
 
     def test_everybody_is_in_the_group_and_shares_one_bus_and_router(self):
         s = self.build()
         self.assertEqual(sorted(s.bus.members(GROUP_MAIN)),
-                         sorted([HUMAN, ORCHESTRATOR, "researcher", "coder", "writer"]))
+                         sorted([HUMAN, "researcher", "coder", "writer"]))
         self.assertEqual(sorted(s.workers), ["coder", "researcher", "writer"])
-        self.assertIs(s.orchestrator.router, s.router)
+        self.assertIs(s.requests.router, s.router)
         self.assertTrue(all(w.router is s.router and w.bus is s.bus for w in s.workers.values()))
         self.assertIs(s.router.state, s.state)
 
@@ -82,7 +83,6 @@ class WiringTest(TmpDirTest):
         self.assertEqual(s.sandboxes["coder"].root, self.tmp / "ws" / "coder")
         self.assertEqual({r: m.path for r, m in s.memories.items()},
                          {r: self.settings.memory_dir / f"{r}.jsonl" for r in ROLES})
-        self.assertIs(s.orchestrator.memories, s.memories)                # the Orchestrator reads the same memories
         self.assertTrue(all(isinstance(m, JsonlMemory) for m in s.memories.values()))
 
     def test_the_factories_and_the_roles_can_be_replaced(self):
@@ -96,20 +96,22 @@ class WiringTest(TmpDirTest):
                          sandbox_factory=lambda a, r: DemoSandbox(a, r))
         self.assertEqual(seen, [("coder", WorkerParts, "coder", "coder.jsonl")])
         self.assertEqual(list(s.workers), ["coder"])
-        self.assertEqual(list(s.orchestrator.roles), ["coder"])
+        self.assertEqual(list(s.requests.roles), ["coder"])
 
     def test_the_default_worker_is_the_worker_agent(self):
         from mas.agents.worker import WorkerAgent
-        s = build_system(self.settings, MockLLM(), CliHumanIO(),
+        s = build_system(self.settings, MockLLM(), CliHumanIO(), roles=ROLES,
                          sandbox_factory=lambda a, r: DemoSandbox(a, r))
         self.assertTrue(all(isinstance(w, WorkerAgent) for w in s.workers.values()))
         self.assertEqual(s.workers["coder"].role, ROLES["coder"])
-        self.assertEqual(list(s.workers["coder"].tools), ["read_file", "write_file", "delete_file", "list_files"])
-        for name in ("researcher", "writer"):
-            self.assertEqual(list(s.workers[name].tools), ["read_file", "write_file", "list_files"])
+        self.assertEqual(list(s.workers["coder"].tools),
+                         ["read_file", "write_file", "delete_file", "list_files", "run_python", "git"])
+        self.assertEqual(list(s.workers["researcher"].tools),
+                         ["web_search", "fetch_url", "read_file", "write_file", "list_files"])
+        self.assertEqual(list(s.workers["writer"].tools), ["read_file", "write_file", "list_files"])
 
     async def test_default_system_tools_write_and_read_real_workspace_files(self):
-        s = build_system(self.settings, MockLLM(), CliHumanIO())
+        s = build_system(self.settings, MockLLM(), CliHumanIO(), roles=ROLES)
         for name, worker in s.workers.items():
             with self.subTest(role=name):
                 sb = s.sandboxes[name]
@@ -120,17 +122,34 @@ class WiringTest(TmpDirTest):
                 self.assertTrue(read.ok, read.output)
                 self.assertEqual(read.output, f"{name} 中文笔记")
 
-    def test_build_tools_skips_and_warns_for_known_pending_tools(self):
+    def test_build_tools_builds_every_tool_a_role_names(self):
         configured = {name: list(role.tool_names) for name, role in ROLES.items()}
-        with self.assertLogs("mas.app", level="WARNING") as logs:
-            tools = {name: build_tools(role, self.settings) for name, role in ROLES.items()}
-        self.assertEqual([tool.name for tool in tools["coder"]], ["read_file", "write_file", "delete_file", "list_files"])
-        for name in ("researcher", "writer"):
-            self.assertEqual([tool.name for tool in tools[name]], ["read_file", "write_file", "list_files"])
-        self.assertEqual(len(logs.records), 4)
-        for name in ("web_search", "fetch_url", "run_python", "git"):
-            self.assertTrue(any(f"Tool {name} " in line and "not implemented; skipping" in line for line in logs.output))
+        with self.assertNoLogs("mas.app", level="WARNING"):
+            tools = {name: build_tools(role, replace(self.settings, search_api_key="key")) for name, role in ROLES.items()}
+        self.assertEqual([t.name for t in tools["coder"]],
+                         ["read_file", "write_file", "delete_file", "list_files", "run_python", "git"])
+        self.assertEqual([t.name for t in tools["researcher"]],
+                         ["web_search", "fetch_url", "read_file", "write_file", "list_files"])
+        self.assertEqual([t.name for t in tools["writer"]], ["read_file", "write_file", "list_files"])
         self.assertEqual({name: role.tool_names for name, role in ROLES.items()}, configured)
+
+    def test_the_keys_in_the_settings_reach_the_tools_that_need_them(self):
+        settings = replace(self.settings, search_api_key="brave-key", github_token="gh-token")
+        role = replace(ROLES["coder"], tool_names=["web_search", "git", "run_python"])
+        search, git, python = build_tools(role, settings)
+        self.assertEqual(search._api_key, "brave-key")
+        self.assertEqual(git._github_token, "gh-token")
+        self.assertTrue(git.requires_approval)                      # a push waits for the human
+        self.assertFalse(python.requires_approval)
+
+    def test_web_search_without_a_key_still_works_through_the_keyless_search(self):
+        role = replace(ROLES["researcher"], tool_names=["fetch_url", "web_search"])
+        with self.assertNoLogs("mas.app", level="WARNING"):
+            with self.assertLogs("mas.app", level="INFO") as logs:
+                tools = build_tools(role, replace(self.settings, search_api_key=""))
+        self.assertEqual([t.name for t in tools], ["fetch_url", "web_search"])
+        self.assertEqual(len(logs.records), 1)
+        self.assertIn("keyless", logs.output[0])
 
     def test_build_tools_preserves_configured_order_and_returns_fresh_instances(self):
         role = replace(ROLES["writer"], tool_names=["list_files", "read_file", "write_file"])
@@ -145,9 +164,9 @@ class WiringTest(TmpDirTest):
 
     def test_the_default_sandbox_follows_the_settings(self):
         from mas.sandbox.base import DockerSandbox, LocalSandbox
-        self.assertTrue(all(type(sb) is LocalSandbox for sb in build_system(self.settings, MockLLM(), CliHumanIO()).sandboxes.values()))
+        self.assertTrue(all(type(sb) is LocalSandbox for sb in build_system(self.settings, MockLLM(), CliHumanIO(), roles=ROLES).sandboxes.values()))
         self.settings.sandbox_backend = "docker"
-        self.assertTrue(all(type(sb) is DockerSandbox for sb in build_system(self.settings, MockLLM(), CliHumanIO()).sandboxes.values()))
+        self.assertTrue(all(type(sb) is DockerSandbox for sb in build_system(self.settings, MockLLM(), CliHumanIO(), roles=ROLES).sandboxes.values()))
 
     def test_making_the_llm_and_the_human(self):
         with self.assertRaises(SystemExit) as e:
@@ -156,15 +175,15 @@ class WiringTest(TmpDirTest):
         self.assertIn("--demo", str(e.exception))
         with self.assertRaisesRegex(SystemExit, "HKGAI_MODEL is not set"):
             make_llm(Settings(hkgai_api_key="fixture", hkgai_model=""))
-        with self.assertRaisesRegex(SystemExit, "LLM_PROVIDER=hkgai"):
-            make_llm(Settings(llm_provider="deepseek"))
+        with self.assertRaisesRegex(SystemExit, "LLM_PROVIDER=hkgai or LLM_PROVIDER=deepseek"):
+            make_llm(Settings(llm_provider="openai"))
         self.assertIsInstance(make_human(Settings()), CliHumanIO)
         self.assertIsInstance(make_human(Settings(auto_hitl=True)), AutoResponder)
 
     def test_default_provider_ignores_other_providers_settings(self):
-        legacy = {"DEEPSEEK_API_KEY": "legacy-fixture", "DEEPSEEK_MODEL": "legacy-model",
-                  "DEEPSEEK_BASE_URL": "https://legacy.invalid"}
-        with patch.dict(os.environ, legacy, clear=True):
+        other = {"DEEPSEEK_API_KEY": "other-fixture", "DEEPSEEK_MODEL": "other-model",
+                 "DEEPSEEK_BASE_URL": "https://other.invalid"}
+        with patch.dict(os.environ, other, clear=True):
             settings = Settings.from_env()
         self.assertEqual(settings.llm_provider, "hkgai")
         self.assertEqual(settings.hkgai_base_url, "https://api1.hkgai.net/v1")
@@ -174,6 +193,28 @@ class WiringTest(TmpDirTest):
             make_llm(settings)
         llm = make_llm(replace(settings, hkgai_api_key="fixture"))
         self.assertEqual((llm.model, llm.base_url), (settings.hkgai_model, settings.hkgai_base_url))
+
+    def test_deepseek_is_used_only_when_asked_for(self):
+        env = {"DEEPSEEK_API_KEY": "ds-fixture", "HKGAI_API_KEY": "hk-fixture"}
+        with patch.dict(os.environ, env, clear=True):
+            default = make_llm(Settings.from_env())
+            chosen = make_llm(Settings.from_env(llm_provider="deepseek"))
+        self.assertIs(type(default), HKGAIClient)
+        self.assertIsInstance(chosen, DeepSeekClient)
+        self.assertEqual((chosen.api_key, chosen.model, chosen.base_url),
+                         ("ds-fixture", "deepseek-chat", "https://api.deepseek.com/v1"))
+
+    def test_deepseek_settings_come_from_the_environment_and_errors_name_deepseek(self):
+        env = {"LLM_PROVIDER": "deepseek", "DEEPSEEK_API_KEY": "ds-fixture", "DEEPSEEK_MODEL": "deepseek-reasoner",
+               "DEEPSEEK_BASE_URL": "https://gateway.invalid/v1"}
+        with patch.dict(os.environ, env, clear=True):
+            llm = make_llm(Settings.from_env())
+        self.assertEqual((llm.api_key, llm.model, llm.base_url),
+                         ("ds-fixture", "deepseek-reasoner", "https://gateway.invalid/v1"))
+        with self.assertRaisesRegex(SystemExit, "DEEPSEEK_API_KEY is not set"):
+            make_llm(Settings(llm_provider="deepseek", hkgai_api_key="set-but-not-used"))
+        with self.assertRaisesRegex(SystemExit, "DEEPSEEK_MODEL is not set"):
+            make_llm(Settings(llm_provider="deepseek", deepseek_api_key="x", deepseek_model=""))
 
     def test_hkgai_factory_uses_account_settings_and_model_override(self):
         env = {"HKGAI_API_KEY": "fixture", "HKGAI_MODEL": "account-model",
@@ -192,7 +233,7 @@ class LifecycleTest(TmpDirTest):
         s = build_demo_system(demo_settings(self.settings, self.tmp), delay=0)
         tasks = s.start()
         self.assertEqual(sorted(t.get_name() for t in tasks),
-                         sorted(f"agent:{a}" for a in (ORCHESTRATOR, "researcher", "coder", "writer")))
+                         sorted(f"agent:{a}" for a in ("researcher", "coder", "writer")))
         await asyncio.sleep(0.01)
         self.assertTrue(all(not t.done() for t in tasks))
         await s.stop()
@@ -211,44 +252,20 @@ class LifecycleTest(TmpDirTest):
 
 
 class BrainTest(unittest.TestCase):
-    def call(self, request, *observations, calls=None):
-        """One call of the brain after `observations` came back for `calls`."""
-        messages = [{"role": "system", "content": "rules"}, {"role": "user", "content": f"Human request: {request}\n\nboard"}]
-        if observations:
-            messages.append({"role": "assistant", "content": "", "tool_calls": [
-                {"id": cid, "type": "function", "function": {"name": name, "arguments": json.dumps(args)}}
-                for cid, name, args in calls]})
-            messages += [{"role": "tool", "tool_call_id": cid, "content": json.dumps(obs)}
-                         for (cid, _, _), obs in zip(calls, observations)]
-        return demo_brain(messages, None)
+    def lead(self, request):
+        """Who the demo's "LLM" names as the lead of `request`."""
+        messages = [{"role": "system", "content": "rules"},
+                    {"role": "user", "content": f"Team members:\n- coder\n\nRequest from the human:\n{request}"}]
+        [call] = demo_brain(messages, None).tool_calls
+        self.assertEqual(call.name, CHOOSE_LEAD)
+        return call.arguments["agent_id"]
 
-    def test_the_first_round_sends_the_request_to_the_agents_it_mentions(self):
-        names = lambda r: [tc.name for tc in self.call(r).tool_calls]
-        self.assertEqual(names("write a python script"), ["call_coder"])
-        self.assertEqual(names("research X and write a summary"), ["call_researcher", "call_writer"])
-        self.assertEqual(names("write a script and the docs"), ["call_coder", "call_writer"])
-        self.assertEqual(names("do something"), ["call_writer"])                    # nothing recognised
-        self.assertEqual(names("写个脚本并整理文档"), ["call_coder", "call_writer"])
-        first = self.call("research X and write a summary")
-        self.assertTrue(first.text.startswith("Remaining steps:"))
-        self.assertEqual(first.tool_calls[0].arguments["goal"], "researcher's part of: research X and write a summary")
-        self.assertEqual(self.call("write a script").tool_calls[0].arguments["goal"], "write a script")
-
-    def test_a_declined_job_goes_to_the_suggested_agent(self):
-        resp = self.call("run the tests", {"success": False, "declined": True, "reason": "x", "suggest": "coder"},
-                         calls=[("c0", "call_writer", {"goal": "run the tests"})])
-        self.assertEqual([(tc.name, tc.arguments) for tc in resp.tool_calls], [("call_coder", {"goal": "run the tests"})])
-
-    def test_finish_lists_the_files_and_says_what_failed(self):
-        ok = {"success": True, "summary": "wrote it", "artifacts": ["a.py"]}
-        resp = self.call("write a script", ok, calls=[("c0", "call_coder", {"goal": "g"})])
-        self.assertEqual((resp.tool_calls[0].name, resp.tool_calls[0].arguments),
-                         ("finish", {"summary": "wrote it", "deliverables": ["a.py"]}))
-        bad = {"success": False, "error": "boom"}
-        resp = self.call("write a script", ok, bad, calls=[("c0", "call_coder", {"goal": "g"}), ("c1", "call_writer", {"goal": "h"})])
-        self.assertIn("did not work out: boom", resp.tool_calls[0].arguments["summary"])
-        resp = self.call("write a script", bad, calls=[("c0", "call_coder", {"goal": "g"})])
-        self.assertTrue(resp.tool_calls[0].arguments["summary"].startswith("Nothing was produced."))
+    def test_the_first_agent_the_request_needs_leads(self):
+        self.assertEqual(self.lead("write a python script"), "coder")
+        self.assertEqual(self.lead("research X and write a summary"), "researcher")
+        self.assertEqual(self.lead("write a script and the docs"), "coder")
+        self.assertEqual(self.lead("do something"), "writer")                       # nothing recognised
+        self.assertEqual(self.lead("写个脚本并整理文档"), "coder")
 
 
 class SandboxTest(TmpDirTest):
@@ -298,11 +315,11 @@ class DemoFlowTest(TmpDirTest):
 
     async def test_a_request_that_needs_two_agents(self):
         final = await self.request("write a python script that prints hello and a document summarizing it", 1)
-        self.assertEqual((final.payload["success"], final.payload["rounds"]), (True, 2))
+        self.assertEqual((final.payload["success"], final.sender), (True, "coder"))    # the first agent it needs leads
         files = sorted(p.name for p in Path(final.payload["output_dir"]).iterdir())
         self.assertEqual((len(files), files[0].startswith("document-"), files[1].startswith("script-")), (2, True, True))
-        self.assertEqual(self.system.orchestrator.outcomes["R1"].deliverables, final.payload["deliverables"])
-        self.assertEqual(len(self.shown("Done:")), 2)                            # both agents reported in the group
+        self.assertEqual(self.system.requests.outcomes["R1"].deliverables, final.payload["deliverables"])
+        self.assertEqual(len(self.shown("Done:")), 1)                            # the teammate reported to the lead in the group
         self.assertTrue(self.shown("Deliverables:"))
         self.assertEqual({t.assignee for t in self.system.state.by_root("R1")}, {"coder", "writer"})
         coder, writer = (self.system.memories[a].all() for a in ("coder", "writer"))
@@ -313,8 +330,8 @@ class DemoFlowTest(TmpDirTest):
         final = await self.request("run the tests", 1)
         self.assertEqual(final.payload["success"], True)
         self.assertEqual({t.assignee: t.status for t in self.system.state.by_root("R1")},
-                         {"writer": TaskStatus.DECLINED, "coder": TaskStatus.DONE})
-        self.assertTrue(self.shown("Declined: I cannot run code, suggest coder"))
+                         {"writer": TaskStatus.DONE, "coder": TaskStatus.DONE})     # the lead (writer) passed the job on
+        self.assertEqual(final.sender, "writer")
 
     async def test_a_risky_step_waits_for_the_human(self):
         await self.say("write a script and push it to github")
@@ -341,17 +358,13 @@ class DemoFlowTest(TmpDirTest):
         await self.say("/reply yes")
         final = await _wait_final(self, 2)
         self.assertIn("remembering: the human did not approve a risky step", final.content)
-        # and the next request shows the profile in the tool description the Orchestrator gives the LLM
-        specs = {s.name: s for s in self.system.orchestrator.function_specs(GROUP_MAIN)}
-        self.assertIn("Recent performance:", specs["call_coder"].description)
-        self.assertEqual(specs["call_writer"].description, ROLES["writer"].capability)
 
     async def test_cancel_stops_everything_and_clears_the_request(self):
         await self.say("write a script and push it")
         await _until(lambda: self.shown("asks for approval"))
         await self.say("/cancel")
         await _until(lambda: self.shown("Cancelled R1"))
-        await _until(lambda: not self.system.orchestrator._runs)
+        await _until(lambda: not self.system.requests._runs)
         self.assertEqual([t.status for t in self.system.state.by_root("R1")], [TaskStatus.CANCELLED])
         self.assertEqual(self.finals(), [])
         self.assertEqual(self.system.human._pending, {})                           # the CLI forgot the open request
@@ -363,7 +376,7 @@ class DemoFlowTest(TmpDirTest):
         await self.say("/dm researcher find out about decorators")
         await _until(lambda: self.shown("researcher finished"))
         self.assertTrue(self.shown("(DM·researcher)"))
-        self.assertEqual(self.finals(), [])                                        # no Orchestrator involved
+        self.assertEqual(self.finals(), [])                                        # no request layer involved
         [task] = self.system.state.by_root("R1")
         self.assertEqual((task.assignee, task.requester, task.status), ("researcher", HUMAN, TaskStatus.DONE))
 
@@ -386,7 +399,7 @@ class SlowDemoTest(TmpDirTest):
         await lines.put("write a script")
         await _until(lambda: system.state.by_root("R1") and system.state.by_root("R1")[0].status == TaskStatus.RUNNING)
         await lines.put("/cancel")
-        await _until(lambda: not system.orchestrator._runs)
+        await _until(lambda: not system.requests._runs)
         await asyncio.sleep(0.7)                                       # long enough for the worker to have finished
         self.assertEqual(list((self.tmp / "demo" / "workspaces").glob("coder/*")), [])        # it stopped: no file
         self.assertEqual(system.memories["coder"].all(), [])                                  # and no memory of a success
@@ -516,7 +529,8 @@ class EntryPointTest(TmpDirTest):
             reader.join(timeout=5)
             p.stdout.close()
         self.assertFalse(reader.is_alive())
-        self.assertIn("[orchestrator] @coder write a python script that prints hello", seen)
+        self.assertIn("[coder] @human coder finished 'write a python script that prints hello'", seen)
+        self.assertNotIn("[orchestrator]", seen.split("> ", 1)[-1])                       # the request layer stays silent
         self.assertIn("Deliverables: script-", seen)
         self.assertEqual(p.returncode, 0)
         outputs = list((self.tmp / "demo" / "output").glob("R1-*/script-*.py"))
@@ -549,9 +563,18 @@ class EntryPointTest(TmpDirTest):
         self.assertTrue((self.tmp / "mas.log").exists())               # next to demo/, so clearing demo/ keeps it
         self.assertFalse((self.tmp / "demo" / "mas.log").exists())
 
-    def test_without_a_key_the_real_system_says_what_to_do(self):
+    def test_without_a_team_the_real_system_says_what_to_do(self):
         env = dict(os.environ, PYTHONPATH=str(ROOT), HKGAI_API_KEY="", LLM_PROVIDER="")
         r = subprocess.run([sys.executable, "-m", "mas", "--data-dir", str(self.tmp)], input="", capture_output=True,
+                           text=True, cwd=self.tmp, env=env, timeout=30)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("--team", r.stderr + r.stdout)
+
+    def test_without_a_key_the_real_system_says_what_to_do(self):
+        team = self.tmp / "team.md"
+        team.write_text("## Writer (writer)\n\n```text\nYou write.\n```\n")
+        env = dict(os.environ, PYTHONPATH=str(ROOT), HKGAI_API_KEY="", LLM_PROVIDER="")
+        r = subprocess.run([sys.executable, "-m", "mas", "--team", str(team), "--data-dir", str(self.tmp)], input="", capture_output=True,
                            text=True, cwd=self.tmp, env=env, timeout=30)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("HKGAI_API_KEY is not set", r.stderr + r.stdout)

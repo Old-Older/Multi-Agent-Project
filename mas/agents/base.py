@@ -1,6 +1,6 @@
 """Agent base class (design §3, §5, §7).
 
-Owner: JIAN Yimin. WorkerAgent (LI Heyang) and Orchestrator subclass it.
+Owner: JIAN Yimin. WorkerAgent (LI Heyang) subclasses it.
 
 Subclasses implement handle_task / handle_chat; everything about messages,
 routing, status and HITL is done here so the ReAct loop never touches the bus.
@@ -135,7 +135,7 @@ class Agent(ABC):
         registers it (a new root), handle_task runs, and the TASK_RESULT goes back to the
         human in the same channel. `/cancel` cancels the unfinished tasks of this chat
         session and says so (CANCEL_NOTICE below); other slash commands (/status, ...)
-        belong to the Orchestrator and the CLI and are ignored here. Subclasses override
+        belong to the request layer and the CLI and are ignored here. Subclasses override
         this to do something else, e.g. answer a question without opening a task; they
         should call super().handle_chat(msg) for anything they do not handle."""
         text = msg.content.strip()

@@ -3,7 +3,7 @@
 Owner: JIAN Yimin.
 
 Pure code, never calls an LLM. Every call_<agent> tool call, from the
-Orchestrator or from a worker re-delegating, in a group or a DM session, goes
+request layer or from a worker re-delegating, in a group or a DM session, goes
 through Router.dispatch(). This keeps one code path for limits, state,
 file hand-off, HITL routing and statistics.
 
@@ -84,7 +84,8 @@ class Router:
     async def dispatch(self, *, requester: str, target: str, goal: str,
                        context: str = "", files: list[str] | None = None,
                        parent: Task | None = None, session_id: str,
-                       root_id: str, origin_channel: str) -> TaskResult:
+                       root_id: str, origin_channel: str,
+                       timeout: float | None = None) -> TaskResult:
         """Create a Task, run it on `target`, return its result.
 
         1. Check limits (depth, cycle in chain, delegations per task, retries of
@@ -111,7 +112,7 @@ class Router:
         sources: dict[str, Path] = {}
         if denied is None:
             for name in files:
-                src = self.locate_file(name, requester, root_id)
+                src = self.locate_file(name, requester, root_id, session_id)
                 if src is None:
                     denied = f"file not found: {name}"
                     break
@@ -135,7 +136,8 @@ class Router:
 
         loop = asyncio.get_running_loop()
         fut: asyncio.Future[TaskResult] = loop.create_future()
-        budget = _DispatchBudget(loop.time() + self.settings.subtask_timeout_s, loop.create_future())
+        limit = timeout if timeout is not None else self.settings.subtask_timeout_s
+        budget = _DispatchBudget(loop.time() + limit, loop.create_future())
         self._task_waiters[task.id] = fut
         self._task_budgets[task.id] = budget
         try:
@@ -148,7 +150,7 @@ class Router:
                 remaining = budget.deadline - now
                 if remaining <= 0:
                     result = TaskResult(
-                        task.id, False, "", error=f"no result within {self.settings.subtask_timeout_s}s",
+                        task.id, False, "", error=f"no result within {limit:g}s",
                         failure_mode=FailureMode.TIMEOUT)
                     self.state.finish(result)
                     return result
@@ -191,21 +193,28 @@ class Router:
             return f"delegation cycle: {' -> '.join(chain + [target])}"
         if len(chain) - 1 > s.max_delegation_depth:
             return f"delegation depth would exceed {s.max_delegation_depth}"
-        if parent and self._delegations.get(parent.id, 0) >= s.max_delegations_per_task:
-            return f"task {parent.id} already delegated {s.max_delegations_per_task} times"
+        if parent:
+            # A request's lead coordinates the whole team (assign, review, fix, release...), so it
+            # may delegate more often than a worker that only asks a teammate for help now and then.
+            allowed = s.max_lead_delegations if parent.parent_id is None else s.max_delegations_per_task
+            if self._delegations.get(parent.id, 0) >= allowed:
+                return f"task {parent.id} already delegated {allowed} times"
         tries = self._attempts.get((root_id, target, _norm(goal)), [])
         attempts = sum(1 for tid in tries if self.state.get(tid).status != TaskStatus.DECLINED)
         if attempts > s.max_retries_same_goal:       # first try + max_retries retries
             return f"same goal already tried {attempts} times on {target}"
         return None
 
-    def locate_file(self, name: str, requester: str, root_id: str) -> Path | None:
+    def locate_file(self, name: str, requester: str, root_id: str,
+                    session_id: str | None = None) -> Path | None:
         """Where `name` lives: the requester's own sandbox, else the workspace of the
-        agent whose result in this root listed it as an artifact (newest first). The
-        Orchestrator uses it to collect the deliverables."""
-        owners = [requester] + [
-            t.assignee for t in reversed(self.state.by_root(root_id))
-            if (r := self.state.result(t.id)) and name in r.artifacts]
+        agent whose result listed it as an artifact, newest first: this root's results
+        first, then those of the roots that came before it in the same session (a
+        follow-up request such as "extend the system we just built" must find the files of
+        the first one; a later root never leaks backwards). The request layer uses it to
+        collect the deliverables."""
+        owners = [requester] + [t.assignee for t in self._tasks_newest_first(root_id, session_id)
+                                if (r := self.state.result(t.id)) and name in r.artifacts]
         for owner in owners:
             sb = self.sandboxes.get(owner)
             try:
@@ -214,6 +223,29 @@ class Router:
             except PermissionError:
                 return None
         return None
+
+    def _tasks_newest_first(self, root_id: str, session_id: str | None = None) -> list[Task]:
+        """Tasks of `root_id` (newest first), then those of the earlier roots of its session."""
+        mine = self.state.by_root(root_id)
+        session = mine[0].session_id if mine else session_id
+        earlier: list[Task] = []
+        if session:
+            for t in self.state.in_session(session):          # registration order
+                if t.root_id == root_id:
+                    break
+                earlier.append(t)
+        return list(reversed(mine)) + list(reversed(earlier))
+
+    def root_artifacts(self, root_id: str) -> list[tuple[str, str]]:
+        """(agent, file) for every file the successful tasks of this root wrote, oldest first,
+        without repeats. What a lead-run request delivers."""
+        seen: dict[tuple[str, str], None] = {}
+        for t in self.state.by_root(root_id):
+            r = self.state.result(t.id)
+            if r and r.success and not r.declined:
+                for name in r.artifacts:
+                    seen.setdefault((t.assignee, name), None)
+        return list(seen)
 
     def _refuse(self, task: Task, reason: str) -> TaskResult:
         """Record a refused call as a FAILED task (for /status and debugging) and return
@@ -260,7 +292,7 @@ class Router:
         Workers do not call this directly: Agent.ask_human(task, ...) fills the
         arguments from the task (origin_channel is inherited down the delegation chain,
         so a delegated agent's request still appears where the human started).
-        The Orchestrator has no Task when it asks for clarification, so it passes
+        The request layer has no Task when it asks for clarification, so it passes
         task_id=None. With a task_id the task is WAITING_HUMAN meanwhile.
         Returns CANCELLED_ANSWER if the root is cancelled or the task has already
         ended. Callers use the task's stored result to distinguish timeout from
@@ -333,14 +365,14 @@ class Router:
             fut = self._task_waiters.pop(task.id, None)
             if fut and not fut.done():
                 fut.set_result(TaskResult(task.id, False, "", error="cancelled"))
-        for key, root in list(self._hitl_root.items()):      # also the Orchestrator's questions
+        for key, root in list(self._hitl_root.items()):      # also the request layer's questions
             waiter = self._hitl_waiters.get(key)
             if root == root_id and waiter and not waiter.done():
                 waiter.set_result(CANCELLED_ANSWER)
 
     def cancel_session(self, session_id: str) -> list[str]:
         """Cancel every root that still has unfinished tasks in the session (for /cancel in
-        a DM, where the Orchestrator is not involved). Returns the roots it cancelled."""
+        a DM, where the request layer is not involved). Returns the roots it cancelled."""
         roots = list(dict.fromkeys(t.root_id for t in self.state.active(session_id)))
         for root_id in roots:
             self.cancel_root(root_id)

@@ -7,15 +7,17 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mas.agents.orchestrator import Orchestrator
 from mas.agents.roles import ROLES
+from mas.agents.worker import WorkerAgent
 from mas.config import Settings
 from mas.core.bus import InMemoryBus
 from mas.core.message import GROUP_MAIN
 from mas.core.router import Router
 from mas.core.state import StateTable
+from mas.core.task import Task
 from mas.llm.mock import MockLLM
 from mas.memory.base import (PROFILE_WINDOW, Experience, JsonlMemory, keywords, tags_for_tools)
+from tests.test_router import FakeSandbox
 
 
 def exp(task_id, goal="write a script", tags=("code",), success=True, summary="done", lesson="", ts=0.0):
@@ -208,7 +210,7 @@ class TagsTest(unittest.TestCase):
 class EvolutionTest(MemoryTestBase):
     """The report's story: the same kind of task twice, the second time with the lesson."""
 
-    def test_a_failure_changes_what_is_recalled_and_what_the_orchestrator_sees(self):
+    def test_a_failure_changes_what_is_recalled_and_what_the_teammates_see(self):
         self.mem.add(exp("t1", goal="fetch the docs page and save it", tags=("search",), success=False,
                          summary="the page came back empty", lesson="this site needs JavaScript, use another source"))
         recalled = self.mem.recall("fetch the pricing page and save it")
@@ -218,18 +220,35 @@ class EvolutionTest(MemoryTestBase):
         self.assertIn("search 1/2 succeeded", self.mem.profile())
         self.assertEqual({e.task_id for e in self.mem.recall("fetch the pricing page")}, {"t1", "t2"})   # the lesson is still there
 
-    def test_the_orchestrator_shows_the_profile_in_the_tool_description(self):
+    def test_a_worker_shows_its_teammates_profiles_in_the_tool_descriptions(self):
         self.mem.add(exp("t1", success=False, lesson="installing packages times out"))
         bus = InMemoryBus()
-        bus.join("orchestrator", GROUP_MAIN)
         settings = Settings(data_dir=self.tmp / "data")
-        orch = Orchestrator(bus, Router(bus, StateTable(), {}, settings), settings, MockLLM(), ROLES,
-                            {"coder": self.mem})
-        specs = {s.name: s for s in orch.function_specs(GROUP_MAIN)}
+        router = Router(bus, StateTable(), {}, settings)
+        me = WorkerAgent(ROLES["writer"], bus, router, settings, MockLLM(), [], FakeSandbox("writer", self.tmp / "w"),
+                         self.mem, peers=ROLES, peer_memories={"coder": self.mem})
+        task = Task(goal="x", assignee="writer", requester="orchestrator", session_id=GROUP_MAIN, root_id="R1",
+                    origin_channel=GROUP_MAIN, chain=["orchestrator"])
+        specs = {s.name: s for s in me.function_specs(task)}
         self.assertIn("Recent performance: code 0/1 succeeded. Known weak spots: installing packages times out.",
                       specs["call_coder"].description)
-        self.assertEqual(specs["call_writer"].description, ROLES["writer"].capability)     # no memory, no profile
+        self.assertEqual(specs["call_researcher"].description, ROLES["researcher"].capability)   # no memory, no profile
+        self.assertNotIn("call_writer", specs)                                                 # not itself
         self.assertLessEqual(len(self.mem.profile(settings.profile_max_chars)), settings.profile_max_chars)
+
+    def test_a_memory_that_cannot_give_a_profile_does_not_break_the_specs(self):
+        class Broken(JsonlMemory):
+            def profile(self, max_chars=300):
+                raise OSError("disk")
+        bus = InMemoryBus()
+        settings = Settings(data_dir=self.tmp / "data")
+        me = WorkerAgent(ROLES["writer"], bus, Router(bus, StateTable(), {}, settings), settings, MockLLM(), [],
+                         FakeSandbox("writer", self.tmp / "w"), self.mem, peers=ROLES,
+                         peer_memories={"coder": Broken.for_agent(self.tmp, "coder")})
+        task = Task(goal="x", assignee="writer", requester="orchestrator", session_id=GROUP_MAIN, root_id="R1",
+                    origin_channel=GROUP_MAIN, chain=["orchestrator"])
+        specs = {s.name: s for s in me.function_specs(task)}
+        self.assertEqual(specs["call_coder"].description, ROLES["coder"].capability)
 
 
 if __name__ == "__main__":

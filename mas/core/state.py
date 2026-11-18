@@ -58,6 +58,9 @@ class StateTable:
     def by_root(self, root_id: str) -> list[Task]:
         return [t for t in self._tasks.values() if t.root_id == root_id]
 
+    def in_session(self, session_id: str | None) -> list[Task]:
+        return [t for t in self._tasks.values() if t.session_id == session_id]
+
     def active(self, session_id: str) -> list[Task]:
         """Tasks of the session that are not finished yet."""
         return [t for t in self._tasks.values()

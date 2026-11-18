@@ -16,10 +16,12 @@ from typing import TypeVar
 
 from mas.agents.base import Agent
 from mas.agents.roles import RoleConfig
-from mas.agents.virtual_tools import DECLINE, DECLINE_SPEC, READ_GROUP, READ_GROUP_SPEC
+from mas.agents.virtual_tools import (ASK_HUMAN, ASK_HUMAN_SPEC, DECLINE, DECLINE_SPEC, READ_GROUP,
+                                      READ_GROUP_SPEC, call_agent_spec, target_of)
 from mas.config import Settings
 from mas.core.bus import MessageBus
 from mas.core.human import CANCELLED_ANSWER, HitlKind
+from mas.core.message import HUMAN
 from mas.core.router import Router
 from mas.core.task import FailureMode, Task, TaskResult, TaskStatus
 from mas.llm.base import ChatMessage, FunctionSpec, LLMClient, LLMError, ToolCall
@@ -46,6 +48,21 @@ For failure, set success to false and include error and optionally failure_mode
 (llm_format, tool_error, timeout, max_steps, wrong_output or crash).
 Report partial work honestly. Files and identifiers recorded by tools are added
 automatically. Do not call finish; return the JSON object directly."""
+
+
+_TEAM = """You work in a team. The other members are available as call_<agent> tools: one call
+hands one goal to one teammate, who works in their own workspace and answers with a summary and
+file names (pass files you want them to use in `files`). Delegate what a teammate is better
+placed to do, ask for a review when quality matters, and do not call a teammate for something
+you can do yourself. Use ask_human when you need the human's requirements, preferences or
+permission and cannot reasonably infer them; do not guess and do not ask twice for the same thing."""
+
+_LEAD = """The human gave this request directly to you, so you lead it. Understand what is wanted
+(ask the human if it is unclear), split the work, delegate it to your teammates, check what
+comes back (have a reviewer look at important results and send problems back for fixing), and
+finish only when the result is good. Your final answer is the message the human reads: say
+what was done, where the files are and what to do next, in the language the human used. List in
+`artifacts` the deliverable files of the whole request, including those your teammates wrote."""
 
 
 def _clip(text: str, limit: int) -> str:
@@ -77,13 +94,18 @@ class _TaskTerminated(Exception):
 class WorkerAgent(Agent):
     def __init__(self, role: RoleConfig, bus: MessageBus, router: Router,
                  settings: Settings, llm: LLMClient, tools: list[Tool],
-                 sandbox: Sandbox, memory: Memory) -> None:
+                 sandbox: Sandbox, memory: Memory,
+                 peers: dict[str, RoleConfig] | None = None,
+                 peer_memories: dict[str, Memory] | None = None) -> None:
         super().__init__(role.agent_id, bus, router, settings)
         self.role = role
+        # Teammates this worker may delegate to (None: works alone, as in the first version).
+        self.peers = {k: v for k, v in (peers or {}).items() if k != role.agent_id} if peers is not None else None
         self.llm = llm
         self.tools = {t.name: t for t in tools}
-        if len(self.tools) != len(tools) or {DECLINE, READ_GROUP} & self.tools.keys():
+        if len(self.tools) != len(tools) or {DECLINE, READ_GROUP, ASK_HUMAN} & self.tools.keys():
             raise ValueError("Tool names must be unique and must not shadow worker control tools")
+        self.peer_memories = peer_memories or {}      # read-only: what the teammates have been good at
         self.sandbox = sandbox
         self.memory = memory
         self._reflections: set[asyncio.Task[None]] = set()
@@ -107,7 +129,8 @@ class WorkerAgent(Agent):
         Multi-role configuration and delegation are outside this first implementation.
         """
         started = time.perf_counter()
-        run = _Run(deadline=started + self.settings.subtask_timeout_s)
+        run = _Run(deadline=started + (self.settings.lead_timeout_s if self._leads(task)
+                                       else self.settings.subtask_timeout_s))
         terminal = None
         try:
             result = await self._loop(task, run)
@@ -134,7 +157,12 @@ class WorkerAgent(Agent):
         result.steps = run.steps
         result.duration = time.perf_counter() - started
         result.summary = _clip(result.summary, self.settings.result_summary_max_chars)
-        result.artifacts = self._existing_artifacts([*run.artifacts, *result.artifacts])
+        own = self._existing_artifacts([*run.artifacts, *result.artifacts])
+        if self._leads(task):
+            # A lead's deliverables include the files its teammates wrote; they live in other workspaces.
+            known = {name for _, name in self.router.root_artifacts(task.root_id)}
+            own += [n for n in dict.fromkeys(result.artifacts) if n in known and n not in own]
+        result.artifacts = own
         result.refs = {**result.refs, **run.refs}   # observed identifiers win over model guesses
         if (not result.declined and result.error != CANCELLED_ANSWER
                 and (result.failure_mode != FailureMode.TIMEOUT or run.execution_started)):
@@ -158,6 +186,7 @@ class WorkerAgent(Agent):
         messages: list[ChatMessage] = [
             {"role": "system", "content": "\n\n".join(filter(None, [
                 self.role.system_prompt, self.role.capability, _INSTRUCTIONS,
+                _TEAM if self.peers else "", _LEAD if self._leads(task) else "",
             ]))},
             {"role": "user", "content": json.dumps({
                 "goal": task.goal, "context": task.context,
@@ -171,7 +200,8 @@ class WorkerAgent(Agent):
         human_seen = len(self._human_messages(task))
         format_errors = 0
         specs = self.function_specs(task)
-        for step in range(1, self.settings.max_worker_steps + 1):
+        max_steps = self.settings.max_lead_steps if self._leads(task) else self.settings.max_worker_steps
+        for step in range(1, max_steps + 1):
             self._ensure_running(task)
             run.steps = step
             additions = self._human_messages(task)
@@ -187,7 +217,7 @@ class WorkerAgent(Agent):
                     return self._final_result(task, response.text)
                 except (ValueError, TypeError) as exc:
                     format_errors += 1
-                    if format_errors >= 3 or step == self.settings.max_worker_steps:
+                    if format_errors >= 3 or step == max_steps:
                         return TaskResult(task.id, False, "", error=f"invalid final result: {exc}",
                                           failure_mode=FailureMode.LLM_FORMAT)
                     messages.append({"role": "user", "content":
@@ -284,6 +314,11 @@ class WorkerAgent(Agent):
             history = self.bus.history(task.channel, limit)
             text = "\n".join(f"{m.sender}: {m.content}" for m in history if m.content)
             return {"ok": True, "output": _clip(text, self.settings.tool_output_max_chars)}
+        if call.name == ASK_HUMAN and self.peers is not None:
+            return await self._tool_ask_human(task, run, args)
+        target = target_of(call.name)
+        if target is not None and self.peers is not None and call.name not in self.tools:
+            return await self._tool_call_peer(task, run, target, args)
         tool = self.tools.get(call.name)
         if tool is None:
             return {"ok": False, "output": f"Unknown tool: {call.name}"}
@@ -321,6 +356,63 @@ class WorkerAgent(Agent):
                 run.failures = 0
         return observation
 
+    def _profile(self, agent_id: str) -> str:
+        """A teammate's capability profile (D5), from its memory. Only a hint: if there is none,
+        or reading it fails, the tool is described without it."""
+        memory = self.peer_memories.get(agent_id)
+        if memory is None:
+            return ""
+        try:
+            return memory.profile(self.settings.profile_max_chars)
+        except Exception:
+            log.exception("could not read the profile of %s", agent_id)
+            return ""
+
+    def _leads(self, task: Task) -> bool:
+        """True when this task is a request the human gave to this team directly (the request layer
+        handed it over, or the human @mentioned this agent): its owner leads the whole request."""
+        return self.peers is not None and task.parent_id is None
+
+    async def _tool_ask_human(self, task: Task, run: _Run, args: dict) -> dict:
+        question = args.get("question")
+        options = args.get("options") or []
+        if not isinstance(question, str) or not question.strip():
+            return {"ok": False, "output": "ask_human needs a non-empty question"}
+        if not isinstance(options, list) or any(not isinstance(o, str) for o in options):
+            return {"ok": False, "output": "options must be an array of strings"}
+        answer = await self._ask(task, run, question.strip(), HitlKind.CLARIFY, options)
+        if answer == CANCELLED_ANSWER or self.is_cancelled(task):
+            return {"cancelled": True}
+        return {"ok": True, "output": answer}
+
+    async def _tool_call_peer(self, task: Task, run: _Run, target: str, args: dict) -> dict:
+        """call_<teammate>: delegate one goal through the Router and report what came back."""
+        if not self.peers or target not in self.peers:
+            return {"ok": False, "output": f"Unknown tool: call_{target} (teammates: {', '.join(self.peers or {}) or 'none'})"}
+        goal = args.get("goal")
+        files = args.get("files") or []
+        context = args.get("context") or ""
+        if not isinstance(goal, str) or not goal.strip():
+            return {"ok": False, "output": "missing argument goal"}
+        if not isinstance(files, list) or not isinstance(context, str):
+            return {"ok": False, "output": "files must be an array and context a string"}
+        result = await self._active(
+            lambda: self.call_agent(task, target, goal.strip(), context, [str(f) for f in files]), task, run)
+        if result.error == CANCELLED_ANSWER:
+            return {"cancelled": True}
+        out: dict[str, object] = {"ok": result.success}
+        if result.declined:
+            out.update(declined=True, reason=result.error or result.summary)
+            if result.suggest:
+                out["suggest"] = result.suggest
+        else:
+            for key, value in (("summary", result.summary), ("artifacts", result.artifacts), ("refs", result.refs),
+                               ("open_issues", result.open_issues), ("error", result.error)):
+                if value:
+                    out[key] = value
+        run.tools_used.append(f"call_{target}")
+        return out
+
     def _existing_artifacts(self, candidates: list[str]) -> list[str]:
         """Keep canonical, existing workspace files, including retained partial output."""
         artifacts: list[str] = []
@@ -344,7 +436,13 @@ class WorkerAgent(Agent):
 
     def function_specs(self, task: Task) -> list[FunctionSpec]:
         """Expose injected tools and local controls, without a multi-role registry."""
-        return [tool.spec() for tool in self.tools.values()] + [DECLINE_SPEC, READ_GROUP_SPEC]
+        specs = [tool.spec() for tool in self.tools.values()] + [DECLINE_SPEC, READ_GROUP_SPEC]
+        if self.peers is not None:
+            blocked = {*task.chain, self.agent_id}                  # a delegation cycle is refused anyway
+            specs += [call_agent_spec(role, self._profile(name))
+                      for name, role in self.peers.items() if name not in blocked]
+            specs.append(ASK_HUMAN_SPEC)
+        return specs
 
     @staticmethod
     def _assistant_message(text: str, calls: list[ToolCall]) -> ChatMessage:

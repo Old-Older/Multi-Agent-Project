@@ -8,35 +8,18 @@ from pathlib import Path
 
 from mas.agents.roles import RoleConfig
 from mas.agents.worker import WorkerAgent
-from mas.app import WorkerParts, build_system
+from mas.app import WorkerParts, build_system, default_worker_factory
 from mas.config import Settings
 from mas.core.human import CliHumanIO
 from mas.core.message import HUMAN, dm_channel
 from mas.core.task import TaskResult
 from mas.llm.base import ChatMessage, FunctionSpec, LLMResponse, ToolCall
 from mas.llm.mock import MockLLM
-from mas.tools.files import DeleteFile, ListFiles, ReadFile, WriteFile
-from mas.tools.git import Git
-from mas.tools.python import RunPython
-from mas.tools.web import FetchURL, WebSearch
 
 
 def execution_worker_factory(role: RoleConfig, parts: WorkerParts) -> WorkerAgent:
-    """Pass as build_system's worker_factory to register the tools in each role's order."""
-    constructors = {
-        ReadFile.name: ReadFile, WriteFile.name: WriteFile,
-        DeleteFile.name: DeleteFile, ListFiles.name: ListFiles,
-        RunPython.name: RunPython, FetchURL.name: FetchURL,
-        Git.name: lambda: Git(github_token=parts.settings.github_token),
-        WebSearch.name: lambda: WebSearch(api_key=parts.settings.search_api_key),
-    }
-    tools = []
-    for name in role.tool_names:
-        if name not in constructors:
-            raise ValueError(f"unknown tool {name!r} configured for {role.agent_id}")
-        tools.append(constructors[name]())
-    return WorkerAgent(role, parts.bus, parts.router, parts.settings, parts.llm,
-                       tools, parts.sandbox, parts.memory)
+    """Kept for the examples: the default factory already registers every tool in each role's order."""
+    return default_worker_factory(role, parts)
 
 
 def _report_test(messages: list[ChatMessage], tools: list[FunctionSpec] | None) -> LLMResponse:
