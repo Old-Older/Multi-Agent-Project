@@ -74,6 +74,15 @@ class Transcript:
             out += ["", "## How the requests ended", ""] + summary
         return "\n".join(out).rstrip() + "\n"
 
+    def dialogue(self, since: float = 0.0, until: float | None = None) -> str:
+        """Just the conversation (no header, team or summary) between two timestamps.
+        Evaluation uses it to show a grader what happened during one task."""
+        lines: list[str] = []
+        for msg in self.messages:
+            if msg.ts >= since and (until is None or msg.ts < until):
+                lines += self._entry(msg)
+        return "\n".join(lines).strip()
+
     def save(self, path: Path | None = None) -> Path | None:
         """Write the file (to `path`, else to the path given at construction). Never raises:
         a transcript that cannot be written must not stop a run."""
