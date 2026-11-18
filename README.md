@@ -295,6 +295,6 @@ failure lessons, workers with eight tools, lead selection and delegation, team a
 transcript export, unattended runs.
 
 Not finished: the Docker sandbox, and the evaluation on all scenarios. The evaluation harness exists
-(`python -m mas.eval`), but only one real run has been made so far (scenario 3, before several fixes: 0 of 2
-requests completed), so there are no reliable completion-rate or timing results yet; see
+(`python -m mas.eval`), but real runs have only been made on scenario 3 (first: 0 of 2 requests completed; after
+fixes: 2 of 2, 83% of sub-tasks, about 26 minutes per request, graded 7.0/10 by a model), so there are no reliable completion-rate or timing results yet; see
 [`docs/report.md`](docs/report.md) for exactly what has been measured.

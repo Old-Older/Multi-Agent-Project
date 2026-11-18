@@ -1,0 +1,326 @@
+import json, os
+
+SLIDES = []
+
+def slide(kind, **kw):
+    kw["kind"] = kind
+    SLIDES.append(kw)
+
+# ---------------- 1 TITLE ----------------
+slide("title",
+    kicker="FUND TEAM · INVESTMENT COMMITTEE BRIEFING",
+    title="The Semiconductor Industry After 2026",
+    subtitle="A supply-constrained supercycle, a 2028 air pocket, and where the profit pool actually sits",
+    meta=["Perspective: end-2026 (data cut-off 18 Nov 2026)",
+          "Scope: full value chain — AI compute, memory, foundry & packaging, semicap, analog/auto/industrial, China",
+          "Prepared by: Fund Manager, Equity Investment Team"])
+
+# ---------------- 2 EXEC SUMMARY ----------------
+slide("judgments",
+    kicker="EXECUTIVE SUMMARY",
+    title="Five judgments",
+    items=[
+        ("1", "This is a supply-constrained supercycle, not a normal cycle.",
+         "Memory is contracted out to 2029, TSMC runs at 66% gross margin, and WFE is at an all-time high. The binding constraint is wafers, HBM stacks and CoWoS capacity — not demand."),
+        ("2", "2027 is the peak-growth year. 2028 is the risk year.",
+         "Hyperscaler capex growth decelerates +77% (2026) → +54% (2027) → +12% (2028) [E]. Memory capex triples to ~$146bn in 2027 and new DRAM capacity lands in 2028. That is the textbook setup for oversupply."),
+        ("3", "Value is migrating from the GPU to memory and packaging.",
+         "NVIDIA guided gross margin down to 71–72% on HBM4 cost while SK hynix printed an 80% operating margin. Custom ASIC share rising from 27.8% to ~40% by 2030 [E] erodes the GPU pricing umbrella."),
+        ("4", "China is a shrinking revenue pool but a rising competitor.",
+         "NVIDIA now assumes zero China data-centre revenue; Huawei holds ~50% of the China AI-chip market. Self-sufficiency is ~30% [E]. The investable China story is equipment localisation, not leading-edge logic."),
+        ("5", "The portfolio answer is a barbell, not a beta trade.",
+         "Own the bottlenecks (HBM, advanced packaging, leading-edge foundry, semicap), underweight the commoditised middle (mature-node logic, commodity analog), and buy explicit insurance against the 2028 scenario."),
+    ])
+
+# ---------------- 3 SCOREBOARD ----------------
+slide("scoreboard",
+    kicker="WHERE WE ARE",
+    title="The scoreboard at end-2026",
+    subtitle="Every major segment is at or near a record. That is the point — and the problem.",
+    rows=[
+        ("AI accelerators", "NVIDIA Q3 FY27 revenue $115.8bn, +103% y/y; data centre $107.6bn, +110%", "Record", "up"),
+        ("Memory", "Memory market $889.3bn in 2026 → >$1.28tn 2027E (+44%); SK hynix operating margin 80%", "Record", "up"),
+        ("Foundry", "TSMC 3Q26 revenue $46.72bn, +41.2% y/y; gross margin 66.4%; HPC = 68% of revenue", "Record", "up"),
+        ("Semicap", "WFE $116.9bn in 2025 → $143.9bn 2026E → ~$175bn 2027E (SEMI); Lam and TEL guide higher", "Record", "up"),
+        ("Analog / auto / industrial", "Texas Instruments and ADI recovering off a two-year inventory correction; utilisation still below normal", "Mid-cycle", "flat"),
+        ("China domestic", "SMIC 3Q26 revenue $3.19bn, +33.9%; utilisation 97.3%; but gross margin only 29.9%", "Volume up, margin down", "flat"),
+    ],
+    footnote="Sources: company reports (Oct–Nov 2026); TrendForce 29 May 2026; SEMI 14 Jul 2026. [R] reported unless marked [E].")
+
+# ---------------- 4 DEMAND ----------------
+slide("chart",
+    kicker="THE DEMAND ENGINE",
+    title="Hyperscaler capex: still rising, but the second derivative is turning",
+    subtitle="Big-4 capex guidance for 2026 is $720–745bn [R]. Consensus 2027 estimates cluster at $1.2–1.4tn [E] — a 54% increase that then collapses to +12% in 2028.",
+    chart_id="capex",
+    bullets=[
+        "2026 guidance is company-issued and therefore the highest-confidence number in this deck: Alphabet $195–205bn, Amazon ~$220bn, Meta $130–145bn, Microsoft ~$175bn.",
+        "2027 is sell-side estimate, not guidance. Goldman $1.2tn, Morgan Stanley $1.4tn, BofA $1.32tn, S&P Global >$1.3tn. Treat the level as a range, the direction as reliable.",
+        "The 2028 deceleration to +12% is the single most important number for semiconductor earnings power — capex is the industry's revenue.",
+        "Watch the funding mix: an increasing share is debt-financed. A rise in hyperscaler credit spreads is the earliest warning signal.",
+    ],
+    footnote="Sources: TMT Finance 23 Sep 2026 (company guidance); Goldman Sachs 24 Sep 2026; Morgan Stanley 3 Aug 2026; BofA; S&P Global Ratings 27 Aug 2026. [R] reported, [E] estimate.")
+
+# ---------------- 5 AI COMPUTE ----------------
+slide("twocol",
+    kicker="LAYER 1 · AI COMPUTE",
+    title="NVIDIA still owns the market — but the margin is being competed away",
+    left_title="The incumbent",
+    left=[
+        "Q3 FY27: revenue $115.8bn (+103%), data centre $107.6bn (+110%), GAAP gross margin 74.8%.",
+        "Q4 guidance: $130.0bn at gross margin 71–72% — a ~300bp step down explicitly attributed to HBM4 cost.",
+        "Supply commitments jumped to $390bn from $279bn: NVIDIA is pre-buying the bottleneck, which transfers pricing power to memory.",
+        "Assumes zero China data-centre revenue. The China option is now free in the model.",
+    ],
+    right_title="The challengers",
+    right=[
+        "AMD Q3 2026: revenue $13.38bn (+45%), data centre $8.5bn (+97%), non-GAAP gross margin 56% — a credible second source at a 15–18pt margin discount.",
+        "Custom ASICs: 27.8% of AI server shipments in 2026 → ~40% by 2030 [E]. ASIC units +44.6% vs GPU +16.1%.",
+        "Broadcom AI semis $16.7bn in the quarter (+221%), FY26 $58bn, >$100bn FY27 line of sight, >70% design-services share.",
+        "Hyperscalers are deliberately dual-sourcing to break the single-vendor premium. That is a structural margin headwind, not a cyclical one.",
+    ],
+    verdict="Judgment: own the compute layer for growth, but do not underwrite 75% gross margins in perpetuity. The ASIC insurgency caps the multiple even as units grow.",
+    footnote="Sources: NVIDIA Q3 FY27 release 17 Nov 2026; AMD Q3 2026 release 3 Nov 2026; TrendForce 20 Mar 2026; Broadcom FQ3 FY26. [R] unless marked [E].")
+
+# ---------------- 6 MEMORY ----------------
+slide("chart",
+    kicker="LAYER 2 · MEMORY",
+    title="Memory is the tightest market in the industry — and the most dangerous to own late",
+    subtitle="HBM consumes ~22% of DRAM wafer input at end-2026 but only ~9% of DRAM bits. That wafer-intensity squeeze is what is repricing everything else.",
+    chart_id="memory",
+    bullets=[
+        "Pricing: conventional DRAM contract +10–15% q/q in 4Q26, NAND +15–20%, enterprise SSD +23–28% [E]. Q1 2026 DRAM contract was +93–98% q/q [R].",
+        "Contractual visibility is extraordinary: SK hynix has 14 LTA customers, >50% of 2027–28 capacity under LTA, and is effectively sold out to 2029. Micron has >75% of CY2027 HBM committed at higher prices.",
+        "HBM4 is the new rent: 12-Hi 36GB stacks go from ~$600 (2026) to ~$1,300 (2027) [E]; blended HBM ASP +121% y/y in 2027 [E].",
+        "The risk: Samsung + SK hynix + Micron plan ~$146bn of 2027 capex versus $43bn in 2024 — a 3.4x increase [C]. New capacity is meaningful from 2028. Memory is a great 2027 holding and a poor 2028 one.",
+    ],
+    footnote="Sources: TrendForce 30 Sep 2026, 29 Sep 2026, 29 May 2026; SK hynix 3Q26 (28 Oct 2026); Micron FQ4 2026; Chosun Ilbo/Deloitte Aug 2026. [E] forecasts flagged.")
+
+# ---------------- 7 FOUNDRY ----------------
+slide("twocol",
+    kicker="LAYER 3 · FOUNDRY & PACKAGING",
+    title="TSMC's toll booth: 72.5% share, 66% gross margin, and the real moat is packaging",
+    left_title="The numbers",
+    left=[
+        "2Q26 foundry share: TSMC 72.5% ($40.2bn), Samsung 5.9%, SMIC 5.4% [R].",
+        "3Q26: revenue $46.72bn (+41.2%), gross margin 66.4%, operating margin 58.7%. Node mix: 2nm 8%, 3nm 33%, 5nm 28%, 7nm 10%.",
+        "2026 capex $60–64bn; 2027 sell-side estimates $83–90bn; 2028 up to $105bn [E].",
+        "N2 capacity 90k wpm end-2026 → 110k mid-2027; 3nm 180k → 210k. A16 with Super Power Rail slipped to 2027 volume.",
+    ],
+    right_title="Why packaging is the moat",
+    right=[
+        "CoWoS capacity ~115–140k wpm at end-2026 → ~170k wpm in 2027. Goldman models 1.275m wafers in 2026 rising to 2.73m in 2027 (+114%) [E].",
+        "The supply–demand gap narrows from ~20% to ~10% by end-2026 — still short. CoWoS has compounded >80% a year since 2022.",
+        "Advanced packaging, not the transistor, is what gates accelerator output. That is why TSMC can price N2 at ~$30k a wafer.",
+        "Challengers are late: Intel 18A is in volume on Panther Lake but Intel Foundry still lost $2.1bn in 2Q26 with no large external customer; Samsung SF2 yield ~60% with Taylor booked for 2027.",
+    ],
+    verdict="Judgment: TSMC is the highest-quality way to own the AI build-out — it is paid on units, not on which accelerator wins.",
+    footnote="Sources: TrendForce 9 Sep 2026, 15 Oct 2026, 14 Sep 2026, 15 Jun 2026; TSMC 3Q26; Goldman Sachs CoWoS model. [E] flagged.")
+
+# ---------------- 8 SEMICAP ----------------
+slide("chart",
+    kicker="LAYER 4 · SEMICAP",
+    title="Semicap is the second derivative of capex — and 2027 is its best year",
+    subtitle="WFE goes from $116.9bn (2025, reported) to $143.9bn (2026E) to ~$175bn (2027E, SEMI) — with Lam guiding above $200bn and TEL at ≥$210bn.",
+    chart_id="wfe",
+    bullets=[
+        "The dispersion between SEMI (~$175bn) and the equipment makers (>$200bn) is unusually wide. When the toolmakers are more bullish than the trade body, the toolmakers are usually closer to right — they are quoting against orders.",
+        "ASML Q3'26: €11.662bn revenue, 57.5% gross margin, FY26 €44–45bn, and explicitly guiding that 2027–28 supply will be below demand. EUV is a genuine monopoly.",
+        "Applied Materials FQ4'26 $10.409bn (+53%), Lam $8.219bn at a 40.0% operating margin, KLA FQ1'27 $4.14bn. Operating leverage is at cycle highs.",
+        "The catch: semicap earnings peak one to two quarters before WFE peaks. If 2028 WFE is ~$200bn (SEMI), that is +14% — a sharp deceleration from +22%. Own it through 2027, then reassess.",
+    ],
+    footnote="Sources: SEMI 14 Jul 2026 and 15 Oct 2026; Lam 21 Oct 2026; TEL 30 Oct 2026; Applied Materials 12 Nov 2026; ASML 14 Oct 2026. [E] forecasts flagged.")
+
+# ---------------- 9 ANALOG ----------------
+slide("twocol",
+    kicker="LAYER 5 · ANALOG / AUTO / INDUSTRIAL",
+    title="The laggard: a bottoming cycle with a weak recovery, not a new upcycle",
+    left_title="What the data says",
+    left=[
+        "Texas Instruments and ADI have both reported sequential recovery off a two-year inventory correction; utilisation is improving but remains below normalised levels.",
+        "This is the segment most exposed to the 2023–25 destocking and least exposed to AI. It is a diversifier, not a growth engine.",
+        "Mature-node capacity (28/40/65/90nm) remains structurally oversupplied because China has added enormous capacity there — SMIC runs at 97.3% utilisation but only a 29.9% gross margin.",
+        "Auto demand is mixed: EV growth has slowed in the West while China NEV penetration keeps rising. SiC pricing continues to deflate as capacity arrives.",
+    ],
+    right_title="How to treat it",
+    right=[
+        "Treat analog/auto/industrial as a valuation and diversification trade, not a cycle trade. Buy it when it is cheap relative to its own history, not when the cycle turns.",
+        "Prefer names with content growth per vehicle or per installed node (power management, connectivity, sensors) over commodity discrete and commodity analog.",
+        "Avoid the pure mature-node foundry exposure: it is the one part of the value chain where China's capacity additions are unambiguously deflationary.",
+        "This is where a 2028 downturn would hurt least — and where a 2027 melt-up would help least. Size accordingly.",
+    ],
+    verdict="Judgment: underweight versus the AI chain, but hold a core position as ballast. It is the cheapest part of the sector and the least crowded.",
+    footnote="Sources: TI Q3 2026 (21 Oct 2026); ADI FQ3 2026 (19 Aug 2026); Infineon FY2026; SMIC 3Q26. SiC and EV commentary is directional judgment — see appendix caveats.")
+
+# ---------------- 10 CHINA ----------------
+slide("twocol",
+    kicker="LAYER 6 · CHINA & GEOPOLITICS",
+    title="China: a shrinking revenue pool and a rising competitor — both at once",
+    left_title="The revenue pool is closing",
+    left=[
+        "NVIDIA stopped shipping US-approved AI chips to China in Nov 2026 and now assumes zero China data-centre revenue. Roughly 600k H200s sit idle in Hong Kong amid Beijing's import hold.",
+        "Huawei holds ~50% of the China AI-chip market (~$12bn in 2026E) versus NVIDIA at ~8%, down from ~39% in 2025 [E].",
+        "Section 232 imposes a 25% tariff on certain semiconductors, stacking with existing measures. Export controls have moved from a list to a licensing regime.",
+        "China IC self-sufficiency ~30% in 2026 versus 16% in 2020 [E]; AI-GPU self-sufficiency 41% mid-2026 versus 20% in 2023 [E].",
+    ],
+    right_title="But the competitor is real",
+    right=[
+        "SMIC 3Q26: revenue $3.19bn (+33.9%), utilisation 97.3%, 90.8% China revenue — but gross margin only 29.9%. Volume without pricing power.",
+        "Huawei Ascend 950PR: 1.56 PFLOPS FP4 (~2.8x H20) but only ~35% of H20 memory bandwidth. Roadmap pulls the 960DT forward to 1Q27.",
+        "Equipment localisation is the investable seam: domestic share in Chinese fabs went 25% → 35% in 2025 against a 70% target for 2027. Sub-components (RF power, vacuum valves, quartz) are still 80–90% foreign.",
+        "Taiwan concentration remains the un-hedgeable risk: TSMC makes most of the world's leading-edge logic in one earthquake and one geopolitical zone.",
+    ],
+    verdict="Judgment: underwrite zero China revenue in US AI names (it is already in guidance), and treat China equipment localisation as a separate, higher-risk, higher-variance theme.",
+    footnote="Sources: Reuters 18 Nov 2026; TrendForce 23 Mar 2026 and 17 Sep 2026; SMIC 3Q26 (12 Nov 2026); NDRC via Tech Times 29 Aug 2026; EY Section 232 note. [E] flagged.")
+
+# ---------------- 11 PROFIT POOL ----------------
+slide("profitpool",
+    kicker="SYNTHESIS",
+    title="Where the profit pool actually sits",
+    subtitle="Revenue growth and profit capture have decoupled. The bottleneck owners are taking the economics.",
+    rows=[
+        ("HBM / DRAM", "Very high", "80% operating margin (SK hynix 3Q26); sold out to 2029 on LTAs", "Overweight", "up"),
+        ("Advanced packaging (CoWoS)", "Very high", ">80% CAGR since 2022; still ~10% short of demand at end-2026", "Overweight", "up"),
+        ("Leading-edge foundry", "High", "72.5% share, 66.4% gross margin, paid per wafer regardless of winner", "Overweight", "up"),
+        ("Semicap (EUV, deposition, metrology)", "High", "40% operating margins at Lam; ASML supply below demand through 2028", "Overweight into 2027", "up"),
+        ("AI accelerators (GPU)", "High but compressing", "74.8% → 71–72% guided gross margin; ASIC share rising to ~40%", "Neutral / own for growth not margin", "flat"),
+        ("Analog / auto / industrial", "Moderate", "Recovering off a two-year correction; utilisation below normal", "Core hold, underweight vs AI", "flat"),
+        ("Mature-node foundry / commodity analog", "Low", "SMIC 29.9% gross margin at 97.3% utilisation; China capacity deflationary", "Underweight", "down"),
+    ],
+    footnote="Margins are reported company figures for the most recent quarter. Positioning is the team's judgment, not a recommendation to any external client.")
+
+# ---------------- 12 SCENARIOS ----------------
+slide("scenarios",
+    kicker="THE CENTRAL QUESTION",
+    title="The 2028 question: three scenarios",
+    subtitle="The industry's problem is not 2027 — it is what happens when $146bn of memory capex and $105bn of TSMC capex arrive at the same time as capex growth slows to +12%.",
+    cols=[
+        ("Soft landing", "45%", "up",
+         ["Hyperscaler capex grows +12–15% in 2028 rather than stalling; inference demand absorbs new capacity.",
+          "Memory pricing rolls over 20–30% from peak but stays above cash cost; LTAs cushion the fall.",
+          "Semicap bookings flatten rather than fall. Sector de-rates modestly, earnings hold.",
+          "Portfolio: stay invested, trim memory into strength, rotate toward semicap and analog."]),
+        ("Air pocket", "35%", "flat",
+         ["Capex growth goes to zero or negative in 2028 as hyperscalers digest and free cash flow discipline returns.",
+          "DRAM spot collapses; HBM renegotiates downward at the 2028 LTA reset. Memory earnings fall 50%+.",
+          "Semicap orders fall 25–30%; the group de-rates 30–40% peak to trough, as in every prior cycle.",
+          "Portfolio: this is the scenario the barbell and the insurance are built for."]),
+        ("Structural break", "20%", "down",
+         ["A genuine efficiency shock — model architectures that need far less memory or compute per unit of output.",
+          "Or a Taiwan Strait disruption, which is not a scenario to trade but one to size for.",
+          "Either way, the bottleneck premium disappears and the whole chain re-rates on lower terminal volume.",
+          "Portfolio: only position sizing and geographic diversification help here. No stock pick saves you."]),
+    ],
+    footnote="Probabilities are the team's subjective assessment, not a statistical model. They are stated so they can be argued with.")
+
+# ---------------- 13 IMPLICATIONS ----------------
+slide("implications",
+    kicker="INVESTMENT IMPLICATIONS",
+    title="What we would actually do",
+    items=[
+        ("Own the bottlenecks, sized for a peak", "HBM/memory and advanced packaging are the highest-conviction 2027 earnings. But they are late-cycle assets: build the position now, and pre-commit to trimming on the first sign of DRAM spot weakness rather than on the earnings miss."),
+        ("Use foundry as the core, not the trade", "TSMC captures the build-out regardless of whether NVIDIA, AMD or a hyperscaler ASIC wins. It is the lowest-variance way to be long AI compute, and the 66% gross margin is the evidence."),
+        ("Be long semicap into 2027, then reassess", "Order books support >$200bn WFE in 2027. But semicap earnings peak before WFE does. Set an explicit review trigger: two consecutive months of declining book-to-bill."),
+        ("Underweight the commoditised middle", "Mature-node foundry and commodity analog face Chinese capacity additions with no pricing power. A 97.3% utilisation rate producing a 29.9% gross margin is the whole argument."),
+        ("Hold analog/auto/industrial as ballast", "Cheapest part of the sector, least crowded, least AI-dependent. It will not lead, but it is what you want to own if the 2028 air pocket arrives."),
+        ("Assume zero China revenue, and price the option at zero", "US AI names already guide to zero China. Any easing is free upside; do not pay for it. China equipment localisation is a separate, smaller, higher-variance allocation."),
+    ])
+
+# ---------------- 14 PORTFOLIO ----------------
+slide("portfolio",
+    kicker="PORTFOLIO CONSTRUCTION",
+    title="Sizing the barbell: an illustrative sector sleeve",
+    subtitle="Illustrative weights for a dedicated semiconductor sleeve within a global equity portfolio. Not a client recommendation.",
+    bars=[
+        ("Memory / HBM", 20, "Overweight — highest 2027 earnings, highest 2028 risk"),
+        ("Leading-edge foundry", 20, "Core — lowest-variance AI exposure"),
+        ("Semicap", 18, "Overweight into 2027, review trigger set"),
+        ("Advanced packaging / OSAT", 8, "Bottleneck, but fewer pure-play vehicles"),
+        ("AI accelerators (GPU/ASIC)", 14, "Growth, not margin — ASIC share rising"),
+        ("Analog / auto / industrial", 12, "Ballast, valuation support"),
+        ("Mature-node / commodity", 3, "Structural underweight"),
+        ("Cash / hedges", 5, "Dry powder for the 2028 scenario"),
+    ],
+    riskbox=[
+        ("Risk budget", "Target sleeve volatility 30–35% annualised; max drawdown tolerance 40%."),
+        ("Concentration limits", "Single name ≤8% of sleeve; single country (ex-US) ≤35%; memory ≤25%."),
+        ("Hedge", "5% cash plus optional long-dated puts on a semiconductor ETF, funded by trimming memory into strength."),
+        ("Review cadence", "Monthly on the dashboard (slide 16); formal re-underwrite at each memory LTA reset."),
+    ],
+    footnote="Weights are illustrative and sum to 100. They express relative conviction within the sector, not an absolute allocation to semiconductors.")
+
+# ---------------- 15 RISKS ----------------
+slide("risks",
+    kicker="KEY RISKS",
+    title="What could prove us wrong",
+    rows=[
+        ("AI capex digestion in 2028", "High", "High", "Capex growth decelerates to +12% in 2028 [E] just as new memory and foundry capacity lands. This is the base-case risk, not a tail."),
+        ("Memory oversupply", "High", "High", "~$146bn of 2027 memory capex versus $43bn in 2024 [C]. Every prior memory upcycle ended exactly this way."),
+        ("Taiwan Strait / geopolitical", "Low", "Severe", "TSMC concentration in leading-edge logic is un-hedgeable at the portfolio level. Only sizing and geographic diversification help."),
+        ("Export controls escalate further", "Medium", "Medium", "Already priced for US AI names (zero China assumed), but semicap has real China revenue: TEL at 36.4% of sales, AMAT <25%."),
+        ("Custom ASIC displaces merchant GPU faster than expected", "Medium", "Medium", "ASIC share 27.8% → ~40% by 2030 [E]. Good for Broadcom and TSMC, bad for GPU pricing power."),
+        ("Efficiency shock in AI models", "Low", "High", "Cheaper inference per unit of output would cut the memory and compute intensity of the build-out. Hard to time, impossible to ignore."),
+        ("Valuation / crowding", "Medium", "Medium", "The sector is priced for the supercycle continuing. A de-rating needs no fundamental deterioration — only a change in the second derivative."),
+    ],
+    footnote="Impact and likelihood are the team's qualitative assessment. 'Severe' impact means it would invalidate the thesis rather than merely hurt returns.")
+
+# ---------------- 16 DASHBOARD ----------------
+slide("dashboard",
+    kicker="MONITORING",
+    title="The ten indicators we will actually watch",
+    subtitle="Each has a threshold that triggers a review. This is how the thesis gets falsified rather than defended.",
+    rows=[
+        ("1", "Hyperscaler capex guidance revisions", "Any 2027 guide cut >10% vs prior", "Quarterly calls"),
+        ("2", "DRAM contract and spot price", "Two consecutive months of spot decline", "Monthly (TrendForce)"),
+        ("3", "HBM LTA renegotiation terms", "Any LTA signed below prior price", "Event-driven"),
+        ("4", "Semicap book-to-bill", "Below 1.0 for two quarters", "Quarterly"),
+        ("5", "TSMC monthly revenue and CoWoS lead time", "Lead time under 2 quarters", "Monthly"),
+        ("6", "Hyperscaler credit spreads / capex funding mix", "Spread widening >100bp", "Weekly"),
+        ("7", "NVIDIA gross margin vs guidance", "Below 70%", "Quarterly"),
+        ("8", "Custom ASIC share of AI server shipments", "Above 35% ahead of schedule", "Quarterly (TrendForce)"),
+        ("9", "China self-sufficiency and equipment localisation", "Domestic equipment share >50%", "Annual"),
+        ("10", "Inventory days at distributors and OEMs", "Above the 5-year average", "Quarterly"),
+    ],
+    footnote="Thresholds are set so that a breach forces a documented review, not an automatic trade.")
+
+# ---------------- 17 CONCLUSION ----------------
+slide("conclusion",
+    kicker="CONCLUSION",
+    title="The industry is in the best shape it has ever been in — which is exactly why we size for 2028",
+    points=[
+        "The supercycle is real. Memory sold out to 2029, TSMC at 66% gross margin and WFE at record levels are not narrative — they are reported numbers.",
+        "But every one of those facts is a statement about scarcity, and scarcity is what capital expenditure is designed to destroy. $146bn of memory capex and $105bn of TSMC capex are already committed.",
+        "The profit pool has moved to the bottlenecks: HBM, advanced packaging, leading-edge foundry and EUV. That is where we want to be long.",
+        "The GPU layer still grows but no longer expands its margin. The commoditised middle — mature-node logic and commodity analog — is structurally impaired by Chinese capacity.",
+        "So: a barbell of bottleneck owners plus cheap ballast, an explicit 5% hedge, and a dashboard that tells us when to stop being right.",
+    ],
+    closing="We are not forecasting the end of the AI build-out. We are refusing to pay peak-cycle prices for peak-cycle earnings without a plan for the year the capacity arrives.")
+
+# ---------------- 18 APPENDIX ----------------
+slide("appendix",
+    kicker="APPENDIX",
+    title="Sources, data conventions and caveats",
+    groups=[
+        ("Data conventions", [
+            "[R] = reported by the company or a primary statistical body. [E] = estimate or forecast, usually sell-side or a research house. [C] = our calculation from reported inputs.",
+            "All figures are dated. Where a figure is a forecast, the slide says so. Where sources disagree, we show the range rather than picking the most convenient number.",
+            "Data cut-off is 18 Nov 2026. NVIDIA Q3 FY27 (17 Nov 2026) is the most recent major report included.",
+        ]),
+        ("Principal sources", [
+            "Company filings and releases: NVIDIA, AMD, TSMC, SK hynix, Samsung, Micron, ASML, Applied Materials, Lam Research, KLA, Tokyo Electron, Broadcom, SMIC, Texas Instruments, ADI, Infineon.",
+            "Industry bodies and research: SEMI (14 Jul 2026, 15 Oct 2026), TrendForce (multiple releases Mar–Oct 2026), Counterpoint (HBM share), Gartner.",
+            "Sell-side: Goldman Sachs (24 Sep 2026), Morgan Stanley (3 Aug 2026), BofA, UBS, S&P Global Ratings (27 Aug 2026).",
+            "Policy and news: BIS export-control releases, Reuters (18 Nov 2026), EY Section 232 note, NDRC via Tech Times (29 Aug 2026).",
+        ]),
+        ("Known caveats", [
+            "2027 hyperscaler capex is sell-side estimate, not company guidance. The level is uncertain; the direction of deceleration is the load-bearing claim.",
+            "HBM market share is single-sourced (Counterpoint). Levels differ across TrendForce and Omdia; the direction is consistent.",
+            "The 2027 memory capex figure (~$146bn) is a press compilation without primary-source verification; the 3.4x multiple is our calculation.",
+            "SiC pricing, EV unit growth and mature-node utilisation are directional judgments, not fully sourced numbers.",
+            "Scenario probabilities are subjective and stated so they can be challenged.",
+        ]),
+    ])
+
+with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "slides.json"), "w") as f:
+    json.dump(SLIDES, f, indent=1)
+print("slides:", len(SLIDES))
