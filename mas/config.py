@@ -35,6 +35,11 @@ class Settings:
     max_delegation_depth: int = 2
     max_delegations_per_task: int = 2         # a worker's re-delegations of one task
     max_lead_delegations: int = 16            # the lead of a request delegates more often
+    # Nudges that help a member stop once it has enough (a note after many searches, a progress check halfway when
+    # nothing has been written). Off for experiments: the budget warning and the tool-less last step stay on.
+    early_stop_nudges: bool = True
+    research_note_after: int = 12             # searches and page fetches in one task before the first note...
+    research_note_every: int = 6              # ...and between the notes after that
     max_retries_same_goal: int = 2
 
     # leading a request (design D18): the lead's own budget, delegated work included
@@ -89,6 +94,9 @@ class Settings:
             "search_api_key": os.getenv("SEARCH_API_KEY"),
         }
         values = {k: v for k, v in env.items() if v}
+        nudges = os.getenv("EARLY_STOP_NUDGES")
+        if nudges is not None:
+            values["early_stop_nudges"] = nudges.strip().lower() not in ("0", "false", "no", "off", "")
         values.update(overrides)
         known = {f.name for f in fields(cls)}
         unknown = set(values) - known

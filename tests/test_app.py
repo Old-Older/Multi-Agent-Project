@@ -142,6 +142,15 @@ class WiringTest(TmpDirTest):
         self.assertTrue(git.requires_approval)                      # a push waits for the human
         self.assertFalse(python.requires_approval)
 
+    def test_the_early_stop_nudges_default_to_on_and_the_environment_can_turn_them_off(self):
+        with patch.dict(os.environ, {}, clear=True):
+            settings = Settings.from_env()
+        self.assertEqual((settings.early_stop_nudges, settings.research_note_after, settings.research_note_every),
+                         (True, 12, 6))
+        for value, expected in (("0", False), ("off", False), ("false", False), ("1", True), ("on", True)):
+            with patch.dict(os.environ, {"EARLY_STOP_NUDGES": value}, clear=True):
+                self.assertEqual(Settings.from_env().early_stop_nudges, expected, value)
+
     def test_web_search_without_a_key_still_works_through_the_keyless_search(self):
         role = replace(ROLES["researcher"], tool_names=["fetch_url", "web_search"])
         with self.assertNoLogs("mas.app", level="WARNING"):
@@ -322,8 +331,8 @@ class DemoFlowTest(TmpDirTest):
         files = sorted(p.name for p in Path(final.payload["output_dir"]).iterdir())
         self.assertEqual((len(files), files[0].startswith("document-"), files[1].startswith("script-")), (2, True, True))
         self.assertEqual(self.system.requests.outcomes["R1"].deliverables, final.payload["deliverables"])
+        await _until(lambda: self.shown("Deliverables:"))                        # the command line shows messages a moment later
         self.assertEqual(len(self.shown("Done:")), 1)                            # the teammate reported to the lead in the group
-        self.assertTrue(self.shown("Deliverables:"))
         self.assertEqual({t.assignee for t in self.system.state.by_root("R1")}, {"coder", "writer"})
         coder, writer = (self.system.memories[a].all() for a in ("coder", "writer"))
         self.assertEqual([(e.success, e.tags) for e in coder], [(True, ["code", "file"])])      # every agent remembers its task

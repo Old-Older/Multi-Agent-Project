@@ -116,11 +116,14 @@ files it lists are the deliverables.
 
 **When a member stops.** A task ends when the member answers without calling a tool; the step limit (`max_worker_steps`
 30, `max_lead_steps` 40) is only a cap, and a member that finds what it needs is told to write the result and finish.
-Four things push it to stop early instead of researching until the cap: an identical search or page fetch is not run
-a second time (the earlier result is pointed to); after 8 searches or fetches, and every 4 after that, the observation
-tells it to stop researching unless one specific fact is missing; at half the steps, a worker that has written no file is
-asked to write what it has; and with 3 steps left it is told so, and its last step has no tools, so it has to answer with
-what it has and say what is missing.
+Several things push it to stop early instead of researching until the cap. They are nudges, not rules, and can be switched
+off together (`EARLY_STOP_NUDGES=0`, or `python -m mas.eval --early-stop off`) to measure what they change: a repeated
+successful search or fetch is noted as a repeat (identical searches and page fetches are cached, so they cost nothing);
+after 12 searches or fetches, and every 6 after that (`research_note_after`, `research_note_every`), the observation says to stop
+researching unless one specific fact is missing; at half the steps, a worker that has written no file is asked to write what it
+has, and a lead is told when no file exists yet anywhere in the request, so someone must be assigned to write the deliverable.
+The safety net is always on: with 3 steps left the member is told so, and its last step has no tools, so it has to answer with what
+it has and say what is missing.
 
 ### 4.4 Delegation (`Router.dispatch`)
 

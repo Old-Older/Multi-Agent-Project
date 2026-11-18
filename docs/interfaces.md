@@ -225,7 +225,7 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 - `WorkerAgent(role, bus, router, settings, llm, tools, sandbox, memory, peers=None, peer_memories=None)`。`peers`（全队的 `RoleConfig`）不为 `None` 时，这个 Worker 是团队成员：多出 `call_<队友>`（不含自己和委派链上已有的人）和 `ask_human`，队友工具的描述里带 `peer_memories[队友].profile()`；为 `None` 时与最初的通用 Worker 完全一样。
 - **牵头**：任务没有父任务（`task.parent_id is None`，即请求层交来的请求或人类 @ 它的直接任务）时它牵头：系统提示多一段牵头说明，步数上限用 `max_lead_steps`、时限用 `lead_timeout_s`，最终结果的 `artifacts` 可以列队友写的文件（按这个 root 里已有的产物接受）。
 - `RoleConfig` 是身份和提示词的容器；团队由 `mas/team.py` 从角色文件读入，不再有内置角色（`roles.ROLES` 只是演示和测试用的示例团队）。能力来自构造时传入的 `tools`。
-- **提前停止**：模型不调用工具时任务结束，步数上限只是封顶。提示词要求"能回答就停"；完全相同的 `web_search`/`fetch_url` 不再执行（观察里带 `repeat`）；研究类调用满 8 次、之后每 4 次，观察里带 `note` 提醒别再查；用掉一半步数且 worker 还没写文件时插入进度检查；剩 3 步提醒，最后一步不给工具。
+- **提前停止**：模型不调用工具时任务结束，步数上限只是封顶。提示词要求"能回答就停"。受 `Settings.early_stop_nudges` 控制的提醒：成功的重复 `web_search`/`fetch_url` 照常执行（有缓存）并在观察里带 `note`；研究类调用满 `research_note_after`（12）次、之后每 `research_note_every`（6）次，观察里带 `note` 提醒别再查；用掉一半步数时，没写文件的 worker 和整个请求里还没有任何文件的牵头者会收到进度检查。始终开着的兜底：剩 3 步提醒，最后一步不给工具。失败的调用不算"做过"，可以重试。
 - **并行委派**：同一次回复里连续的 `call_<队友>` 同时执行（`_delegate_together`）：发给不同队友的并行，发给同一位队友的按顺序；观察结果仍按发出的顺序回给模型；其中一个让任务结束（取消、超时）时其余的一并停止。其他工具调用保持原来的顺序。
 - `function_specs(task)`：注入的真实工具 + `decline` + `read_group`；有 `peers` 时再加 `call_<队友>` 和 `ask_human`。未知工具以失败观察返回，不触发路由。工具名不得重复或覆盖 `decline/read_group/ask_human`。
 - `handle_task`：注入通用执行规则、角色补充、任务目标/上下文/inbox 路径、会话看板和召回经验；`Task.files` 保留源文件名，prompt 中的 `inbox_files` 按 Router 的导入规则映射为 `inbox/<basename>`。每步追加当前 root 新增的人类原话。最多 `max_worker_steps`（默认 12）步。同批工具按顺序执行，避免先写后读等依赖操作互相抢跑。

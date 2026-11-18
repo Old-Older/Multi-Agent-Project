@@ -67,6 +67,27 @@ def _remember(key: tuple[str, int, str], rows: list[dict[str, str]]) -> None:
     _SEARCH_CACHE[key] = (time.monotonic(), [dict(row) for row in rows])
 
 
+# Pages are kept the same way: two members reading the same page, or one member reading it again, cost one request.
+_FETCH_CACHE: dict[tuple[str, int], tuple[float, dict]] = {}
+_FETCH_CACHE_SIZE = 128
+
+
+def _fetch_cached(key: tuple[str, int]) -> dict | None:
+    hit = _FETCH_CACHE.get(key)
+    if hit and time.monotonic() - hit[0] < _SEARCH_CACHE_TTL:
+        return dict(hit[1])
+    _FETCH_CACHE.pop(key, None)
+    return None
+
+
+def _fetch_remember(key: tuple[str, int], page: dict) -> None:
+    if _FETCH_CACHE_SIZE <= 0:
+        return
+    if len(_FETCH_CACHE) >= _FETCH_CACHE_SIZE:
+        _FETCH_CACHE.pop(min(_FETCH_CACHE, key=lambda k: _FETCH_CACHE[k][0]))
+    _FETCH_CACHE[key] = (time.monotonic(), dict(page))
+
+
 class _SearchUnavailable(Exception):
     """Brave could not answer (rejected key, quota, server or network trouble): try another way."""
 
@@ -325,6 +346,14 @@ class FetchURL(_WebTool):
     async def _request(self, *, url: str, max_chars: int = 3000) -> dict[str, Any]:
         _integer(max_chars, "max_chars", 20000)
         source = _url(url)
+        key = (str(source), max_chars)
+        if (hit := _fetch_cached(key)) is not None:
+            return hit
+        page = await self._fetch(source, max_chars)
+        _fetch_remember(key, page)
+        return page
+
+    async def _fetch(self, source: httpx.URL, max_chars: int) -> dict[str, Any]:
         for hop in range(6):
             # A separate client per hop prevents virtual hosts on one IP sharing TLS sessions or cookies.
             async with httpx.AsyncClient(trust_env=False, timeout=_TIMEOUT) as client:

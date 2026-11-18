@@ -47,7 +47,11 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
         # No test may reach a real search engine: the keyless search is replaced, and fails unless a test says otherwise.
         from mas.tools import web
         web._SEARCH_CACHE.clear()
+        web._FETCH_CACHE.clear()
         self.addCleanup(web._SEARCH_CACHE.clear)
+        self.addCleanup(web._FETCH_CACHE.clear)
+        # Most tests fetch one address again and again with different canned pages: the page cache is off unless a test turns it on.
+        self.enter_patch(patch("mas.tools.web._FETCH_CACHE_SIZE", 0))
         self.keyless = Mock(side_effect=ValueError("no search engine answered"))
         self.enter_patch(patch("mas.tools.web._keyless_text", self.keyless))
         self.enter_patch(patch("mas.tools.web.httpx.AsyncClient", side_effect=make_client))
@@ -252,6 +256,20 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests[-1].extensions["sni_hostname"], "two.example")
         self.assertTrue(all(not args["trust_env"] for args in self.client_args))
         self.assertTrue(all("x-subscription-token" not in request.headers for request in self.requests))
+
+    async def test_a_page_read_twice_is_fetched_once_and_a_failure_is_not_kept(self):
+        from mas.tools import web
+        with patch("mas.tools.web._FETCH_CACHE_SIZE", 8):
+            self.responses.extend([response(status=500), response(b"<title>T</title><p>text</p>")])
+            self.assertFalse((await self.fetch(url="https://one.example/p")).ok)          # a failure is tried again
+            first = await self.fetch(url="https://one.example/p")
+            again = await self.fetch(url="https://one.example/p")
+            self.assertEqual((first.ok, again.output), (True, first.output))
+            self.assertEqual(len(self.requests), 2)                                       # the failure and one good fetch
+            self.responses.append(response(b"<title>T</title><p>text</p>"))
+            await self.fetch(url="https://one.example/p", max_chars=50)                   # another length: another fetch
+            self.assertEqual(len(self.requests), 3)
+            self.assertEqual(len(web._FETCH_CACHE), 2)
 
     async def test_fetch_rejects_private_or_mixed_addresses_on_every_hop(self):
         for ip in ("127.0.0.1", "10.0.0.8", "169.254.169.254", "::1", "fec0::1",

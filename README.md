@@ -245,6 +245,7 @@ Every limit is a field of `Settings` in `mas/config.py`. The ones you may want t
 | `lead_timeout_s` | 2400 | time limit for a whole request |
 | `max_delegation_depth`, `max_delegations_per_task`, `max_retries_same_goal` | 2, 2, 2 | guards against runaway delegation (a worker re-delegating one task, same goal retried) |
 | `max_lead_delegations` | 16 | how many times the lead of a request may delegate |
+| `early_stop_nudges`, `research_note_after`, `research_note_every` | on, 12, 6 | reminders that help a member stop once it has enough; `EARLY_STOP_NUDGES=0` turns them off |
 | `memory_recall_k` | 3 | lessons recalled when a task starts |
 | `sandbox_backend` | `local` | `docker` is not implemented yet |
 

@@ -303,28 +303,48 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent[4][0], [])                                      # the last step: no tools, so it must answer
         self.assertIn("last step", sent[4][1])
 
-    async def test_an_identical_search_is_not_run_twice(self):
-        search = ScriptedTool("web_search")
+    async def test_a_repeated_search_runs_again_and_says_it_is_a_repeat_but_a_failed_one_is_simply_retried(self):
+        search = ScriptedTool("web_search", [ToolResult(False, "no engine answered"), ToolResult(True, "found"),
+                                             ToolResult(True, "found")])
         worker, llm = self.worker([call("web_search", "c1", value="HBM pricing"),
                                    call("web_search", "c2", value="HBM pricing"),
-                                   call("web_search", "c3", value="HBM supply"), final()], [search])
+                                   call("web_search", "c3", value="HBM pricing"), final()], [search])
         self.assertTrue((await asyncio.wait_for(worker.handle_task(self.task()), 2)).success)
-        self.assertEqual([kw["value"] for _, kw in search.calls], ["HBM pricing", "HBM supply"])   # the repeat went nowhere
+        self.assertEqual(len(search.calls), 3)                                     # nothing was blocked
         seen = [json.loads(m["content"]) for m in llm.calls[-1][0] if m["role"] == "tool"]
-        self.assertIn("already made exactly this web_search call at step 1", seen[1]["output"])
-        self.assertTrue(seen[1]["repeat"])
-        self.assertNotIn("repeat", seen[2])
+        self.assertNotIn("note", seen[0])                                           # the failure
+        self.assertNotIn("note", seen[1])                                           # the retry is the first success
+        self.assertIn("same web_search call as step 2", seen[2]["note"])           # only now is it a repeat
 
     async def test_a_long_run_of_research_gets_a_reminder_to_stop(self):
         fetch = ScriptedTool("fetch_url")
-        script = [call("fetch_url", f"c{n}", value=f"page {n}") for n in range(1, 14)] + [final()]
+        script = [call("fetch_url", f"c{n}", value=f"page {n}") for n in range(1, 21)] + [final()]
         self.settings.max_worker_steps = 40
         worker, llm = self.worker(script, [fetch])
         await asyncio.wait_for(worker.handle_task(self.task()), 5)
         seen = [json.loads(m["content"]) for m in llm.calls[-1][0] if m["role"] == "tool"]
-        noted = [n for n, o in enumerate(seen, 1) if "note" in o]
-        self.assertEqual(noted, [8, 12])                                           # after 8, then every 4
-        self.assertIn("stop researching", seen[7]["note"])
+        self.assertEqual([n for n, o in enumerate(seen, 1) if "note" in o], [12, 18])   # after 12, then every 6
+        self.assertIn("stop researching", seen[11]["note"])
+
+    async def test_the_thresholds_come_from_the_settings(self):
+        self.settings.research_note_after, self.settings.research_note_every = 3, 2
+        fetch = ScriptedTool("fetch_url")
+        worker, llm = self.worker([call("fetch_url", f"c{n}", value=f"p{n}") for n in range(1, 8)] + [final()], [fetch])
+        await asyncio.wait_for(worker.handle_task(self.task()), 5)
+        seen = [json.loads(m["content"]) for m in llm.calls[-1][0] if m["role"] == "tool"]
+        self.assertEqual([n for n, o in enumerate(seen, 1) if "note" in o], [3, 5, 7])
+
+    async def test_the_nudges_can_be_switched_off_but_the_budget_warning_stays(self):
+        self.settings.early_stop_nudges = False
+        self.settings.max_worker_steps = 10
+        self.settings.research_note_after = 2
+        search = ScriptedTool("web_search")
+        worker, llm = self.worker([call("web_search", f"c{n}", value="same") for n in range(1, 9)] + [final()], [search])
+        await asyncio.wait_for(worker.handle_task(self.task()), 5)
+        text = prompt_text([m for messages, _ in llm.calls for m in messages])
+        for gone in ("Progress check", "stop researching", "same web_search call"):
+            self.assertNotIn(gone, text)
+        self.assertIn("Budget:", text)                                               # the safety net is not optional
 
     async def test_halfway_with_no_file_written_the_worker_is_asked_to_write_what_it_has(self):
         self.settings.max_worker_steps = 10
@@ -344,6 +364,36 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         worker, llm = self.worker(script, [writer, search])
         await asyncio.wait_for(worker.handle_task(self.task()), 5)
         self.assertFalse(any("Progress check" in prompt_text(messages) for messages, _ in llm.calls))
+
+    def lead(self, script, tools):
+        llm = SnapshotLLM(script, lambda messages, specs: LLMResponse("Check inputs first."))
+        role = RoleConfig("worker", "Worker", "Uses the supplied tools.", "Follow this task carefully.")
+        mate = RoleConfig("mate", "Mate", "Helps.", "")
+        lead = WorkerAgent(role, self.bus, self.router, self.settings, llm, list(tools), self.sandbox, self.memory,
+                           peers={"worker": role, "mate": mate})
+        self.workers.append(lead)
+        return lead, llm
+
+    async def test_halfway_a_lead_with_no_deliverable_anywhere_is_told_to_get_one_written(self):
+        self.settings.max_lead_steps = 10
+        search = ScriptedTool("web_search")
+        lead, llm = self.lead([call("web_search", f"c{n}", value=f"q{n}") for n in range(1, 7)] + [final()], [search])
+        await asyncio.wait_for(lead.handle_task(self.task()), 5)
+        asked = [n for n, (messages, _) in enumerate(llm.calls, 1)
+                 if "no file exists yet for this request" in prompt_text(messages)]
+        self.assertEqual(asked[0], 5)
+
+    async def test_a_lead_is_not_nagged_once_a_teammate_has_written_a_file(self):
+        self.settings.max_lead_steps = 10
+        task = self.task()
+        mate = Task("write it", "mate", "worker", GROUP_MAIN, task.root_id, GROUP_MAIN, chain=[HUMAN, "worker"],
+                    parent_id=task.id)
+        self.state.register(mate)
+        self.state.finish(TaskResult(mate.id, True, "done", artifacts=["deck.html"]))
+        search = ScriptedTool("web_search")
+        lead, llm = self.lead([call("web_search", f"c{n}", value=f"q{n}") for n in range(1, 7)] + [final()], [search])
+        await asyncio.wait_for(lead.handle_task(task), 5)
+        self.assertFalse(any("no file exists yet" in prompt_text(messages) for messages, _ in llm.calls))
 
     async def test_the_instructions_tell_a_worker_to_stop_when_it_can_answer(self):
         worker, llm = self.worker([final()], [])

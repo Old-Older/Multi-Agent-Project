@@ -72,11 +72,9 @@ the message the human reads: say what was done, where the files are and what to 
 `artifacts` the deliverable files of the whole request, including those your teammates wrote."""
 
 
-# Calls that look things up outside the workspace. A repeat gets no second request, and a long run of them gets a
-# reminder to stop: a worker that never feels it has enough keeps researching until its steps run out.
+# Calls that look things up outside the workspace. A long run of them gets a reminder to stop: a worker that never
+# feels it has enough keeps researching until its steps run out. The thresholds are in Settings.
 _RESEARCH_TOOLS = ("web_search", "fetch_url")
-_RESEARCH_NOTE_AFTER = 8
-_RESEARCH_NOTE_EVERY = 4
 
 
 def _clip(text: str, limit: int) -> str:
@@ -100,7 +98,7 @@ class _Run:
     delegation_s: float = 0.0         # time spent waiting for teammates' results
     human_s: float = 0.0              # time spent waiting for the human
     by_tool: dict[str, list[float]] = field(default_factory=dict)      # tool -> [calls, seconds]
-    seen: dict[str, int] = field(default_factory=dict)                  # research call -> the step it was made at
+    seen: dict[str, int] = field(default_factory=dict)                  # successful research call -> its step
     research_calls: int = 0
 
     def metrics(self) -> dict:
@@ -241,11 +239,18 @@ class WorkerAgent(Agent):
                 messages.append({"role": "user", "content": (
                     f"Budget: {left} steps left after this one. Stop exploring. Write the files you still owe "
                     "now, then finish with the result JSON; say honestly what is missing.")})
-            elif step == max_steps // 2 and max_steps >= 6 and not run.artifacts and not self._leads(task):
+            elif (self.settings.early_stop_nudges and step == max_steps // 2 and max_steps >= 6
+                  and not run.artifacts and not self._leads(task)):
                 messages.append({"role": "user", "content": (
                     f"Progress check: {step} of {max_steps} steps used and no file written yet. If you already have "
                     "what the task needs, write it now and finish. Otherwise say in one sentence what is still "
                     "missing, and get it.")})
+            elif (self.settings.early_stop_nudges and step == max_steps // 2 and max_steps >= 6 and self._leads(task)
+                  and not run.artifacts and not self.router.root_artifacts(task.root_id)):
+                messages.append({"role": "user", "content": (
+                    f"Progress check: {step} of {max_steps} steps used and no file exists yet for this request. Make sure "
+                    "the deliverable the human asked for is being written: assign it now (or write it yourself) before "
+                    "more research or review, then improve it.")})
             elif left == 0 and step > 1:
                 messages.append({"role": "user", "content": (
                     "This is your last step and no tools are available. Reply with the final result JSON now: "
@@ -394,14 +399,7 @@ class WorkerAgent(Agent):
                 return {"ok": False, "approval_denied": True,
                         "output": "The human denied this operation. Do not perform it."}
         self._ensure_running(task)
-        key = ""
-        if call.name in _RESEARCH_TOOLS:
-            key = call.name + json.dumps(args, sort_keys=True, ensure_ascii=False)
-            if key in run.seen:
-                return {"ok": True, "repeat": True,
-                        "output": (f"You already made exactly this {call.name} call at step {run.seen[key]}; its result is "
-                                   "earlier in this conversation. Use it, or change the query or URL. If you have what "
-                                   "you need, write it up and finish.")}
+        key = call.name + json.dumps(args, sort_keys=True, ensure_ascii=False) if call.name in _RESEARCH_TOOLS else ""
         run.tools_used.append(call.name)
         # Catch tool exceptions inside the deadline wrapper: a tool's own timeout
         # is recoverable; exhausting the worker's execution budget ends the task.
@@ -417,13 +415,20 @@ class WorkerAgent(Agent):
         observation = {"ok": result.ok, "output": _clip(result.output, self.settings.tool_output_max_chars),
                        "files_written": result.files_written, "refs": result.refs}
         if key:
-            run.seen[key] = run.steps
             run.research_calls += 1
-            if (run.research_calls >= _RESEARCH_NOTE_AFTER
-                    and (run.research_calls - _RESEARCH_NOTE_AFTER) % _RESEARCH_NOTE_EVERY == 0):
-                observation["note"] = (f"You have made {run.research_calls} searches or page fetches for this task. "
-                                       "Unless one specific fact is still missing, stop researching: write up what you "
-                                       "have and finish.")
+            notes = []
+            if self.settings.early_stop_nudges:
+                if result.ok and key in run.seen:
+                    notes.append(f"This is the same {call.name} call as step {run.seen[key]} and gives the same result: "
+                                 "use what you already have.")
+                after, every = self.settings.research_note_after, max(1, self.settings.research_note_every)
+                if run.research_calls >= after and (run.research_calls - after) % every == 0:
+                    notes.append(f"You have made {run.research_calls} searches or page fetches for this task. Unless one "
+                                 "specific fact is still missing, stop researching: write up what you have and finish.")
+            if result.ok:
+                run.seen.setdefault(key, run.steps)         # a failed call may be retried: only successes count as done
+            if notes:
+                observation["note"] = " ".join(notes)
         self._ensure_running(task)
         if result.ok:
             run.failed_tool, run.failures = "", 0

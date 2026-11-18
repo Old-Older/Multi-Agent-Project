@@ -233,6 +233,7 @@ You are the software developer on a software development team. You are responsib
 | `lead_timeout_s` | 2400 | 一个完整请求的时限 |
 | `max_delegation_depth`、`max_delegations_per_task`、`max_retries_same_goal` | 2、2、2 | 防止委派失控（worker 再委派的次数、同一目标的重试） |
 | `max_lead_delegations` | 16 | 一个请求的牵头者可以委派的次数 |
+| `early_stop_nudges`、`research_note_after`、`research_note_every` | 开、12、6 | 帮成员"够了就停"的提醒；`EARLY_STOP_NUDGES=0` 关闭 |
 | `memory_recall_k` | 3 | 任务开始时召回的教训条数 |
 | `sandbox_backend` | `local` | `docker` 尚未实现 |
 

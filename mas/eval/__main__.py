@@ -29,6 +29,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--repeat", type=int, default=1, help="run every scenario this many times")
     p.add_argument("--keep-memory", action="store_true",
                    help="the repeats of a scenario share the agents' memory (to see whether it helps)")
+    p.add_argument("--early-stop", choices=("on", "off"), default="on",
+                   help="the nudges that help a member stop once it has enough; off, to measure what they change")
     p.add_argument("--timeout", type=float, default=3600.0, help="seconds allowed for one scenario run")
     p.add_argument("--out", type=Path, default=None, help="where results go (default eval_results/<time>)")
     return p.parse_args(argv)
@@ -42,6 +44,8 @@ def main(argv: list[str] | None = None) -> int:
     except ImportError:
         pass
     overrides: dict[str, object] = {"llm_provider": args.llm} if args.llm else {}
+    if args.early_stop == "off":
+        overrides["early_stop_nudges"] = False
     settings = Settings.from_env(**overrides)
     logging.basicConfig(level=logging.WARNING)
     try:
@@ -61,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
     records = asyncio.run(go())
     info = {"model provider": settings.llm_provider, "answers to questions": args.human,
-            "graded by a model": args.judge, "runs per scenario": args.repeat, "memory kept between runs": args.keep_memory,
+            "graded by a model": args.judge, "runs per scenario": args.repeat, "memory kept between runs": args.keep_memory, "early-stop nudges": args.early_stop,
             "wall time (s)": round(time.monotonic() - started)}
     save_results(records, out, info=info)
     print(render_report(records, info=info))
