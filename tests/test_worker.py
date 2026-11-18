@@ -303,6 +303,53 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent[4][0], [])                                      # the last step: no tools, so it must answer
         self.assertIn("last step", sent[4][1])
 
+    async def test_an_identical_search_is_not_run_twice(self):
+        search = ScriptedTool("web_search")
+        worker, llm = self.worker([call("web_search", "c1", value="HBM pricing"),
+                                   call("web_search", "c2", value="HBM pricing"),
+                                   call("web_search", "c3", value="HBM supply"), final()], [search])
+        self.assertTrue((await asyncio.wait_for(worker.handle_task(self.task()), 2)).success)
+        self.assertEqual([kw["value"] for _, kw in search.calls], ["HBM pricing", "HBM supply"])   # the repeat went nowhere
+        seen = [json.loads(m["content"]) for m in llm.calls[-1][0] if m["role"] == "tool"]
+        self.assertIn("already made exactly this web_search call at step 1", seen[1]["output"])
+        self.assertTrue(seen[1]["repeat"])
+        self.assertNotIn("repeat", seen[2])
+
+    async def test_a_long_run_of_research_gets_a_reminder_to_stop(self):
+        fetch = ScriptedTool("fetch_url")
+        script = [call("fetch_url", f"c{n}", value=f"page {n}") for n in range(1, 14)] + [final()]
+        self.settings.max_worker_steps = 40
+        worker, llm = self.worker(script, [fetch])
+        await asyncio.wait_for(worker.handle_task(self.task()), 5)
+        seen = [json.loads(m["content"]) for m in llm.calls[-1][0] if m["role"] == "tool"]
+        noted = [n for n, o in enumerate(seen, 1) if "note" in o]
+        self.assertEqual(noted, [8, 12])                                           # after 8, then every 4
+        self.assertIn("stop researching", seen[7]["note"])
+
+    async def test_halfway_with_no_file_written_the_worker_is_asked_to_write_what_it_has(self):
+        self.settings.max_worker_steps = 10
+        search = ScriptedTool("web_search")
+        script = [call("web_search", f"c{n}", value=f"q{n}") for n in range(1, 7)] + [final()]
+        worker, llm = self.worker(script, [search])
+        await asyncio.wait_for(worker.handle_task(self.task()), 5)
+        asked = [n for n, (messages, _) in enumerate(llm.calls, 1) if "Progress check" in prompt_text(messages)]
+        self.assertEqual(asked[0], 5)                                              # step 5 of 10
+        self.assertNotIn("Progress check", prompt_text(llm.calls[3][0]))
+
+    async def test_no_progress_check_once_a_file_has_been_written(self):
+        self.settings.max_worker_steps = 10
+        writer = ScriptedTool("write_file", [ToolResult(True, "wrote", ["notes.md"])])
+        search = ScriptedTool("web_search")
+        script = [call("write_file", "c0", value="x")] + [call("web_search", f"c{n}", value=f"q{n}") for n in range(1, 6)] + [final()]
+        worker, llm = self.worker(script, [writer, search])
+        await asyncio.wait_for(worker.handle_task(self.task()), 5)
+        self.assertFalse(any("Progress check" in prompt_text(messages) for messages, _ in llm.calls))
+
+    async def test_the_instructions_tell_a_worker_to_stop_when_it_can_answer(self):
+        worker, llm = self.worker([final()], [])
+        await asyncio.wait_for(worker.handle_task(self.task()), 2)
+        self.assertIn("Stop as soon as you can answer the task", prompt_text(llm.calls[0][0]))
+
     async def test_denied_approval_never_runs_the_tool(self):
         tool = ScriptedTool("delete_file", approval=True)
         worker, _ = self.worker([call(tool.name), final(False, "permission denied")], [tool])

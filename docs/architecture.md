@@ -114,6 +114,14 @@ result is good, and write a final answer the human can read. Its tools are the t
 tools, `ask_human`, and its own tools. What it replies at the end is the message the human reads, and the
 files it lists are the deliverables.
 
+**When a member stops.** A task ends when the member answers without calling a tool; the step limit (`max_worker_steps`
+30, `max_lead_steps` 40) is only a cap, and a member that finds what it needs is told to write the result and finish.
+Four things push it to stop early instead of researching until the cap: an identical search or page fetch is not run
+a second time (the earlier result is pointed to); after 8 searches or fetches, and every 4 after that, the observation
+tells it to stop researching unless one specific fact is missing; at half the steps, a worker that has written no file is
+asked to write what it has; and with 3 steps left it is told so, and its last step has no tools, so it has to answer with
+what it has and say what is missing.
+
 ### 4.4 Delegation (`Router.dispatch`)
 
 Every `call_<teammate>` becomes `Router.dispatch(requester, target, goal, context, files, parent, ...)`:
