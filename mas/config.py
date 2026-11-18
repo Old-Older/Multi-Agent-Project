@@ -12,25 +12,33 @@ from pathlib import Path
 
 DEFAULT_HKGAI_BASE_URL = "https://api1.hkgai.net/v1"
 DEFAULT_HKGAI_MODEL = "t2_hkgai-v3_fp8_1m_e7"
+DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
+DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
 
 
 @dataclass
 class Settings:
     # LLM (design §11)
-    llm_provider: str = "hkgai"
+    llm_provider: str = "hkgai"               # "hkgai" | "deepseek": the two the course allows
     hkgai_api_key: str = ""
     hkgai_base_url: str = DEFAULT_HKGAI_BASE_URL
     hkgai_model: str = DEFAULT_HKGAI_MODEL
-    orchestrator_model: str = ""              # empty = same as hkgai_model
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = DEFAULT_DEEPSEEK_BASE_URL
+    deepseek_model: str = DEFAULT_DEEPSEEK_MODEL
     temperature: float = 0.1
 
     # loop limits (D10, D11, §5)
-    max_orchestrator_rounds: int = 8
     max_worker_steps: int = 12
-    subtask_timeout_s: float = 180.0          # to be confirmed
+    subtask_timeout_s: float = 600.0          # one delegated task, human waits excluded
     max_delegation_depth: int = 2
-    max_delegations_per_task: int = 2
+    max_delegations_per_task: int = 2         # a worker's re-delegations of one task
+    max_lead_delegations: int = 16            # the lead of a request delegates more often
     max_retries_same_goal: int = 2
+
+    # leading a request (design D18): the lead's own budget, delegated work included
+    max_lead_steps: int = 24                  # a lead's ReAct step limit (a worker keeps max_worker_steps)
+    lead_timeout_s: float = 1800.0            # budget of the lead's whole task, delegated work included
 
     # context sizes (§2.1, §3.1, §6, §8)
     result_summary_max_chars: int = 1500
@@ -72,6 +80,9 @@ class Settings:
             "hkgai_api_key": os.getenv("HKGAI_API_KEY"),
             "hkgai_base_url": os.getenv("HKGAI_BASE_URL"),
             "hkgai_model": os.getenv("HKGAI_MODEL"),
+            "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY"),
+            "deepseek_base_url": os.getenv("DEEPSEEK_BASE_URL"),
+            "deepseek_model": os.getenv("DEEPSEEK_MODEL"),
             "github_token": os.getenv("GITHUB_TOKEN"),
             "search_api_key": os.getenv("SEARCH_API_KEY"),
         }
