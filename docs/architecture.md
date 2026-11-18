@@ -259,13 +259,19 @@ ends. This is the file to hand to a model for grading the dialogue.
 
 ## 10. Evaluation
 
-Implemented: per request the `RootOutcome` (success, failure mode, duration, deliverables) and the final
-reply payload; the transcript; the scenario runner (`python -m mas --scenario <folder> [--auto]`), which
-posts a scenario's tasks one after the other in the same group; the unattended `AutoResponder`.
+`python -m mas.eval <scenario folders>` (`mas/eval/harness.py`) runs each scenario's tasks in a fresh system
+and measures, in code: the **task completion rate** (requests, and sub-tasks the lead delegated), the
+**execution time** of each request (mean, median, maximum), failure-mode counts and the number of questions
+the team asked. It writes `report.md` and `results.json`, and the transcript and deliverables of every run.
 
-Not implemented yet: the harness that runs a whole test set from a clean state and reports the **task
-completion rate** (overall and per category), **execution time** (mean, median, maximum) and failure-mode
-counts (`mas/eval/harness.py`). `docs/report.md` states what has been measured so far.
+- `--human llm` (default) has a `SimulatedHuman` answer the team's clarifying questions as the person who made
+  the request; `--human auto` uses the `AutoResponder`'s fixed answers.
+- `--judge` has a model grade each task's dialogue and deliverables (`mas/eval/judge.py`), as the course does.
+- `--repeat N --keep-memory` runs a scenario again with the agents' memory kept, to measure whether memory helps.
+- A scenario that does not finish in time is reported as a failure, never as a hang.
+
+Also recorded for every request, outside the harness: the `RootOutcome` and the final reply payload, and the
+transcript. `docs/report.md` states what has been measured so far.
 
 ## 11. LLM backends
 

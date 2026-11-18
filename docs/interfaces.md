@@ -290,11 +290,17 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 - `LLMResponse.tool_calls` 是列表，可能包含多个调用。`text` 可以和 tool call 同时存在。
 - `MockLLM(script=[...], responder=fn)`：按顺序返回预设的响应，用完后调用 `responder`；`calls` 记录每次调用，方便断言。
 
-### 3.15 评测 `mas/eval/harness.py`
+### 3.15 评测 `mas/eval/`（已实现）
 
-- `EvalCase(id, prompt, category, checker)`：`checker(output_dir) -> bool`；为 `None` 时以"无失败完成"作为成功标准。
-- `EvalRecord` 记录：是否成功、子任务总数和完成数、耗时、牵头者的步数、HITL 次数、失败模式。
-- 每个用例使用新会话，只有记忆跨用例保留（§10）。
+- `python -m mas.eval <场景文件夹…> [--llm] [--human llm|auto] [--judge] [--repeat N] [--keep-memory] [--timeout] [--out]`。
+- `run_scenario(scenario, settings, llm, *, out_dir, run, human, judge_llm, timeout, keep_memory)` 在全新的系统里跑场景的全部任务，
+  每个任务返回一条 `EvalRecord`：是否完成、失败模式、子任务总数和完成数（牵头者委派的，被拒绝的不算）、耗时、牵头者、提问次数、交付物、
+  可选的模型评分。超时的场景记为失败（`timeout` 或 `no_result`）。`run_suite` 对多个场景、多次运行；`summarize` 汇总完成率（请求和子任务，总体、
+  每个场景、每次运行）、耗时的均值/中位数/最大值、失败模式计数、评分；`render_report`、`save_results` 写 `report.md` 和 `results.json`。
+- `SimulatedHuman(llm)`（`mas/eval/simulated_human.py`）：`AutoResponder` 的子类，澄清问题交给 LLM 扮演提需求的人回答并保持前后一致，批准和求助按规则回答；
+  每个任务发出前由框架 `set_request()`。
+- `judge_task(llm, request, dialogue, deliverables) -> Verdict`（`mas/eval/judge.py`）：列出要求、逐条核对产出、给出是否满足和 1 至 10 分。
+- 每个场景用全新的总线、工作区和（除非 `keep_memory`）记忆；`keep_memory` 时同一场景的各次运行共用 `out_dir/<场景>/data/memory`。
 
 ### 3.16 配置 `mas/config.py`（已实现）
 

@@ -283,7 +283,7 @@ Brave 的实时搜索没有用凭据验证。
 条件：`python -m mas --llm deepseek --scenario <场景 3> --auto`，模型 `deepseek-chat`，搜索用无 key 方案（没配 Brave），
 **无人值守，团队的所有问题都由 `AutoResponder` 用固定句子回答**（"proceed as described"、"try a different approach"），
 记忆从空开始。用的是 §4 的修复之后、本节末尾的修复之前的代码。没有模型评分，下面的"质量"是我读产出的印象，不是评分。
-这是一次运行，不是统计；评测框架当时还没写，数字是从对话记录里读出的。
+这是一次运行，不是统计；评测框架当时还没写，数字是从对话记录里读出的。完整对话和两个请求的交付物在 [`docs/runs/2026-11-18-scenario3-deepseek/`](runs/2026-11-18-scenario3-deepseek/)。
 
 | 请求 | 牵头者 | 结果 | 失败模式 | 耗时 | 委派的子任务 | 向人类提问 | 交付物 |
 |---|---|---|---|---:|---|---:|---|

@@ -92,7 +92,7 @@ its own workspace and its own memory.
 │   ├── sandbox/               per-agent workspace (LocalSandbox; DockerSandbox is a stub)
 │   ├── memory/                JsonlMemory: add, recall, capability profile
 │   ├── llm/                   HKGAIClient, DeepSeekClient, MockLLM, the LLMClient contract
-│   └── eval/                  evaluation harness (not finished)
+│   └── eval/                  evaluation harness, simulated human, grader (python -m mas.eval)
 ├── tests/                     unit and end-to-end tests (python -m unittest)
 ├── examples/                  small runnable examples (sandbox, execution tools, HKGAI chat)
 ├── docs/                      design decisions, interfaces, architecture, report, hand-over notes
@@ -292,7 +292,7 @@ Working: messaging, routing, task state, session board, human in the loop, per-a
 failure lessons, workers with eight tools, lead selection and delegation, team and scenario loading,
 transcript export, unattended runs.
 
-Not finished: the evaluation harness (`mas/eval/harness.py`: completion rate and timing over a test
-set), the Docker sandbox, and a simulated human that answers real questions in unattended runs.
-Nothing has been run against the real model yet, so there are no completion-rate or timing results: the
-tests use a scripted LLM (see [`docs/report.md`](docs/report.md) for exactly what has been measured).
+Not finished: the Docker sandbox, and the evaluation on all scenarios. The evaluation harness exists
+(`python -m mas.eval`), but only one real run has been made so far (scenario 3, before several fixes: 0 of 2
+requests completed), so there are no reliable completion-rate or timing results yet; see
+[`docs/report.md`](docs/report.md) for exactly what has been measured.

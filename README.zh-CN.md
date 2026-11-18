@@ -85,7 +85,7 @@
 │   ├── sandbox/               每个 agent 的工作区（LocalSandbox；DockerSandbox 还是空壳）
 │   ├── memory/                JsonlMemory：写入、召回、能力简介
 │   ├── llm/                   HKGAIClient、DeepSeekClient、MockLLM、LLMClient 约定
-│   └── eval/                  评测框架（未完成）
+│   └── eval/                  评测框架：harness、模拟人类、评分器；python -m mas.eval
 ├── tests/                     单元测试与端到端测试（python -m unittest）
 ├── examples/                  可直接运行的小例子（沙箱、执行工具、HKGAI 对话）
 ├── docs/                      设计决策、接口、架构、报告、交接记录
@@ -279,5 +279,4 @@ python -m unittest tests.test_lead      # 单个模块
 已可用：消息、路由、任务状态、会话看板、人在回路、带失败教训的每 agent 记忆、拥有八个工具的 worker、
 牵头者选择与委派、团队与场景加载、对话导出、无人值守运行。
 
-未完成：评测框架（`mas/eval/harness.py`：在测试集上统计完成率和耗时）、Docker 沙箱，以及无人值守时能认真回答问题的模拟人类。
-目前还没有用真实模型跑过，所以还没有完成率和耗时的结果：测试用的是脚本化的 LLM（到底测过什么，见 [`docs/report.md`](docs/report.md)）。
+未完成：Docker 沙箱，以及在所有场景上的评测。评测框架已经有了（`python -m mas.eval`），但到目前只做过一次真实运行（场景 3，在若干修复之前：2 个请求都没完成），所以还没有可靠的完成率和耗时结果（到底测过什么，见 [`docs/report.md`](docs/report.md)）。
