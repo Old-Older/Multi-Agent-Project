@@ -70,7 +70,8 @@ finish only when the result is good. Give each teammate a job they can finish in
 one huge one). Get a first complete version of what the human asked for into a file early, then
 improve and review it: do not spend all your steps on research and reviews. Your final answer is
 the message the human reads: say what was done, where the files are and what to do next, in the language the human used. List in
-`artifacts` the deliverable files of the whole request, including those your teammates wrote."""
+`artifacts` the finished files the human should receive, including those your teammates wrote, and
+not helper scripts, checks or drafts: only what you list is delivered, so do not leave the deliverable out."""
 
 
 # Calls that look things up outside the workspace. A long run of them gets a reminder to stop: a worker that never
@@ -184,11 +185,16 @@ class WorkerAgent(Agent):
         result.duration = time.perf_counter() - started
         result.metrics = run.metrics()
         result.summary = _clip(result.summary, self.settings.result_summary_max_chars)
-        own = self._existing_artifacts([*run.artifacts, *result.artifacts])
         if self._leads(task):
-            # A lead's deliverables include the files its teammates wrote; they live in other workspaces.
+            # What a lead delivers is what it says it delivers: the files it lists, its teammates' included (they live
+            # in other workspaces). Everything it happened to write (helper scripts, drafts) is added only if it listed
+            # nothing, so a request is not handed in with the lead's scratch files.
             known = {name for _, name in self.router.root_artifacts(task.root_id)}
-            own += [n for n in dict.fromkeys(result.artifacts) if n in known and n not in own]
+            mine = set(self._existing_artifacts(result.artifacts))
+            listed = [n for n in dict.fromkeys(result.artifacts) if n in mine or n in known]
+            own = listed or self._existing_artifacts(run.artifacts)
+        else:
+            own = self._existing_artifacts([*run.artifacts, *result.artifacts])
         result.artifacts = own
         result.refs = {**result.refs, **run.refs}   # observed identifiers win over model guesses
         if (not result.declined and result.error != CANCELLED_ANSWER

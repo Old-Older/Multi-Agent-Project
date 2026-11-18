@@ -186,8 +186,8 @@ ending with "step limit reached".
 
 When the lead's task returns, the `RequestTracker`:
 
-- copies the deliverables (the files the lead listed, else every file the successful tasks of the root
-  wrote) from the writing agents' workspaces to `data/output/<root>-<time>/` (name clashes get an
+- copies the deliverables (the files the lead listed, and only those: its helper scripts and drafts are not added behind
+  its back; if it listed nothing, every file the successful tasks of the root wrote) from the writing agents' workspaces to `data/output/<root>-<time>/` (name clashes get an
   `<agent>_` prefix; a listed file that does not exist is reported, not hidden);
 - records a `RootOutcome` (success, failure mode, duration, lead, deliverables, output directory);
 - posts the final reply **in the lead's name**, with a payload evaluation can read:

@@ -395,6 +395,32 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(lead.handle_task(task), 5)
         self.assertFalse(any("no file exists yet" in prompt_text(messages) for messages, _ in llm.calls))
 
+    async def test_a_lead_delivers_the_files_it_lists_and_not_its_scratch_files(self):
+        writer = ScriptedTool("write_file", [ToolResult(True, "wrote", ["deck.html"]), ToolResult(True, "wrote", ["fix2.py"]),
+                                             ToolResult(True, "wrote", ["check.py"])])
+        mate = Task("write the notes", "mate", "worker", GROUP_MAIN, "R1", GROUP_MAIN, chain=[HUMAN, "worker"], parent_id="t0")
+        task = self.task()
+        mate.root_id = task.root_id
+        self.state.register(mate)
+        self.state.finish(TaskResult(mate.id, True, "done", artifacts=["notes.md"]))
+        lead, _ = self.lead([call("write_file", "c1", value="a"), call("write_file", "c2", value="b"),
+                             call("write_file", "c3", value="c"),
+                             final(artifacts=["deck.html", "notes.md", "not-there.md"])], [writer])
+        result = await asyncio.wait_for(lead.handle_task(task), 2)
+        self.assertEqual(result.artifacts, ["deck.html", "notes.md"])      # no fix2.py, no check.py, nothing that does not exist
+
+    async def test_a_lead_that_lists_nothing_falls_back_to_everything_it_wrote(self):
+        writer = ScriptedTool("write_file", [ToolResult(True, "wrote", ["deck.html"]), ToolResult(True, "wrote", ["fix2.py"])])
+        lead, _ = self.lead([call("write_file", "c1", value="a"), call("write_file", "c2", value="b"), final()], [writer])
+        result = await asyncio.wait_for(lead.handle_task(self.task()), 2)
+        self.assertEqual(result.artifacts, ["deck.html", "fix2.py"])
+
+    async def test_an_ordinary_worker_still_reports_every_file_it_wrote(self):
+        writer = ScriptedTool("write_file", [ToolResult(True, "wrote", ["a.md"]), ToolResult(True, "wrote", ["b.md"])])
+        worker, _ = self.worker([call("write_file", "c1", value="a"), call("write_file", "c2", value="b"),
+                                 final(artifacts=["a.md"])], [writer])
+        self.assertEqual((await asyncio.wait_for(worker.handle_task(self.task()), 2)).artifacts, ["a.md", "b.md"])
+
     async def test_the_instructions_tell_a_worker_to_stop_when_it_can_answer(self):
         worker, llm = self.worker([final()], [])
         await asyncio.wait_for(worker.handle_task(self.task()), 2)
