@@ -29,16 +29,16 @@ class Settings:
     temperature: float = 0.1
 
     # loop limits (D10, D11, §5)
-    max_worker_steps: int = 12
-    subtask_timeout_s: float = 600.0          # one delegated task, human waits excluded
+    max_worker_steps: int = 30
+    subtask_timeout_s: float = 900.0          # one delegated task, human waits excluded
     max_delegation_depth: int = 2
     max_delegations_per_task: int = 2         # a worker's re-delegations of one task
     max_lead_delegations: int = 16            # the lead of a request delegates more often
     max_retries_same_goal: int = 2
 
     # leading a request (design D18): the lead's own budget, delegated work included
-    max_lead_steps: int = 24                  # a lead's ReAct step limit (a worker keeps max_worker_steps)
-    lead_timeout_s: float = 1800.0            # budget of the lead's whole task, delegated work included
+    max_lead_steps: int = 40                  # a lead's ReAct step limit (a worker keeps max_worker_steps)
+    lead_timeout_s: float = 2400.0            # budget of the lead's whole task, delegated work included
 
     # context sizes (§2.1, §3.1, §6, §8)
     result_summary_max_chars: int = 1500

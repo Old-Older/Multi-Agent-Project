@@ -46,7 +46,8 @@ success must be a boolean and summary a string. artifacts are workspace-relative
 paths; refs maps names to string identifiers or URLs; open_issues lists unfinished work.
 For failure, set success to false and include error and optionally failure_mode
 (llm_format, tool_error, timeout, max_steps, wrong_output or crash).
-Report partial work honestly. Files and identifiers recorded by tools are added
+Write what you have to a file as soon as you have something and improve it afterwards: a partial
+file is worth more than none, and your steps are limited. Report partial work honestly. Files and identifiers recorded by tools are added
 automatically. Do not call finish; return the JSON object directly."""
 
 
@@ -60,8 +61,11 @@ permission and cannot reasonably infer them; do not guess and do not ask twice f
 _LEAD = """The human gave this request directly to you, so you lead it. Understand what is wanted
 (ask the human if it is unclear), split the work, delegate it to your teammates, check what
 comes back (have a reviewer look at important results and send problems back for fixing), and
-finish only when the result is good. Your final answer is the message the human reads: say
-what was done, where the files are and what to do next, in the language the human used. List in
+finish only when the result is good. Give each teammate a job they can finish in a few steps
+(one brief or one file at a time; split a large piece of research into several calls rather than
+one huge one). Get a first complete version of what the human asked for into a file early, then
+improve and review it: do not spend all your steps on research and reviews. Your final answer is
+the message the human reads: say what was done, where the files are and what to do next, in the language the human used. List in
 `artifacts` the deliverable files of the whole request, including those your teammates wrote."""
 
 

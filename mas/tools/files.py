@@ -8,6 +8,11 @@ from mas.sandbox.base import Sandbox
 from mas.tools.base import Tool, ToolResult
 
 
+# What one read_file call returns at most. The worker clips tool output at tool_output_max_chars (4000),
+# and a cut that loses the "keep reading" note would leave the model guessing, so the window is smaller.
+READ_WINDOW = 3500
+
+
 def _parameters(*, content: bool = False, optional_path: bool = False) -> dict[str, Any]:
     path: dict[str, Any] = {
         "type": "string", "minLength": 1,
@@ -34,6 +39,10 @@ class _FileTool(Tool):
                 if name not in kwargs:
                     raise ValueError(f"missing required argument: {name}")
             for name, value in kwargs.items():
+                if name == "offset":
+                    if type(value) is not int or value < 0:
+                        raise ValueError("offset must be a non-negative integer")
+                    continue
                 if not isinstance(value, str):
                     raise TypeError(f"{name} must be a string")
                 if name == "path" and not value:
@@ -48,11 +57,27 @@ class _FileTool(Tool):
 
 class ReadFile(_FileTool):
     name = "read_file"
-    description = "Read a UTF-8 text file from this agent's workspace."
+    description = ("Read a UTF-8 text file from this agent's workspace. A long file comes back in pieces of "
+                   f"{READ_WINDOW} characters: the end of each piece says which offset to pass to read the next one.")
     parameters = _parameters()
+    parameters["properties"] = {**parameters["properties"], "offset": {
+        "type": "integer", "minimum": 0, "default": 0,
+        "description": "Character position to start reading from (to continue a long file)."}}
 
-    def _run(self, sandbox: Sandbox, *, path: str) -> ToolResult:
-        return ToolResult(True, sandbox.read_text(path))
+    def _run(self, sandbox: Sandbox, *, path: str, offset: int = 0) -> ToolResult:
+        text = sandbox.read_text(path)
+        if offset == 0 and len(text) <= READ_WINDOW:
+            return ToolResult(True, text)                      # the usual case: the whole file, unchanged
+        if offset >= len(text) and text:
+            raise ValueError(f"offset {offset} is past the end of the file ({len(text)} characters)")
+        end = min(offset + READ_WINDOW, len(text))
+        shown = text[offset:end]
+        if end < len(text):
+            shown += (f"\n[showing characters {offset}-{end} of {len(text)}; "
+                      f"call read_file again with offset={end} to continue]")
+        elif offset:
+            shown += f"\n[end of file: characters {offset}-{end} of {len(text)}]"
+        return ToolResult(True, shown)
 
 
 class WriteFile(_FileTool):
