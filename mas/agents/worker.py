@@ -59,8 +59,8 @@ hands one goal to one teammate, who works in their own workspace and answers wit
 file names. Workspaces are private: a teammate cannot read your files, so list every file it needs in
 `files` (it finds them in its `inbox/`), and never say "see the shared workspace". The files a teammate reports arrive in your `inbox/` when it
 answers; its reply is cut after about 1500 characters, so never ask it to paste a file's text: read the file. Calls you make in the same reply run at the same
-time (different teammates in parallel, one teammate's calls one after the other), so send independent jobs
-together in one reply, and make a call that needs another's result in a later reply. Delegate what a teammate is better
+time (also several jobs for one teammate, three at a time, each writing files that start with job1_, job2_...), so send
+independent jobs together in one reply, and make a call that needs another's result in a later reply. Delegate what a teammate is better
 placed to do, ask for a review when quality matters, and do not call a teammate for something
 you can do yourself. Use ask_human when you need the human's requirements, preferences or
 permission and cannot reasonably infer them; do not guess and do not ask twice for the same thing."""
@@ -69,8 +69,9 @@ _LEAD = """The human gave this request directly to you, so you lead it. Understa
 (ask the human if it is unclear), split the work, delegate it to your teammates, check what
 comes back (have a reviewer look at important results and send problems back for fixing), and
 finish only when the result is good. Give each teammate a job they can finish in a few steps
-(one brief or one file at a time; split a large piece of research into several calls rather than
-one huge one). Get a first complete version of what the human asked for into a file early, then
+(one brief or one file at a time). Split research into independent topics and send all of them in ONE
+reply (several call_research calls at once run at the same time), not one after another; send a later research call
+only for a gap the first results revealed. Get a first complete version of what the human asked for into a file early, then
 improve and review it: do not spend all your steps on research and reviews. Your final answer is
 the message the human reads: say what was done, where the files are and what to do next, in the language the human used. List in
 `artifacts` the finished files the human should receive, including those your teammates wrote, and
@@ -525,6 +526,17 @@ class WorkerAgent(Agent):
                 run.failures = 0
         return observation
 
+    @staticmethod
+    def _with_job_prefix(call: ToolCall, number: int) -> ToolCall:
+        """The call with a note that other jobs of this teammate run at the same time in its workspace."""
+        args = call.arguments
+        context = args.get("context") if isinstance(args, dict) else None
+        if not isinstance(args, dict) or not (context is None or isinstance(context, str)):
+            return call                                    # malformed: the call itself will say so
+        note = (f"Another job for you runs at the same time in this workspace: start the name of every file you "
+                f"write with 'job{number}_' so that the jobs do not overwrite each other's files.")
+        return replace(call, arguments={**args, "context": f"{context or ''}\n{note}".strip()})
+
     def _limits(self, task: Task) -> dict:
         """What the member is told about its budgets at the start."""
         limits: dict[str, object] = {}
@@ -646,16 +658,23 @@ class WorkerAgent(Agent):
 
     async def _delegate_together(self, task: Task, calls: list[ToolCall], run: _Run) -> list[dict]:
         """Run delegations at the same time and return their observations in the order of `calls`. Jobs for
-        different teammates run in parallel; jobs for one teammate run one after the other, because they
-        share that teammate's workspace. If one of them ends the task (cancelled, timed out), the rest are stopped."""
+        different teammates run in parallel, and so do several jobs for one teammate (at most
+        `max_parallel_per_teammate` at a time; they share its workspace, so each is told to start the names of its
+        files with job1_, job2_, ... and they cannot overwrite each other's files). If one of them ends the task
+        (cancelled, timed out), the rest are stopped."""
         by_target: dict[str, list[int]] = {}
         for index, call in enumerate(calls):
             by_target.setdefault(target_of(call.name) or "", []).append(index)
         observations: list[dict] = [{} for _ in calls]
 
         async def one_teammate(indices: list[int]) -> None:
-            for index in indices:
-                observations[index] = await self._tool(task, calls[index], run)
+            slots = asyncio.Semaphore(max(1, self.settings.max_parallel_per_teammate))
+
+            async def one(number: int, index: int) -> None:
+                call = self._with_job_prefix(calls[index], number) if len(indices) > 1 else calls[index]
+                async with slots:
+                    observations[index] = await self._tool(task, call, run)
+            await asyncio.gather(*(one(n, i) for n, i in enumerate(indices, 1)))
 
         started = time.perf_counter()
         jobs = [asyncio.create_task(one_teammate(indices)) for indices in by_target.values()]

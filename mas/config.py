@@ -34,6 +34,7 @@ class Settings:
     subtask_timeout_s: float = 900.0          # one delegated task, human waits excluded
     max_delegation_depth: int = 2
     max_delegations_per_task: int = 2         # a worker's re-delegations of one task
+    max_parallel_per_teammate: int = 3        # jobs one teammate works on at the same time for one requester
     max_lead_delegations: int = 16            # the lead of a request delegates more often
     # Nudges that help a member stop once it has enough (a note after many searches, a progress check halfway when
     # nothing has been written). Off for experiments: the budget warning and the tool-less last step stay on.

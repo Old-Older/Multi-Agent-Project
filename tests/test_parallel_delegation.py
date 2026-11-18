@@ -1,4 +1,4 @@
-"""Delegations a lead sends in one reply run at the same time (different teammates) or in turn (one teammate)."""
+"""Delegations a lead sends in one reply run at the same time: different teammates, and several jobs of one teammate."""
 from __future__ import annotations
 
 import asyncio
@@ -35,7 +35,7 @@ class Sleeper(Agent):
     async def handle_task(self, task: Task) -> TaskResult:
         started = time.monotonic()
         await asyncio.sleep(PAUSE)
-        self.log.append((self.agent_id, task.goal, started, time.monotonic()))
+        self.log.append((self.agent_id, task.goal, started, time.monotonic(), task.context))
         if task.goal in self.fail:
             return TaskResult(task.id, False, "", error="could not do it")
         return TaskResult(task.id, True, f"{self.agent_id} did {task.goal}")
@@ -48,7 +48,8 @@ class ParallelDelegationTest(unittest.IsolatedAsyncioTestCase):
         self.log: list[tuple] = []
         self.lead_calls: list[list[dict]] = []              # the tool messages the lead saw at each of its steps
 
-    async def run_lead(self, calls: list[tuple[str, str]], fail=(), cancel_after: float | None = None) -> float:
+    async def run_lead(self, calls: list[tuple[str, str]], fail=(), cancel_after: float | None = None,
+                       **settings_overrides) -> float:
         """The lead sends `calls` ((teammate, goal) pairs) in ONE reply, then answers. Returns the seconds it took."""
         def brain(messages, tools):
             if "You assign the lead" in messages[0]["content"]:
@@ -66,7 +67,7 @@ class ParallelDelegationTest(unittest.IsolatedAsyncioTestCase):
                                    parts.memory, peers=parts.peers)
             return Sleeper(role.agent_id, parts.bus, parts.router, parts.settings, log=self.log, fail=fail)
         settings = Settings(data_dir=self.tmp / "data", workspaces_dir=self.tmp / "ws", subtask_timeout_s=10,
-                            lead_timeout_s=20)
+                            lead_timeout_s=20, **settings_overrides)
         system = build_system(settings, MockLLM(responder=brain), AutoResponder(), roles=TEAM, worker_factory=factory)
         system.start()
         started = time.monotonic()
@@ -100,12 +101,26 @@ class ParallelDelegationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([json.loads(m["content"])["summary"] for m in seen],
                          ["c did third", "a did first", "b did second"])
 
-    async def test_jobs_for_one_teammate_run_in_turn_because_they_share_its_workspace(self):
+    async def test_jobs_for_one_teammate_run_at_the_same_time_too(self):
         elapsed = await self.run_lead([("a", "x"), ("a", "y"), ("b", "z")])
         a = sorted((r for r in self.log if r[0] == "a"), key=lambda r: r[2])
-        self.assertGreaterEqual(a[1][2], a[0][3] - 0.01)                       # the second began when the first ended
-        self.assertGreaterEqual(elapsed, 2 * PAUSE)
-        self.assertLess(elapsed, 3 * PAUSE * 0.95)                             # but b ran alongside them
+        self.assertLess(a[1][2], a[0][3])                                      # the second began before the first ended
+        self.assertLess(elapsed, 2 * PAUSE * 0.8)                              # all three took about one PAUSE
+
+    async def test_parallel_jobs_of_one_teammate_are_told_to_name_their_files_apart(self):
+        await self.run_lead([("a", "x"), ("a", "y"), ("b", "z")])
+        contexts = {r[1]: r[4] for r in self.log}
+        self.assertIn("'job1_'", contexts["x"])
+        self.assertIn("'job2_'", contexts["y"])
+        self.assertEqual(contexts["z"], "")                                    # a teammate with one job hears nothing
+
+    async def test_a_teammate_does_at_most_as_many_jobs_at_once_as_the_setting_allows(self):
+        elapsed = await self.run_lead([("a", str(n)) for n in range(4)], max_parallel_per_teammate=2)
+        self.assertEqual(len(self.log), 4)
+        at_once = max(sum(1 for r in self.log if r[2] <= t < r[3]) for t in [r[2] + 0.01 for r in self.log])
+        self.assertEqual(at_once, 2)
+        self.assertGreaterEqual(elapsed, 2 * PAUSE)                            # two rounds of two
+        self.assertLess(elapsed, 3 * PAUSE * 0.95)
 
     async def test_one_failing_job_does_not_stop_the_others(self):
         await self.run_lead([("a", "ok-1"), ("b", "bad"), ("c", "ok-2")], fail={"bad"})

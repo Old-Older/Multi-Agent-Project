@@ -16,6 +16,7 @@ import logging
 import re
 import socket
 import time
+import weakref
 import zlib
 from html.parser import HTMLParser
 from typing import Any
@@ -50,7 +51,21 @@ _KEYLESS_TIMELIMIT = {"pd": "d", "pw": "w", "pm": "m", "py": "y"}
 # repeated search is free. Only answers with results are kept, never failures.
 _SEARCH_CACHE: dict[tuple[str, int, str], tuple[float, list[dict[str, str]]]] = {}
 _SEARCH_CACHE_TTL = 1800.0
+_KEYLESS_CONCURRENCY = 3                 # keyless searches at the same time: more than that only brings rate limits
 _SEARCH_CACHE_SIZE = 256
+
+
+_SLOTS: weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore] = weakref.WeakKeyDictionary()
+
+
+def _keyless_slot() -> asyncio.Semaphore:
+    """Room for a keyless search: at most _KEYLESS_CONCURRENCY at a time in this event loop (members working in
+    parallel would otherwise ask the search engines all at once and be refused)."""
+    loop = asyncio.get_running_loop()
+    slot = _SLOTS.get(loop)
+    if slot is None:
+        slot = _SLOTS[loop] = asyncio.Semaphore(_KEYLESS_CONCURRENCY)
+    return slot
 
 
 def _cached(key: tuple[str, int, str]) -> list[dict[str, str]] | None:
@@ -236,8 +251,9 @@ class WebSearch(_WebTool):
             except _SearchUnavailable as exc:
                 log.warning("Brave Search unavailable (%s); using the keyless search instead", exc)
         try:
-            rows = await asyncio.wait_for(asyncio.to_thread(_keyless_text, query.strip(), count, freshness),
-                                          _KEYLESS_DEADLINE)
+            async with _keyless_slot():
+                rows = await asyncio.wait_for(asyncio.to_thread(_keyless_text, query.strip(), count, freshness),
+                                              _KEYLESS_DEADLINE)
         except asyncio.TimeoutError:
             _keyless_failed()                            # the thread finishes by itself; nobody waits for it
             raise ValueError(f"no search results within {_KEYLESS_DEADLINE:g} s. {_KEYLESS_ADVICE}") from None

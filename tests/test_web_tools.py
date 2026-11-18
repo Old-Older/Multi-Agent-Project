@@ -439,3 +439,30 @@ class KeylessDeadlineTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result.ok)
         self.assertIn("Do not keep retrying", result.output)
         self.assertEqual(web._keyless["failures"], 1)                  # and counts as a failure
+
+
+class KeylessSlotTest(unittest.IsolatedAsyncioTestCase):
+    async def test_keyless_searches_beyond_the_limit_wait_their_turn(self):
+        import threading
+        import time
+        from unittest import mock
+        from mas.tools import web
+        running = peak = 0
+        lock = threading.Lock()
+
+        def slow_search(query, count, freshness):
+            nonlocal running, peak
+            with lock:
+                running += 1
+                peak = max(peak, running)
+            time.sleep(0.05)
+            with lock:
+                running -= 1
+            return [{"title": query, "href": "https://example.com/" + query, "body": "x"}]
+
+        web._SEARCH_CACHE.clear()
+        tool = web.WebSearch()
+        with mock.patch.object(web, "_keyless_text", slow_search):
+            results = await asyncio.gather(*(tool.run(None, query=f"q{n}") for n in range(8)))
+        self.assertTrue(all(r.ok for r in results), [r.output for r in results])
+        self.assertEqual(peak, web._KEYLESS_CONCURRENCY)
