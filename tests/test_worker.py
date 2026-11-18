@@ -278,15 +278,30 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("TimeoutError", observations[0]["output"])
         self.assertIn("remote request timed out", observations[0]["output"])
 
-    async def test_two_consecutive_tool_failures_request_advice(self):
+    async def test_two_consecutive_tool_failures_give_the_model_a_hint_and_do_not_bother_the_human(self):
         tool = ScriptedTool(results=[ToolResult(False, "bad input"), ToolResult(False, "still bad")])
         worker, llm = self.worker([call(tool.name), call(tool.name, "retry"), final()], [tool])
-        pending = self.spawn(worker.handle_task(self.task()))
-        request = await self.answer_request("use a different path")
-        self.assertEqual(request.payload["kind"], HitlKind.ADVICE.value)
-        self.assertTrue((await asyncio.wait_for(pending, 2)).success)
-        self.assertIn("use a different path", prompt_text(llm.calls[2][0]))
-        self.assertEqual(len(self.messages(MsgType.HITL_REQUEST)), 1)
+        result = await asyncio.wait_for(worker.handle_task(self.task()), 2)
+        self.assertTrue(result.success)
+        self.assertEqual(self.messages(MsgType.HITL_REQUEST), [])               # a failing tool is not a question for the human
+        observations = [json.loads(m["content"]) for m in llm.calls[2][0] if m["role"] == "tool"]
+        self.assertNotIn("hint", observations[0])
+        self.assertIn("failed twice in a row", observations[1]["hint"])
+
+    async def test_the_model_is_told_the_budget_and_the_last_step_has_no_tools(self):
+        self.settings.max_worker_steps = 5
+        tool = ScriptedTool(results=[ToolResult(True, "ok")] * 5)
+        script = [call(tool.name, f"c{n}") for n in range(1, 5)] + [final(False, "ran out, partly done")]
+        worker, llm = self.worker(script, [tool])
+        result = await asyncio.wait_for(worker.handle_task(self.task()), 2)
+        self.assertEqual((result.success, result.summary), (False, "ran out, partly done"))   # a result, not "step limit reached"
+        sent = [(call_[1], prompt_text(call_[0])) for call_ in llm.calls]
+        self.assertEqual(len(sent), 5)
+        self.assertNotIn("Budget:", sent[0][1])
+        self.assertIn("Budget: 3 steps left", sent[1][1])
+        self.assertTrue(all(specs for specs, _ in sent[:4]))
+        self.assertEqual(sent[4][0], [])                                      # the last step: no tools, so it must answer
+        self.assertIn("last step", sent[4][1])
 
     async def test_denied_approval_never_runs_the_tool(self):
         tool = ScriptedTool("delete_file", approval=True)

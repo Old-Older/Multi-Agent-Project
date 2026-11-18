@@ -143,9 +143,8 @@ class WorkerRegressionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.memory.all(), [])
         self.assertFalse(self.sandbox.exists("never-started.txt"))
 
-    async def test_human_advice_stops_the_old_batch_before_replanning(self):
+    async def test_a_repeated_failure_stops_the_old_batch_before_replanning(self):
         self.sandbox.write_text("keep.txt", "Important original contents")
-        advice = "Stop this plan. Leave keep.txt unchanged."
         worker, llm = self.worker([
             LLMResponse("", [
                 ToolCall("read", "read_file", {"path": "missing.txt"}),
@@ -155,12 +154,13 @@ class WorkerRegressionTest(unittest.IsolatedAsyncioTestCase):
             call("read_file", "replan", path="keep.txt"),
             final(summary="Kept the original contents."),
         ])
-        result = await self.run_with_answer(worker, self.task(), advice)
+        result = await asyncio.wait_for(worker.handle_task(self.task()), 2)
         self.assertTrue(result.success)
+        self.assertEqual(self.messages(MsgType.HITL_REQUEST), [])
         self.assertEqual(self.sandbox.read_text("keep.txt"), "Important original contents")
         observations = [message for message in llm.calls[1][0] if message["role"] == "tool"]
         self.assertEqual([message["tool_call_id"] for message in observations], ["read", "retry", "overwrite"])
-        self.assertEqual(json.loads(observations[1]["content"])["human_advice"], advice)
+        self.assertIn("failed twice in a row", json.loads(observations[1]["content"])["hint"])
         self.assertTrue(json.loads(observations[2]["content"])["skipped"])
         replanned = [message for message in llm.calls[2][0]
                      if message["role"] == "tool" and message["tool_call_id"] == "replan"]

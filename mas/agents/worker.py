@@ -208,9 +208,19 @@ class WorkerAgent(Agent):
             for text in additions[human_seen:]:
                 messages.append({"role": "user", "content": f"(Human addition) {text}"})
             human_seen = len(additions)
+            left = max_steps - step
+            if left == 3:       # a worker that is never told the budget keeps researching until it is cut off
+                messages.append({"role": "user", "content": (
+                    f"Budget: {left} steps left after this one. Stop exploring. Write the files you still owe "
+                    "now, then finish with the result JSON; say honestly what is missing.")})
+            elif left == 0 and step > 1:
+                messages.append({"role": "user", "content": (
+                    "This is your last step and no tools are available. Reply with the final result JSON now: "
+                    "what was done, the files written, and what is missing.")})
+            step_specs = [] if left == 0 and step > 1 else specs
             await self.report_status(task, TaskStatus.RUNNING, f"Worker step {step}")
             response = await self._active(
-                lambda: self.llm.chat(list(messages), specs, temperature=self.settings.temperature), task, run)
+                lambda: self.llm.chat(list(messages), step_specs, temperature=self.settings.temperature), task, run)
             if not response.tool_calls:
                 messages.append({"role": "assistant", "content": response.text})
                 try:
@@ -258,8 +268,8 @@ class WorkerAgent(Agent):
                                  "content": json.dumps(observation, ensure_ascii=False)})
                 if observation.get("approval_denied"):
                     replan_reason = "the human denied an earlier operation in this batch."
-                elif "human_advice" in observation:
-                    replan_reason = "the human provided new advice about this batch."
+                elif "hint" in observation:
+                    replan_reason = "the same tool failed twice in a row."
         return TaskResult(task.id, False, "", error="worker step limit reached",
                           failure_mode=FailureMode.MAX_STEPS)
 
@@ -347,12 +357,10 @@ class WorkerAgent(Agent):
             run.failures = run.failures + 1 if run.failed_tool == call.name else 1
             run.failed_tool = call.name
             if run.failures == 2:
-                answer = await self._ask(task, run,
-                                         f"{call.name} failed twice: {observation['output']}\nHow should I proceed?",
-                                         HitlKind.ADVICE)
-                if answer == CANCELLED_ANSWER or self.is_cancelled(task):
-                    return {"cancelled": True}
-                observation["human_advice"] = answer
+                # A tool that keeps failing is the worker's problem to work around, not a question for the
+                # human (who cannot fix a rate limit or a bad URL): say so and let it choose another way.
+                observation["hint"] = (f"{call.name} has failed twice in a row. Do not repeat the same call: try a "
+                                       "different approach or tool, or finish with what you have and say what is missing.")
                 run.failures = 0
         return observation
 
