@@ -240,3 +240,87 @@ class CommandLineTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TimingTest(unittest.IsolatedAsyncioTestCase):
+    """Where a request's time went is measured by the workers and reported by the harness."""
+
+    async def test_a_worker_reports_where_its_time_went(self):
+        import json as _json
+
+        from mas.agents.roles import RoleConfig
+        from mas.agents.worker import WorkerAgent
+        from mas.app import build_system
+        from mas.core.human import AutoResponder
+        from mas.core.message import GROUP_MAIN, HUMAN, Message, MsgType
+        from mas.tools.base import Tool, ToolResult
+
+        class Slow(Tool):
+            name, description = "slow_tool", "waits a little"
+            parameters = {"type": "object", "properties": {}, "additionalProperties": False}
+
+            async def run(self, sandbox, **kw):
+                await asyncio.sleep(0.15)
+                return ToolResult(True, "ok")
+
+        calls = []
+
+        def brain(messages, tools):
+            calls.append(1)
+            if len(calls) <= 2:
+                return LLMResponse("", [ToolCall(f"c{len(calls)}", "slow_tool", {})])
+            return LLMResponse(_json.dumps({"success": True, "summary": "done"}))
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        team = {"dev": RoleConfig("dev", "Developer", "Writes code.", "You are the developer.", [])}
+        settings = Settings(data_dir=tmp / "data", workspaces_dir=tmp / "ws", subtask_timeout_s=5, lead_timeout_s=10)
+        system = build_system(settings, MockLLM(responder=brain), AutoResponder(), roles=team,
+                              worker_factory=lambda role, parts: WorkerAgent(
+                                  role, parts.bus, parts.router, parts.settings, parts.llm, [Slow()],
+                                  parts.sandbox, parts.memory, peers=parts.peers))
+        system.start()
+        try:
+            await system.bus.publish(Message(MsgType.CHAT, HUMAN, GROUP_MAIN, "do it"))
+            for _ in range(300):
+                if system.requests.outcomes:
+                    break
+                await asyncio.sleep(0.02)
+            await asyncio.sleep(0.05)
+        finally:
+            await system.stop()
+        [task] = system.state.by_root("R1")
+        m = system.state.result(task.id).metrics
+        self.assertEqual((m["llm_calls"], m["by_tool"]["slow_tool"]["calls"]), (3, 2))
+        self.assertGreaterEqual(m["tool_s"], 0.3)
+        self.assertGreaterEqual(m["by_tool"]["slow_tool"]["s"], 0.3)
+        self.assertEqual((m["delegation_s"], m["human_s"]), (0.0, 0.0))
+
+    def test_the_report_shows_the_time_composition(self):
+        r = rec(timing={"lead": {"llm_s": 100.0, "tool_s": 20.0, "delegation_s": 300.0, "human_s": 5.0, "other_s": 1.0},
+                        "team": {"llm_s": 400.0, "llm_calls": 60, "tool_s": 250.0,
+                                 "by_tool": {"web_search": {"calls": 30, "s": 180.0}}}}, duration=426.0)
+        report = render_report([r])
+        self.assertIn("## Where the time went", report)
+        self.assertIn("| s1 | 1 | 1 | 426 | 100 | 20 | 300 | 5 | 60 | 400 | 250 | 30 | 180 |", report)
+        self.assertNotIn("Where the time went", render_report([rec()]))                   # nothing measured: no section
+
+    async def test_the_harness_puts_the_lead_and_team_times_in_the_record(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        scenario = load_scenario(make_scenario(tmp))
+        llm = MockLLM(responder=lambda m, t: LLMResponse("", [ToolCall("c", CHOOSE_LEAD, {"agent_id": "boss"})]))
+
+        class Timed(Member):
+            async def handle_task(self, task):
+                result = await super().handle_task(task)
+                result.metrics = {"llm_s": 2.0, "llm_calls": 3, "tool_s": 1.0, "delegation_s": 4.0 if task.parent_id is None else 0.0,
+                                  "human_s": 0.5 if task.parent_id is None else 0.0,
+                                  "by_tool": {"web_search": {"calls": 2, "s": 1.0}}}
+                return result
+        records = await run_scenario(scenario, Settings(subtask_timeout_s=5.0, lead_timeout_s=10.0), llm, out_dir=tmp / "out",
+                                     timeout=20, worker_factory=lambda role, parts: Timed(
+                                         role.agent_id, parts.bus, parts.router, parts.settings))
+        t = records[0].timing
+        self.assertEqual((t["lead"]["llm_s"], t["lead"]["delegation_s"], t["lead"]["human_s"]), (2.0, 4.0, 0.5))
+        self.assertEqual((t["team"]["llm_calls"], t["team"]["llm_s"], t["team"]["by_tool"]["web_search"]),
+                         (6, 4.0, {"calls": 4, "s": 2.0}))                    # the lead and its one teammate

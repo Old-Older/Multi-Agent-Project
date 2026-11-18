@@ -85,6 +85,17 @@ class _Run:
     tools_used: list[str] = field(default_factory=list)
     failed_tool: str = ""
     failures: int = 0
+    llm_s: float = 0.0                # time spent waiting for the model, and how many calls
+    llm_calls: int = 0
+    delegation_s: float = 0.0         # time spent waiting for teammates' results
+    human_s: float = 0.0              # time spent waiting for the human
+    by_tool: dict[str, list[float]] = field(default_factory=dict)      # tool -> [calls, seconds]
+
+    def metrics(self) -> dict:
+        tool_s = sum(s for _, s in self.by_tool.values())
+        return {"llm_s": round(self.llm_s, 2), "llm_calls": self.llm_calls, "tool_s": round(tool_s, 2),
+                "delegation_s": round(self.delegation_s, 2), "human_s": round(self.human_s, 2),
+                "by_tool": {name: {"calls": int(n), "s": round(s, 2)} for name, (n, s) in self.by_tool.items()}}
 
 
 class _TaskTerminated(Exception):
@@ -160,6 +171,7 @@ class WorkerAgent(Agent):
             result = replace(terminal)
         result.steps = run.steps
         result.duration = time.perf_counter() - started
+        result.metrics = run.metrics()
         result.summary = _clip(result.summary, self.settings.result_summary_max_chars)
         own = self._existing_artifacts([*run.artifacts, *result.artifacts])
         if self._leads(task):
@@ -223,8 +235,14 @@ class WorkerAgent(Agent):
                     "what was done, the files written, and what is missing.")})
             step_specs = [] if left == 0 and step > 1 else specs
             await self.report_status(task, TaskStatus.RUNNING, f"Worker step {step}")
-            response = await self._active(
-                lambda: self.llm.chat(list(messages), step_specs, temperature=self.settings.temperature), task, run)
+            asked_at = time.perf_counter()
+            try:
+                response = await self._active(
+                    lambda: self.llm.chat(list(messages), step_specs, temperature=self.settings.temperature),
+                    task, run)
+            finally:
+                run.llm_s += time.perf_counter() - asked_at
+                run.llm_calls += 1
             if not response.tool_calls:
                 messages.append({"role": "assistant", "content": response.text})
                 try:
@@ -310,7 +328,9 @@ class WorkerAgent(Agent):
         try:
             answer = await self.ask_human(task, question, kind, options)
         finally:
-            run.deadline += time.perf_counter() - started
+            waited = time.perf_counter() - started
+            run.deadline += waited
+            run.human_s += waited
         self._ensure_running(task)
         return answer
 
@@ -349,7 +369,13 @@ class WorkerAgent(Agent):
         run.tools_used.append(call.name)
         # Catch tool exceptions inside the deadline wrapper: a tool's own timeout
         # is recoverable; exhausting the worker's execution budget ends the task.
-        result = await self._active(lambda: self._invoke_tool(tool, args), task, run)
+        started = time.perf_counter()
+        try:
+            result = await self._active(lambda: self._invoke_tool(tool, args), task, run)
+        finally:
+            entry = run.by_tool.setdefault(call.name, [0, 0.0])
+            entry[0] += 1
+            entry[1] += time.perf_counter() - started
         run.artifacts.extend(result.files_written)
         run.refs.update(result.refs)
         observation = {"ok": result.ok, "output": _clip(result.output, self.settings.tool_output_max_chars),
@@ -408,8 +434,12 @@ class WorkerAgent(Agent):
             return {"ok": False, "output": "missing argument goal"}
         if not isinstance(files, list) or not isinstance(context, str):
             return {"ok": False, "output": "files must be an array and context a string"}
-        result = await self._active(
-            lambda: self.call_agent(task, target, goal.strip(), context, [str(f) for f in files]), task, run)
+        started = time.perf_counter()
+        try:
+            result = await self._active(
+                lambda: self.call_agent(task, target, goal.strip(), context, [str(f) for f in files]), task, run)
+        finally:
+            run.delegation_s += time.perf_counter() - started
         if result.error == CANCELLED_ANSWER:
             return {"cancelled": True}
         out: dict[str, object] = {"ok": result.success}

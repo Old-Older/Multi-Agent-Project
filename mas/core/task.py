@@ -93,6 +93,9 @@ class TaskResult:
     suggest: str | None = None        # when declined: the agent that fits better
     steps: int = 0
     duration: float = 0.0
+    # Where the worker's time went, measured by code: llm_s / llm_calls, tool_s, delegation_s (waiting
+    # for teammates), human_s (waiting for the human) and by_tool {name: {"calls", "s"}}. Empty if not measured.
+    metrics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

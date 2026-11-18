@@ -56,7 +56,39 @@ class EvalRecord:
     judged: bool | None = None        # a model's verdict on whether the request was met (None: not graded)
     score: int | None = None
     judge_notes: str = ""
+    # Where the time went, measured by the workers: "lead" is the lead's own time (llm_s, tool_s, delegation_s =
+    # waiting for teammates, human_s = waiting for the human, other_s); "team" adds up every member
+    # (llm_s, llm_calls, tool_s, by_tool {name: {calls, s}}). Members work at the same time, so the team's
+    # seconds add up to more than the wall clock.
+    timing: dict = field(default_factory=dict)
     notes: list[str] = field(default_factory=list)
+
+
+def _timing(system, root_id: str, duration: float) -> dict:
+    """The time composition of one request, from the metrics each worker put in its result."""
+    tasks = system.state.by_root(root_id)
+    team: dict = {"llm_s": 0.0, "llm_calls": 0, "tool_s": 0.0, "by_tool": {}}
+    lead: dict = {}
+    for task in tasks:
+        result = system.state.result(task.id)
+        m = getattr(result, "metrics", None) or {}
+        if not m:
+            continue
+        team["llm_s"] += m.get("llm_s", 0.0)
+        team["llm_calls"] += m.get("llm_calls", 0)
+        team["tool_s"] += m.get("tool_s", 0.0)
+        for name, v in (m.get("by_tool") or {}).items():
+            entry = team["by_tool"].setdefault(name, {"calls": 0, "s": 0.0})
+            entry["calls"] += v.get("calls", 0)
+            entry["s"] += v.get("s", 0.0)
+        if task.parent_id is None:
+            lead = {k: m.get(k, 0.0) for k in ("llm_s", "tool_s", "delegation_s", "human_s")}
+    if lead:
+        lead["other_s"] = max(0.0, duration - sum(lead.values()))
+    team["llm_s"], team["tool_s"] = round(team["llm_s"], 2), round(team["tool_s"], 2)
+    for v in team["by_tool"].values():
+        v["s"] = round(v["s"], 2)
+    return {"lead": {k: round(v, 2) for k, v in lead.items()}, "team": team}
 
 
 def _clip(text: str, n: int) -> str:
@@ -133,6 +165,7 @@ async def run_scenario(scenario: Scenario, settings: Settings, llm: LLMClient, *
             rec.duration = round(o.duration, 3)
             rec.lead, rec.lead_steps = o.lead, o.rounds
             rec.hitl_count = len(hitl)
+            rec.timing = _timing(system, o.root_id, o.duration)
             rec.deliverables, rec.output_dir = list(o.deliverables), o.output_dir
             rec.summary = _clip(o.summary, 600)
             if judge_llm is not None:
@@ -245,6 +278,21 @@ def render_report(records: list[EvalRecord], *, title: str = "Evaluation report"
         out.append(f"| {r.scenario} | {r.run} | {r.task_index}. {r.title} | {r.lead or '-'} | "
                    f"{'completed' if r.completed else 'FAILED'} | {r.failure_mode or '-'} | {r.duration} | "
                    f"{r.subtask_done}/{r.subtask_total} | {r.hitl_count} | {len(r.deliverables)} | {graded} |")
+    timed = [r for r in records if r.timing.get("lead") or r.timing.get("team", {}).get("llm_calls")]
+    if timed:
+        out += ["", "## Where the time went", "",
+                "The lead's own seconds are on the critical path (they add up to the request's time). The team columns add up "
+                "every member, and members work at the same time, so they can exceed it.", "",
+                "| scenario | run | task | seconds | lead: model | lead: tools | lead: waiting for teammates | "
+                "lead: waiting for the human | team: model calls | team: model s | team: tool s | web_search calls | web_search s |",
+                "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+        for r in timed:
+            lead, team = r.timing.get("lead", {}), r.timing.get("team", {})
+            search = team.get("by_tool", {}).get("web_search", {})
+            out.append(f"| {r.scenario} | {r.run} | {r.task_index} | {r.duration:.0f} | {lead.get('llm_s', 0):.0f} | "
+                       f"{lead.get('tool_s', 0):.0f} | {lead.get('delegation_s', 0):.0f} | {lead.get('human_s', 0):.0f} | "
+                       f"{team.get('llm_calls', 0)} | {team.get('llm_s', 0):.0f} | {team.get('tool_s', 0):.0f} | "
+                       f"{search.get('calls', 0)} | {search.get('s', 0):.0f} |")
     notes = [r for r in records if r.judge_notes or r.notes]
     if notes:
         out += ["", "## Notes", ""]
