@@ -340,27 +340,28 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.requests[-1].url.host, "8.8.8.8")
 
 
-class KeylessEnginesTest(unittest.TestCase):
-    """The blocking helper that talks to ddgs, with ddgs replaced."""
+class KeylessSearchTest(unittest.TestCase):
+    """The blocking helper that talks to ddgs (replaced), and the rule that a dead search never holds a run up."""
 
-    def run_with(self, behaviour, delays=None, **kwargs):
+    ROW = {"title": "T", "href": "https://a.example", "body": "B"}
+
+    def setUp(self):
+        from mas.tools import web
+        web._keyless.update(failures=0, paused_until=0.0)
+        self.addCleanup(web._keyless.update, failures=0, paused_until=0.0)
+
+    def run_with(self, result, **kwargs):
         import sys
-        import threading
-        import time
         import types
 
         calls = []
-        lock = threading.Lock()
 
         class FakeDDGS:
             def __init__(self, **options):
                 self.options = options
 
             def text(self, query, **options):
-                with lock:
-                    calls.append((query, options))
-                time.sleep((delays or {}).get(options["backend"], 0))
-                result = behaviour[options["backend"]]
+                calls.append((query, options))
                 if isinstance(result, Exception):
                     raise result
                 return result
@@ -371,44 +372,44 @@ class KeylessEnginesTest(unittest.TestCase):
             from mas.tools.web import _keyless_text
             return _keyless_text("q", kwargs.get("count", 3), kwargs.get("freshness", "")), calls
 
-    ROW = {"title": "T", "href": "https://a.example", "body": "B"}
-
-    def test_every_engine_is_asked_at_once_and_the_first_with_results_wins(self):
-        from mas.tools.web import _KEYLESS_ENGINES
-        down = RuntimeError("blocked")
-        rows, calls = self.run_with({"bing": down, "yahoo": [], "google": [self.ROW], "duckduckgo": down},
-                                    delays={"google": 0.2})            # the others have all been asked by then
+    def test_one_call_in_auto_mode_and_the_rows_are_reshaped(self):
+        rows, calls = self.run_with([self.ROW])
         self.assertEqual(rows, [{"title": "T", "url": "https://a.example", "description": "B"}])
-        self.assertEqual(sorted(c[1]["backend"] for c in calls), sorted(_KEYLESS_ENGINES))
-        self.assertTrue(all(c[1]["max_results"] == 3 and c[0] == "q" for c in calls))
+        self.assertEqual(len(calls), 1)
+        self.assertEqual((calls[0][0], calls[0][1]["backend"], calls[0][1]["max_results"]), ("q", "auto", 3))
 
-    def test_it_does_not_wait_for_a_slow_engine_once_another_has_answered(self):
-        import time
-        started = time.monotonic()
-        rows, _ = self.run_with({"bing": [self.ROW], "yahoo": [self.ROW], "google": [self.ROW], "duckduckgo": [self.ROW]},
-                                delays={"bing": 5.0, "yahoo": 0.05, "google": 5.0, "duckduckgo": 5.0})
-        self.assertLess(time.monotonic() - started, 2.0)
-        self.assertEqual(rows[0]["url"], "https://a.example")
+    def test_freshness_becomes_the_time_limit(self):
+        _, calls = self.run_with([self.ROW], freshness="pm")
+        self.assertEqual(calls[0][1]["timelimit"], "m")
+        _, calls = self.run_with([self.ROW])
+        self.assertNotIn("timelimit", calls[0][1])
 
-    def test_freshness_becomes_the_engines_time_limit(self):
-        _, calls = self.run_with({e: [self.ROW] for e in ("bing", "yahoo", "google", "duckduckgo")}, freshness="pm")
-        self.assertTrue(all(c[1]["timelimit"] == "m" for c in calls))
-        _, calls = self.run_with({e: [self.ROW] for e in ("bing", "yahoo", "google", "duckduckgo")})
-        self.assertTrue(all("timelimit" not in c[1] for c in calls))
+    def test_no_results_and_errors_are_one_clear_message_that_says_what_to_do_instead(self):
+        for result in ([], RuntimeError("blocked")):
+            with self.subTest(result=result), self.assertRaisesRegex(ValueError, "no search results.*Do not keep retrying"):
+                self.run_with(result)
 
-    def test_every_engine_failing_is_one_clear_error(self):
-        down = RuntimeError("down")
-        with self.assertRaisesRegex(ValueError, "no search engine answered"):
-            self.run_with({"bing": down, "yahoo": [], "google": down, "duckduckgo": []})
+    def test_after_three_failures_in_a_row_it_stands_down_without_asking_anybody(self):
+        from mas.tools import web
+        for _ in range(3):
+            with self.assertRaises(ValueError):
+                self.run_with(RuntimeError("blocked"))
+        with self.assertRaisesRegex(ValueError, "paused for a moment"):
+            _, calls = self.run_with([self.ROW])                       # even a working engine is not asked
+        with patch("mas.tools.web.time.monotonic", return_value=web.time.monotonic() + web._KEYLESS_PAUSE + 1):
+            rows, calls = self.run_with([self.ROW])                    # and it tries again after the pause
+        self.assertEqual((len(rows), len(calls)), (1, 1))
 
-    def test_engines_that_never_answer_end_at_the_deadline(self):
-        import time
-        started = time.monotonic()
-        with patch("mas.tools.web._KEYLESS_DEADLINE", 0.3):
-            with self.assertRaisesRegex(ValueError, "no search engine answered"):
-                self.run_with({e: [self.ROW] for e in ("bing", "yahoo", "google", "duckduckgo")},
-                              delays={e: 2.0 for e in ("bing", "yahoo", "google", "duckduckgo")})
-        self.assertLess(time.monotonic() - started, 1.5)
+    def test_a_success_resets_the_count(self):
+        for _ in range(2):
+            with self.assertRaises(ValueError):
+                self.run_with(RuntimeError("blocked"))
+        self.run_with([self.ROW])
+        for _ in range(2):
+            with self.assertRaises(ValueError):
+                self.run_with(RuntimeError("blocked"))
+        rows, _ = self.run_with([self.ROW])                            # still not paused: two, a success, two
+        self.assertEqual(len(rows), 1)
 
     def test_a_missing_package_says_how_to_install_it(self):
         import sys
@@ -416,3 +417,25 @@ class KeylessEnginesTest(unittest.TestCase):
             from mas.tools.web import _keyless_text
             with self.assertRaisesRegex(ValueError, "pip install ddgs"):
                 _keyless_text("q", 3, "")
+
+
+class KeylessDeadlineTest(unittest.IsolatedAsyncioTestCase):
+    async def test_a_search_that_hangs_ends_at_the_deadline_with_advice(self):
+        import time
+
+        from mas.tools import web
+        web._keyless.update(failures=0, paused_until=0.0)
+        self.addCleanup(web._keyless.update, failures=0, paused_until=0.0)
+        web._SEARCH_CACHE.clear()
+        self.addCleanup(web._SEARCH_CACHE.clear)
+
+        def slow(query, count, freshness):
+            time.sleep(1.5)
+            return []
+        started = time.monotonic()
+        with patch("mas.tools.web._keyless_text", slow), patch("mas.tools.web._KEYLESS_DEADLINE", 0.2):
+            result = await WebSearch("").run(Mock(spec=Sandbox), query="q")
+        self.assertLess(time.monotonic() - started, 1.0)               # it did not wait for the thread
+        self.assertFalse(result.ok)
+        self.assertIn("Do not keep retrying", result.output)
+        self.assertEqual(web._keyless["failures"], 1)                  # and counts as a failure

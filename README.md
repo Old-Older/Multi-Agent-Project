@@ -58,7 +58,7 @@ its own workspace and its own memory.
 - **Isolation.** Every agent has its own workspace directory (`workspaces/<agent>/`); files only move
   between agents through the Router.
 - **Tools.** `read_file`, `write_file`, `delete_file`, `list_files`, `run_python`, `web_search`
-  (Brave Search when you give it a key, otherwise a keyless DuckDuckGo/Bing search), `fetch_url`, `git` (clone, add, commit, push; each call needs your approval).
+  (Brave Search when you give it a key, otherwise a keyless stop-gap search), `fetch_url`, `git` (clone, add, commit, push; each call needs your approval).
 - **LLM.** The course HKGAI gateway (default) or DeepSeek, the two the course allows; both are
   OpenAI-compatible chat endpoints. OpenAI and Anthropic APIs are not allowed.
 
@@ -134,7 +134,7 @@ cp .env.example .env                # then edit .env
 | `DEEPSEEK_API_KEY` | real runs with `deepseek` | your DeepSeek key |
 | `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL` | optional | default `https://api.deepseek.com` and `deepseek-chat` |
 | `DEEPSEEK_THINKING` | optional | `off` (default) asks DeepSeek not to think before answering: faster, and the agents call tools at every step; `default` leaves it to the service |
-| `SEARCH_API_KEY` | optional | Brave Search token. Without it `web_search` still works through DuckDuckGo, Bing and other engines (no key, no account, but less reliable); with it Brave is used first, and the keyless search takes over if Brave refuses or is down |
+| `SEARCH_API_KEY` | optional | Brave Search token. Without it `web_search` uses a keyless stop-gap (DuckDuckGo and others via `ddgs`: no key or account, but slower and unreliable, so some searches fail and the agents carry on without them); with it Brave is used first, and the stop-gap takes over if Brave refuses or is down |
 | `GITHUB_TOKEN` | `git push` to GitHub | sent only to github.com over HTTPS |
 
 ## Running it

@@ -204,7 +204,7 @@ Brave 的实时搜索没有用凭据验证。
 | 团队与场景 | `mas/team.py` 读 `01_role_initialization.md` 格式；`mas/scenario.py` 依次发任务；`--team`、`--scenario`、`--auto` |
 | 对话导出、`AutoResponder` | `data/transcripts/` 下完整对话；`AutoResponder` 从空壳实现为可用 |
 | 工具接线 | 八个工具全部接入 `build_tools` |
-| 搜索 | 有 key 用 Brave；没有或 Brave 不可用时用无 key 的多引擎搜索（`ddgs`） |
+| 搜索 | 有 key 用 Brave；没有或 Brave 不可用时用无 key 的应急搜索（`ddgs`，一次 `auto` 调用，有期限和停手机制） |
 | DeepSeek | `DeepSeekClient`，`--llm deepseek` |
 | 跨任务文件 | `Router.locate_file` 能找到同一会话里更早的 root 的产出 |
 | 缺陷修复 | 见 §4 |
@@ -232,7 +232,7 @@ Brave 的实时搜索没有用凭据验证。
 | `tests/test_team.py` | 8 | 团队文件解析（顺序、提示词、各种错误） |
 | `tests/test_transcript.py` | 4 | 对话导出的内容与顺序、失败与私聊、自动保存、写不了时不报错 |
 | `tests/test_memory_across_sessions.py` | 3 | 两次完整的程序运行之间记忆保留；失败教训保留；换数据目录就是另一份记忆 |
-| `tests/test_web_tools.py` | 22（其中新增 8） | Brave 失败后的无 key 搜索、各引擎依次尝试、时间范围映射、缺少依赖时的提示 |
+| `tests/test_web_tools.py` | 29（其中新增约 15） | Brave 失败后的无 key 搜索、搜索和网页缓存、一次 `auto` 调用与时间范围映射、连续失败后停手、期限、缺少依赖时的提示 |
 | `tests/test_eval.py` | 17 | 评测框架：记录、汇总、报告、超时算失败、重复运行与共享记忆；模拟人类；评分器的解析 |
 | `tests/test_tools.py` | 新增 3 | `read_file` 分段读取长文件 |
 | `tests/test_worker.py` | 新增 1、改写 1 | 步数预算提醒与最后一步不给工具；工具连续失败给提示而不打扰人类 |
@@ -250,7 +250,7 @@ Brave 的实时搜索没有用凭据验证。
 | `python -m mas --demo`，依次输入一个需要两个角色的请求、`run the tests`、`/status` | 牵头者把部分工作委派给队友并汇总，最终回复署牵头者的名字，交付物收集到 `output/`，对话记录写出；命令行不再显示请求层与牵头者之间的内部消息 |
 | `python -m examples.sandbox_tools`、`python -m examples.execution_tools` | 通过（后者在真实 Worker 和沙箱里运行了一个 Python 单元测试） |
 | 读取课程的三个场景文件夹（软件、新闻、基金） | 每个都读出 4 个成员和 2 个任务 |
-| 真实的无 key 网络搜索，3 个查询（一个带"过去一年"，一个带"过去一个月"） | 每个返回 3 条结果；单个引擎时好时坏，所以做成多个引擎依次尝试 |
+| 真实的无 key 网络搜索，3 个查询（一个带"过去一年"，一个带"过去一个月"） | 每个返回 3 条结果（当时的实现是多个引擎依次尝试；后来发现 bing 和 google 在库里是禁用的，改成现在的一次 `auto` 调用，见 §7） |
 | `python -m compileall -q mas tests examples` | 通过 |
 | `git diff --check` | 发现一个文件末尾多余的空行，已修复，重跑通过 |
 
@@ -312,6 +312,16 @@ Brave 的实时搜索没有用凭据验证。
 | 牵头者把所有时间花在研究和审阅上 | 牵头者提示词：给队友一次只能做几步的活，大研究拆成几次；先把人类要的东西做出第一个完整版本写进文件，再改进和审阅 |
 | 工具失败打扰人类 | 改成在工具返回里加提示，让模型自己换办法，不再向人类提问 |
 | 读不了长文件 | `read_file` 分段返回，末尾说明下一段的 `offset` |
+
+### 7. 无 key 搜索的两次修改
+
+第一次真实运行里，`web_search` 平均 19 秒一次（共约 54 次，占了总时间的大半）。我先把它改成"同时问 bing、yahoo、google、duckduckgo，谁先有结果用谁"，并加了缓存。
+第二次运行的控制台里出现大量警告：`bing - backends do not exist or are disabled ... Using 'auto'`。原来这个版本的 `ddgs`（9.16.1）里 bing 和 google 是被禁用的，
+指名它们只会悄悄退回 `auto`。所以那次"并行问四个引擎"其实是两次 `auto` 加 yahoo 和 duckduckgo，请求重复，而我之前量出的"bing 3/5 成功、google 2/5"实际是 `auto` 的结果。
+搜索能用，但配置和我写下的说明都不对。
+
+现在改成最简单的形式：对 `ddgs` 只调一次 `auto`（库自己会并行问它的引擎），12 秒期限，连续失败 3 次后停手 30 秒并明确告诉成员"别等它，用 `fetch_url` 或写下已有的"；搜索和网页抓取都有缓存。
+这是应急方案，等老师的搜索 API 到了会被取代。同一个网络上 8 个真实查询：6 个成功，平均 6.4 秒，最慢 9 秒（当时另一个评测正在同一个网络上运行，会加重限流）；失败的两个也在 9 秒内返回，并带着下一步怎么办的提示。
 
 ---
 

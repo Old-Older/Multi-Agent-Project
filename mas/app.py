@@ -80,7 +80,7 @@ def build_tools(role: RoleConfig, settings: Settings) -> list[Tool]:
             raise ValueError(f"unknown tool {name!r} configured for {role.agent_id}")
         result.append(constructors[name]())
     if WebSearch.name in role.tool_names and not settings.search_api_key:
-        log.info("%s has web_search and no SEARCH_API_KEY: it uses the keyless search (DuckDuckGo, Bing, ...)",
+        log.info("%s has web_search and no SEARCH_API_KEY: it uses the keyless search (DuckDuckGo and others)",
                  role.agent_id)
     return result
 
