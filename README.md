@@ -13,6 +13,7 @@ its own workspace and its own memory.
 
 ## Contents
 
+- [Design principles](#design-principles)
 - [How it works](#how-it-works)
 - [Repository layout](#repository-layout)
 - [Requirements and setup](#requirements-and-setup)
@@ -21,9 +22,20 @@ its own workspace and its own memory.
 - [What a run leaves behind](#what-a-run-leaves-behind)
 - [Configuration](#configuration)
 - [Tests](#tests)
+- [Reproducing the evaluation](#reproducing-the-evaluation)
 - [Documentation](#documentation)
 - [Project rules and workflow](#project-rules-and-workflow)
 - [Status](#status)
+
+## Design principles
+
+Three principles guide how we tune and debug the system, in this order of importance when they conflict:
+
+1. **Keep the task complete and deep.** The team delivers everything the request asks for, with real research and substance, not a thin or partial answer.
+2. **Guarantee a final review and error repair.** A deliverable is checked by a reviewer before it is handed in, and what the review finds is fixed and re-checked.
+3. **Deliver in as short a time as possible.** Once the first two hold, the time per request is pushed down.
+
+(Concretely: the requirements checklist and review gate serve 1 and 2; the time budget, research limit and early-stop nudges serve 3. We choose a configuration by score first, then by speed.)
 
 ## How it works
 
@@ -244,6 +256,9 @@ Every limit is a field of `Settings` in `mas/config.py`. The ones you may want t
 | `subtask_timeout_s` | 900 | time limit for one delegated task (waiting for a human does not count) |
 | `lead_timeout_s` | 2400 | time limit for a whole request |
 | `max_delegation_depth`, `max_delegations_per_task`, `max_retries_same_goal` | 2, 2, 2 | guards against runaway delegation (a worker re-delegating one task, same goal retried) |
+| `request_budget_s` | 270 | time budget of one request in seconds, human waiting not counted (0: none). **This is the default "fast" configuration**, see [Reproducing the evaluation](#reproducing-the-evaluation) |
+| `research_max_calls` | 14 | searches and page fetches one task may make (0: no limit) |
+| `finish_not_before` | 0.5 | share of the budget a lead must have used before it may hand in (0: off) |
 | `max_lead_delegations` | 16 | how many times the lead of a request may delegate |
 | `early_stop_nudges`, `research_note_after`, `research_note_every` | on, 12, 6 | reminders that help a member stop once it has enough; `EARLY_STOP_NUDGES=0` turns them off |
 | `memory_recall_k` | 3 | lessons recalled when a task starts |
@@ -261,6 +276,56 @@ python -m unittest tests.test_lead      # one module
 
 The tests need no API key: the LLM is scripted (`MockLLM`). `tests/test_lead.py`,
 `tests/test_requests.py` and `tests/test_scenario.py` run whole systems with real workspaces.
+
+## Reproducing the evaluation
+
+How we test the system on the course's test set (`Mid_Test.zip`: three scenarios, two tasks each). The test set is unpacked in [`testset/`](testset/).
+
+**1. Environment**
+
+- Python 3.10+ (we used 3.14.3 on macOS), `git`, a DeepSeek API key (our runs used `deepseek-chat`; the course HKGAI key works too, but search is then the slower keyless one).
+- Setup, from the repository root:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate           # Windows: .venv\Scripts\activate
+python -m pip install -e .
+cp .env.example .env                # fill in DEEPSEEK_API_KEY (and HKGAI_API_KEY if you use it)
+python -m unittest                  # optional: 622 tests, no key needed
+```
+
+**2. Run the test set with the default (fast) configuration**
+
+Each command runs all three scenarios (Task 1, then Task 2 in the same team), plays the human with a model, and has a model grade every task. The unpacked scenario folders have a space and a `2` in their names, so quote them.
+
+```bash
+python -m mas.eval "testset/scenario_1_software_engineering 2" "testset/scenario_2_newsroom 2" "testset/scenario_3_securities_fund 2" --llm deepseek --judge --out eval_results/my-fast-run
+```
+
+**3. Run the full configuration, for comparison**
+
+```bash
+python -m mas.eval "testset/scenario_1_software_engineering 2" "testset/scenario_2_newsroom 2" "testset/scenario_3_securities_fund 2" --llm deepseek --judge --time-budget 900 --research-limit 28 --min-use 0 --out eval_results/my-full-run
+```
+
+**Important parameters**
+
+| Parameter | Fast (default) | Full | Meaning |
+|---|---|---|---|
+| `--time-budget SECONDS` | 270 | 900 | time one request may take; members stop starting new work and hand in what they have as it runs out. 0 = no budget |
+| `--research-limit N` | 14 | 28 | most searches and page fetches one task may make |
+| `--min-use FRACTION` | 0.5 | 0 | share of the budget a lead must have used before it may hand in (0 = may hand in any time) |
+| `--llm hkgai\|deepseek` | | | which model the team uses (default: `LLM_PROVIDER`, else `hkgai`) |
+| `--judge` | | | have a model grade each task from the whole dialogue and the deliverables |
+| `--human llm\|auto` | `llm` | | `llm`: a model plays the requester and answers the team's questions; `auto`: fixed answers |
+| `--repeat N`, `--keep-memory` | 1 | | run each scenario N times; share the agents' memory between the runs |
+| `--early-stop on\|off` | on | | the nudges that help a member stop once it has enough |
+| `--timeout SECONDS` | 3600 | | limit for one scenario run |
+| `--out DIR` | `eval_results/<time>` | | where results, transcripts and deliverables go |
+
+**4. Read the results**: `<out>/report.md` (completion rate, time per request, grades, where the time went) and `<out>/results.json`; each request's transcript and deliverables are under `<out>/<scenario>/run1/data/`. To grade an archived run again: `python -m mas.eval.rejudge docs/runs/<run>`.
+
+**Notes for comparing runs**: results are single runs, graded by the same model that runs the team, so a one-point difference is noise. Run the two configurations one after the other if you want clean timings (we ran them at the same time on one machine). Our results and the reasons for the default are in [`docs/report.md`](docs/report.md) §11 (fast: 5/6 requests, mean score 7.17, 31.5 min in total; full: 5/6 requests, mean score 6.17, 69.7 min), and the raw runs are in [`docs/runs/`](docs/runs/).
 
 ## Documentation
 
@@ -294,7 +359,7 @@ Working: messaging, routing, task state, session board, human in the loop, per-a
 failure lessons, workers with nine tools, lead selection and delegation, team and scenario loading,
 transcript export, unattended runs.
 
-Not finished: the Docker sandbox, and the evaluation on all scenarios. The evaluation harness exists
-(`python -m mas.eval`), but real runs have only been made on scenario 3 (first: 0 of 2 requests completed; after
-fixes: 2 of 2, 83% of sub-tasks, about 26 minutes per request, graded 7.0/10 by a model), so there are no reliable completion-rate or timing results yet; see
+Not finished: the Docker sandbox, and reliable statistics. The evaluation harness (`python -m mas.eval`) has run the whole course test set
+with both configurations (round 11: fast 5 of 6 requests completed, mean grade 7.17/10, about 5 minutes per request; full 5 of 6, 6.17/10, about 12 minutes),
+and the fast configuration is the default. All results are single runs graded by a model, so they are not statistics; see
 [`docs/report.md`](docs/report.md) for exactly what has been measured.

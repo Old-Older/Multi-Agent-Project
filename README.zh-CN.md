@@ -10,6 +10,7 @@
 
 ## 目录
 
+- [设计原则](#设计原则)
 - [工作原理](#工作原理)
 - [仓库结构](#仓库结构)
 - [环境与安装](#环境与安装)
@@ -18,9 +19,20 @@
 - [一次运行留下什么](#一次运行留下什么)
 - [配置](#配置)
 - [测试](#测试)
+- [复现评测](#复现评测)
 - [文档](#文档)
 - [项目规则与协作流程](#项目规则与协作流程)
 - [当前状态](#当前状态)
+
+## 设计原则
+
+调试这个系统遵循三条原则，冲突时按这个顺序取舍：
+
+1. **保持任务的完整度和深度。** 团队交付请求要求的全部内容，有真实的研究和实质内容，而不是单薄或残缺的答案。
+2. **保证最终审核和错误修复。** 交付物交出前必须经过评审，评审发现的问题要修复并复查。
+3. **在尽量短的时间内交付。** 前两条满足之后，再压缩每个请求的耗时。
+
+（具体对应：要求清单和评审关卡服务于第 1、2 条；时间预算、研究上限和早停提醒服务于第 3 条。选配置时先看分数，再看速度。）
 
 ## 工作原理
 
@@ -232,6 +244,9 @@ You are the software developer on a software development team. You are responsib
 | `subtask_timeout_s` | 900 | 一个被委派任务的时限（等待人类的时间不计） |
 | `lead_timeout_s` | 2400 | 一个完整请求的时限 |
 | `max_delegation_depth`、`max_delegations_per_task`、`max_retries_same_goal` | 2、2、2 | 防止委派失控（worker 再委派的次数、同一目标的重试） |
+| `request_budget_s` | 270 | 一个请求的时间预算（秒，不含等待人类的时间；0 为不设）。**这是默认的"快速"配置**，见[复现评测](#复现评测) |
+| `research_max_calls` | 14 | 一个任务最多搜索加抓取的次数（0 为不限） |
+| `finish_not_before` | 0.5 | 牵头者至少用掉预算的这个比例才能收工（0 为关闭） |
 | `max_lead_delegations` | 16 | 一个请求的牵头者可以委派的次数 |
 | `early_stop_nudges`、`research_note_after`、`research_note_every` | 开、12、6 | 帮成员"够了就停"的提醒；`EARLY_STOP_NUDGES=0` 关闭 |
 | `memory_recall_k` | 3 | 任务开始时召回的教训条数 |
@@ -249,6 +264,56 @@ python -m unittest tests.test_lead      # 单个模块
 
 测试不需要 API key：LLM 由脚本（`MockLLM`）代替。`tests/test_lead.py`、`tests/test_requests.py`、
 `tests/test_scenario.py` 会用真实的工作区跑完整的系统。
+
+## 复现评测
+
+我们在课程测试集（`Mid_Test.zip`：三个场景，每个两个任务）上测试系统的方法。测试集已解压在 [`testset/`](testset/)。
+
+**1. 环境**
+
+- Python 3.10 以上（我们用的是 macOS 上的 3.14.3）、`git`、一个 DeepSeek API key（我们的运行用的是 `deepseek-chat`；课程的 HKGAI key 也能用，但此时搜索只有较慢的无 key 搜索）。
+- 在仓库根目录安装：
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate           # Windows: .venv\Scripts\activate
+python -m pip install -e .
+cp .env.example .env                # 填入 DEEPSEEK_API_KEY（用 HKGAI 就填 HKGAI_API_KEY）
+python -m unittest                  # 可选：622 项测试，不需要 key
+```
+
+**2. 用默认（快速）配置跑测试集**
+
+每条命令跑完三个场景（先 Task 1，再让同一个团队做 Task 2），由模型扮演人类，并由模型给每个任务评分。解压出来的场景文件夹名里有空格和 `2`，要加引号。
+
+```bash
+python -m mas.eval "testset/scenario_1_software_engineering 2" "testset/scenario_2_newsroom 2" "testset/scenario_3_securities_fund 2" --llm deepseek --judge --out eval_results/my-fast-run
+```
+
+**3. 跑完整配置作对比**
+
+```bash
+python -m mas.eval "testset/scenario_1_software_engineering 2" "testset/scenario_2_newsroom 2" "testset/scenario_3_securities_fund 2" --llm deepseek --judge --time-budget 900 --research-limit 28 --min-use 0 --out eval_results/my-full-run
+```
+
+**重要参数**
+
+| 参数 | 快速（默认） | 完整 | 含义 |
+|---|---|---|---|
+| `--time-budget 秒数` | 270 | 900 | 一个请求可用的时间；快用完时成员不再开始新工作，交出手头已有的。0 为不设预算 |
+| `--research-limit N` | 14 | 28 | 一个任务最多搜索加抓取的次数 |
+| `--min-use 比例` | 0.5 | 0 | 牵头者至少用掉预算的这个比例才能收工（0 为随时可以收工） |
+| `--llm hkgai\|deepseek` | | | 团队用哪个模型（默认 `LLM_PROVIDER`，没有则 `hkgai`） |
+| `--judge` | | | 由模型根据完整对话和交付物给每个任务评分 |
+| `--human llm\|auto` | `llm` | | `llm`：模型扮演要求者回答团队的问题；`auto`：固定回答 |
+| `--repeat N`、`--keep-memory` | 1 | | 每个场景跑 N 次；各次运行共享 agent 的记忆 |
+| `--early-stop on\|off` | on | | 帮成员"够了就停"的提醒 |
+| `--timeout 秒数` | 3600 | | 一个场景运行的时间上限 |
+| `--out 目录` | `eval_results/<时间>` | | 结果、对话记录和交付物存放处 |
+
+**4. 看结果**：`<out>/report.md`（完成率、每个请求的耗时、评分、时间花在哪）和 `<out>/results.json`；每个请求的对话记录和交付物在 `<out>/<场景>/run1/data/` 下。重新给归档的运行评分：`python -m mas.eval.rejudge docs/runs/<run>`。
+
+**比较运行时请注意**：结果都是单次运行，评分的模型和跑团队的模型是同一个，差一分属于噪声。要得到干净的耗时，两套配置请一个接一个跑（我们当时是在同一台机器上同时跑的）。我们的结果和选默认配置的理由在 [`docs/report.md`](docs/report.md) §11（快速：请求 5/6，平均分 7.17，总共 31.5 分钟；完整：请求 5/6，平均分 6.17，总共 69.7 分钟），原始运行在 [`docs/runs/`](docs/runs/)。
 
 ## 文档
 
@@ -281,4 +346,6 @@ python -m unittest tests.test_lead      # 单个模块
 已可用：消息、路由、任务状态、会话看板、人在回路、带失败教训的每 agent 记忆、拥有九个工具的 worker、
 牵头者选择与委派、团队与场景加载、对话导出、无人值守运行。
 
-未完成：Docker 沙箱，以及在所有场景上的评测。评测框架已经有了（`python -m mas.eval`），但真实运行只做过场景 3（第一次：2 个请求都没完成；修复后：2/2 完成，子任务 83%，每个请求平均约 26 分钟，模型评分 7.0/10），所以还没有可靠的完成率和耗时结果（到底测过什么，见 [`docs/report.md`](docs/report.md)）。
+未完成：Docker 沙箱，以及可靠的统计结果。评测框架（`python -m mas.eval`）已经用两套配置跑完了课程的整套测试集
+（第十一轮：快速配置 6 个请求完成 5 个，模型评分平均 7.17/10，每个请求约 5 分钟；完整配置完成 5 个，6.17/10，约 12 分钟），
+并把快速配置设为默认。所有结果都是单次运行、由模型评分，不是统计结论；具体测了什么见 [`docs/report.md`](docs/report.md)。

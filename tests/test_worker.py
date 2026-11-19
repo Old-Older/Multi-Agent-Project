@@ -115,7 +115,7 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
         # closing_check off: the scripts here end a lead's run with one final answer (tests/test_budget.py covers the check)
-        self.settings = Settings(data_dir=root / "data", workspaces_dir=root / "workspaces", closing_check=False,
+        self.settings = Settings(data_dir=root / "data", workspaces_dir=root / "workspaces", closing_check=False, request_budget_s=0.0,
                                  requirements_check=False)
         self.bus = InMemoryBus()
         for member in (HUMAN, "worker"):

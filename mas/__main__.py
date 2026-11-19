@@ -31,7 +31,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="unattended: the AutoResponder answers every question, the run ends after the last task")
     p.add_argument("--time-budget", type=float, default=None, metavar="SECONDS",
                    help="seconds one request may take (waiting for you not counted); the team hands in what it has "
-                        "as it runs out (default: no budget)")
+                        "as it runs out (default 270; 0: no budget)")
     p.add_argument("--delay", type=float, default=0.4, help="demo only: seconds each demo step takes")
     p.add_argument("--keep", action="store_true",
                    help="demo only: keep the memory and files of the previous run (default: start clean)")

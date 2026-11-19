@@ -33,7 +33,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="the nudges that help a member stop once it has enough; off, to measure what they change")
     p.add_argument("--time-budget", type=float, default=None, metavar="SECONDS",
                    help="seconds one request may take (the human's waiting time not counted): members stop starting "
-                        "new work and hand in what they have as it runs out (default: no budget)")
+                        "new work and hand in what they have as it runs out (default 270; 0: no budget)")
     p.add_argument("--research-limit", type=int, default=None, metavar="N",
                    help="most searches and page fetches one task may make (default 14; 0: no limit). The reminders to stop "
                         "researching move with it")

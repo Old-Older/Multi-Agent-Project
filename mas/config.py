@@ -48,10 +48,12 @@ class Settings:
     max_lead_steps: int = 60                  # a lead's ReAct step limit (a worker keeps max_worker_steps)
     lead_timeout_s: float = 2400.0            # budget of the lead's whole task, delegated work included
 
-    # time budget of one request (0: none). Every member shares it: members stop starting new work `worker_wrapup_s` /
+    # time budget of one request (0: none). 270 s is the "fast" configuration chosen in round 11 (docs/report.md §11);
+    # the "full" configuration is 900 / research_max_calls 28 / finish_not_before 0.
+    # Every member shares it: members stop starting new work `worker_wrapup_s` /
     # `lead_wrapup_s` before it ends and hand in what they have, nobody starts a delegation with less than
     # `min_delegation_s` left, and `budget_grace_s` after it ends whatever still runs is cut off.
-    request_budget_s: float = 0.0
+    request_budget_s: float = 270.0
     lead_wrapup_s: float = 30.0
     worker_wrapup_s: float = 50.0
     min_delegation_s: float = 80.0
