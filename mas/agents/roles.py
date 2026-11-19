@@ -28,14 +28,14 @@ ROLES: dict[str, RoleConfig] = {
         display_name="Researcher",
         capability="Searches the web, fetches pages, collects and organizes material; results are written as .md/.txt. Does not run code.",
         system_prompt="",             # TODO(LI Heyang)
-        tool_names=["web_search", "fetch_url", "read_file", "write_file", "list_files"],
+        tool_names=["web_search", "fetch_url", "read_file", "write_file", "edit_file", "list_files"],
     ),
     "coder": RoleConfig(
         agent_id="coder",
         display_name="Coder",
         capability="Writes and runs Python code, creates/reads/updates/deletes files, commits and pushes with Git.",
         system_prompt="",
-        tool_names=["read_file", "write_file", "delete_file", "list_files",
+        tool_names=["read_file", "write_file", "edit_file", "delete_file", "list_files",
                     "run_python", "git"],
     ),
     "writer": RoleConfig(
@@ -43,6 +43,6 @@ ROLES: dict[str, RoleConfig] = {
         display_name="Writer",
         capability="Writes and edits Markdown / plain-text documents. Does not browse the web or run code.",
         system_prompt="",
-        tool_names=["read_file", "write_file", "list_files"],
+        tool_names=["read_file", "write_file", "edit_file", "list_files"],
     ),
 }

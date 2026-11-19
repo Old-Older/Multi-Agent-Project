@@ -36,7 +36,7 @@ from mas.llm.hkgai import HKGAIClient
 from mas.memory.base import JsonlMemory, Memory
 from mas.sandbox.base import DockerSandbox, LocalSandbox, Sandbox
 from mas.tools.base import Tool
-from mas.tools.files import DeleteFile, ListFiles, ReadFile, WriteFile
+from mas.tools.files import DeleteFile, EditFile, ListFiles, ReadFile, WriteFile
 from mas.tools.git import Git
 from mas.tools.python import RunPython
 from mas.tools.web import FetchURL, WebSearch
@@ -68,7 +68,7 @@ def build_tools(role: RoleConfig, settings: Settings) -> list[Tool]:
     search key). A name that is not a tool is a mistake in the team file and fails loudly."""
     deepseek_key = settings.deepseek_search_key()
     constructors: dict[str, Callable[[], Tool]] = {
-        ReadFile.name: ReadFile, WriteFile.name: WriteFile,
+        ReadFile.name: ReadFile, WriteFile.name: WriteFile, EditFile.name: EditFile,
         DeleteFile.name: DeleteFile, ListFiles.name: ListFiles,
         RunPython.name: RunPython,
         FetchURL.name: lambda: FetchURL(deepseek_key=deepseek_key),

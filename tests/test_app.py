@@ -105,10 +105,10 @@ class WiringTest(TmpDirTest):
         self.assertTrue(all(isinstance(w, WorkerAgent) for w in s.workers.values()))
         self.assertEqual(s.workers["coder"].role, ROLES["coder"])
         self.assertEqual(list(s.workers["coder"].tools),
-                         ["read_file", "write_file", "delete_file", "list_files", "run_python", "git"])
+                         ["read_file", "write_file", "edit_file", "delete_file", "list_files", "run_python", "git"])
         self.assertEqual(list(s.workers["researcher"].tools),
-                         ["web_search", "fetch_url", "read_file", "write_file", "list_files"])
-        self.assertEqual(list(s.workers["writer"].tools), ["read_file", "write_file", "list_files"])
+                         ["web_search", "fetch_url", "read_file", "write_file", "edit_file", "list_files"])
+        self.assertEqual(list(s.workers["writer"].tools), ["read_file", "write_file", "edit_file", "list_files"])
 
     async def test_default_system_tools_write_and_read_real_workspace_files(self):
         s = build_system(self.settings, MockLLM(), CliHumanIO(), roles=ROLES)
@@ -128,10 +128,10 @@ class WiringTest(TmpDirTest):
             tools = {name: build_tools(role, replace(self.settings, llm_provider="deepseek", deepseek_api_key="key"))
                      for name, role in ROLES.items()}
         self.assertEqual([t.name for t in tools["coder"]],
-                         ["read_file", "write_file", "delete_file", "list_files", "run_python", "git"])
+                         ["read_file", "write_file", "edit_file", "delete_file", "list_files", "run_python", "git"])
         self.assertEqual([t.name for t in tools["researcher"]],
-                         ["web_search", "fetch_url", "read_file", "write_file", "list_files"])
-        self.assertEqual([t.name for t in tools["writer"]], ["read_file", "write_file", "list_files"])
+                         ["web_search", "fetch_url", "read_file", "write_file", "edit_file", "list_files"])
+        self.assertEqual([t.name for t in tools["writer"]], ["read_file", "write_file", "edit_file", "list_files"])
         self.assertEqual({name: role.tool_names for name, role in ROLES.items()}, configured)
 
     def test_the_keys_in_the_settings_reach_the_tools_that_need_them(self):

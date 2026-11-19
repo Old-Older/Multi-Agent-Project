@@ -31,7 +31,7 @@ ROLE_FILE = "01_role_initialization.md"
 
 # What every member can use. The scenarios do not say who needs what, and a tool that is not
 # used costs nothing; `git` asks the human before it pushes.
-DEFAULT_TOOLS = ["read_file", "write_file", "delete_file", "list_files",
+DEFAULT_TOOLS = ["read_file", "write_file", "edit_file", "delete_file", "list_files",
                  "run_python", "web_search", "fetch_url", "git"]
 
 _ID = re.compile(r"^[A-Za-z][\w-]*$")

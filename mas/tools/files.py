@@ -1,6 +1,7 @@
 """Text file tools; all filesystem access is delegated to the supplied Sandbox."""
 from __future__ import annotations
 
+import difflib
 import json
 from typing import Any
 
@@ -89,6 +90,99 @@ class WriteFile(_FileTool):
         relative = sandbox.resolve(path).relative_to(sandbox.resolve(".")).as_posix()
         sandbox.write_text(path, content)
         return ToolResult(True, f"Wrote {relative}", files_written=[relative])
+
+
+class EditFile(Tool):
+    """Replace exact pieces of a file's text, all or nothing, and say what happened.
+
+    Without it a member that wants to change a sentence in a long document has to write the whole file again, or a
+    script that patches it; in the fifth real run one lead wrote the same 12 KB patch script ten times and none of its 44
+    changes reached the deliverable. Here a change that cannot be made is an error that says why, and nothing is written."""
+
+    name = "edit_file"
+    description = ("Change a file by replacing exact pieces of its text, without rewriting it. Give `edits`, a list of "
+                   "{old, new} pairs (or just one `old` and `new`): every `old` must occur exactly once in the file, or "
+                   "set `all` to replace every occurrence; `new` may be empty to delete. The edits are applied in order; "
+                   "if one cannot be applied nothing is changed and the answer says which one and why (with the closest "
+                   "line when `old` is not found). On success it says how many edits were made and how long the file is "
+                   "now. Use it instead of writing the whole file again or a script that patches the file: an edit it "
+                   "does not confirm was not made.")
+    parameters = {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "minLength": 1, "description": "Path relative to this agent's workspace."},
+            "old": {"type": "string", "description": "The text to replace (for a single edit)."},
+            "new": {"type": "string", "description": "The text to put in its place (for a single edit)."},
+            "edits": {"type": "array", "description": "Several edits, applied in order.", "items": {
+                "type": "object",
+                "properties": {"old": {"type": "string"}, "new": {"type": "string"}, "all": {"type": "boolean"}},
+                "required": ["old", "new"], "additionalProperties": False}},
+            "all": {"type": "boolean", "description": "For a single edit: replace every occurrence."},
+        },
+        "required": ["path"], "additionalProperties": False,
+    }
+
+    async def run(self, sandbox: Sandbox, **kwargs: Any) -> ToolResult:
+        try:
+            return self._run(sandbox, **kwargs)
+        except (OSError, ValueError, TypeError) as exc:
+            return ToolResult(False, f"{self.name}: {type(exc).__name__}: {exc}")
+
+    @staticmethod
+    def _edits(kwargs: dict[str, Any]) -> list[dict[str, Any]]:
+        unknown = set(kwargs) - EditFile.parameters["properties"].keys()
+        if unknown:
+            raise ValueError(f"unknown arguments: {', '.join(sorted(unknown))}")
+        if not isinstance(kwargs.get("path"), str) or not kwargs["path"]:
+            raise ValueError("path must be a non-empty string")
+        edits = kwargs.get("edits")
+        if edits is None:
+            if "old" not in kwargs or "new" not in kwargs:
+                raise ValueError("give `edits`, or `old` and `new`")
+            edits = [{"old": kwargs["old"], "new": kwargs["new"], "all": kwargs.get("all", False)}]
+        elif "old" in kwargs or "new" in kwargs:
+            raise ValueError("give `edits`, or `old` and `new`, not both")
+        if not isinstance(edits, list) or not edits:
+            raise ValueError("edits must be a non-empty list")
+        for n, edit in enumerate(edits, 1):
+            if (not isinstance(edit, dict) or not isinstance(edit.get("old"), str) or not isinstance(edit.get("new"), str)
+                    or set(edit) - {"old", "new", "all"} or not isinstance(edit.get("all", False), bool)):
+                raise ValueError(f"edit {n} must be {{old: text, new: text}} (and optionally all: true or false)")
+            if not edit["old"]:
+                raise ValueError(f"edit {n}: old must not be empty")
+        return edits
+
+    @staticmethod
+    def _closest(text: str, old: str) -> str:
+        """The line of `text` most like the first line of `old`, to show where an edit that was not found went wrong."""
+        wanted = " ".join(old.strip().split("\n")[0].split())[:200]
+        lines = [" ".join(line.split()) for line in text.split("\n") if line.strip()]
+        found = difflib.get_close_matches(wanted, lines, n=1, cutoff=0.5)
+        return f" The closest line in the file is: {found[0][:200]!r}." if found else ""
+
+    def _run(self, sandbox: Sandbox, **kwargs: Any) -> ToolResult:
+        edits = self._edits(kwargs)
+        path = kwargs["path"]
+        relative = sandbox.resolve(path).relative_to(sandbox.resolve(".")).as_posix()
+        before = sandbox.read_text(path)
+        text = before
+        for n, edit in enumerate(edits, 1):
+            found = text.count(edit["old"])
+            if found == 0:
+                return ToolResult(False, f"{self.name}: edit {n} of {len(edits)} not applied: the text to replace is not in "
+                                         f"{relative} (it must match exactly, whitespace included; an earlier edit of this "
+                                         f"call may have changed it).{self._closest(text, edit['old'])} Nothing was changed.")
+            if found > 1 and not edit.get("all", False):
+                return ToolResult(False, f"{self.name}: edit {n} of {len(edits)} not applied: the text occurs {found} times in "
+                                         f"{relative}. Make `old` longer so that it occurs once, or set all to true. "
+                                         "Nothing was changed.")
+            text = text.replace(edit["old"], edit["new"])
+        sandbox.write_text(path, text)
+        if sandbox.read_text(path) != text:                    # the answer must be true: say so if the write did not hold
+            return ToolResult(False, f"{self.name}: {relative} does not hold the edited text after writing it")
+        return ToolResult(True, f"Applied {len(edits)} edit{'s' if len(edits) != 1 else ''} to {relative}: "
+                                f"{len(before)} -> {len(text)} characters, {len(text.splitlines())} lines.",
+                          files_written=[relative])
 
 
 class DeleteFile(_FileTool):

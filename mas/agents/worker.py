@@ -52,7 +52,9 @@ success must be a boolean and summary a string. artifacts are workspace-relative
 paths; refs maps names to string identifiers or URLs; open_issues lists unfinished work.
 For failure, set success to false and include error and optionally failure_mode
 (llm_format, tool_error, timeout, max_steps, wrong_output or crash).
-Write what you have to a file as soon as you have something and improve it afterwards: a partial
+To change part of a file use edit_file (exact text; several edits in one call), not a whole new file and not a script that
+patches it; an edit its answer does not confirm was not made, so never say that a change was made unless it was
+confirmed or you read it in the file. Write what you have to a file as soon as you have something and improve it afterwards: a partial
 file is worth more than none, and your steps are limited. Report partial work honestly. Files and identifiers recorded by tools are added
 automatically. Do not call finish; return the JSON object directly."""
 
@@ -92,7 +94,9 @@ when there are any. Give each teammate the ones that concern its part. Before yo
 files yourself (read them; count with run_python when it can be counted; do not trust a number a teammate printed) and report
 each as {"id", "status": "met" | "not_met" | "unverified", "evidence"} in `requirements` of your final JSON. Fix what is not
 met, and say plainly what is not: it is shown to the human. Also check any size or count you asked a teammate to meet
-(a length, a number of items): add an entry of your own for it, with id "OWN1", "OWN2", ... and a "requirement" text.
+(a length, a number of items): add an entry of your own for it, with id "OWN1", "OWN2", ... and a "requirement" text. A
+size or count you set yourself is a goal, not a requirement: if two edits have not brought a file within it, stop, report the
+real number as not met, and go on; do not keep trimming.
 Reviews run in rounds, not as a ping-pong. Send the FINAL draft, with the sources it rests on, to every reviewer that matters
 in ONE reply; wait for all of them; make ONE revision that applies every item of every reviewer (a claim nobody can check is
 deleted or labelled unverified in the document itself, not just mentioned in your reply); send the revised file to the same
