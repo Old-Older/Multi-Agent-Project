@@ -45,6 +45,12 @@ _FAIL_PHRASE = re.compile(r"approv\w* with (?:conditions?|changes|reservations?)
 _PASS = re.compile(r"\bPASS(?:ED)?\b|\bLGTM\b|\bapproved?\b(?! with)|(?<![不未])通[過过]", re.IGNORECASE)
 _FAIL_WEAK = re.compile(r"must[- ]fix|requires? (?:the )?(?:following )?(?:changes|fixes)|[須须]修改|需要修改|top \d+ fixes",
                         re.IGNORECASE)
+# A task that asks for a review: the verb is among the first words of its goal ("Re-check ...", "Final consistency check ...",
+# "Re-run the consistency check ..."), unless the goal opens with work to be done ("Write a short review of ...").
+_REVIEW_VERB = re.compile(
+    r"^\W*(?!(?:write|draft|produce|create|build|prepare|compile|update|add|fix|revise|rewrite|make|generate|research|find"
+    r"|summari[sz]e|analy[sz]e|apply|implement)\b)(?:\w+\W+){0,4}?(?:review|re-?check|check|verify|confirm|audit|sign-?off|approve)",
+    re.IGNORECASE)
 _SCRIPT_SUFFIXES = (".py", ".sh", ".pyc")                   # a teammate's tools, not something to hand back
 _FILE_NAME = re.compile(r"(?<![\w/.-])[\w][\w.-]*\.(?:md|txt|py|json|html?|csv|tsv|pdf|docx?|xlsx?|pptx?|js|css|ipynb|ya?ml)\b",
                         re.IGNORECASE)
@@ -101,6 +107,7 @@ class Router:
         self._delegations: dict[str, int] = {}                # parent task id -> count
         self._attempts: dict[tuple[str, str, str], list[str]] = {}
         self._cancelled_roots: set[str] = set()
+        self._requirements: dict[str, list[str]] = {}         # root id -> what the request explicitly requires
         self._root_extra: dict[str, float] = {}               # root id -> seconds added to its budget for re-checks
         self._root_grants: dict[str, int] = {}
         self._handed: dict[str, dict[str, tuple[Path, str | None]]] = {}   # task id -> file -> (source, fingerprint)
@@ -256,7 +263,7 @@ class Router:
         Every hand-over records a fingerprint of the file as it was handed over. A teammate's finished task whose
         file has been changed afterwards (and was not handed over again to the same teammate, who then worked on
         the new version) is out of date: whatever it wrote or approved is about the old text. This is how a
-        client letter written from version 1 of a proposal is found after the proposal became version 2."""
+        a summary written from version 1 of a document is found after the document became version 2."""
         latest: dict[tuple[str, str], str] = {}
         for task in self.state.by_root(root_id):                       # in the order they were registered
             result = self.state.result(task.id)
@@ -460,6 +467,31 @@ class Router:
         if _PASS.search(text):
             return "pass"
         return "fail" if _FAIL_WEAK.search(text) else None
+
+    def set_requirements(self, root_id: str, items: list[str]) -> None:
+        """What the request explicitly requires (quantities, sizes, formats, coverage), as the lead listed them."""
+        self._requirements[root_id] = list(items)
+
+    def requirements(self, root_id: str) -> list[str]:
+        return list(self._requirements.get(root_id, []))
+
+    def review_rounds(self, root_id: str, assignee: str, files: list[str]) -> int:
+        """How often `assignee` has already been asked, in this request, to review the same file: the most for any one
+        of `files`. A review that was refused does not count. Zero when no file is named."""
+        names = {Path(f).name for f in files}
+        counts: dict[str, int] = {}
+        for task in self.state.by_root(root_id):
+            result = self.state.result(task.id)
+            if (task.assignee != assignee or not _REVIEW_VERB.search(task.goal[:80])
+                    or (result is not None and (result.error or "").startswith("refused:"))):
+                continue
+            for name in names & {Path(n).name for n in self._handed.get(task.id, {})}:
+                counts[name] = counts.get(name, 0) + 1
+        return max(counts.values(), default=0)
+
+    @staticmethod
+    def is_review_request(goal: str) -> bool:
+        return bool(_REVIEW_VERB.search((goal or "")[:80]))
 
     def reviewed_files(self, root_id: str) -> set[str]:
         """Base names of the files a reviewer has been given in this request (a successful task whose goal asks

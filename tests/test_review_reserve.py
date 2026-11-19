@@ -315,7 +315,8 @@ class FixAndRecheckFitsTest(unittest.IsolatedAsyncioTestCase):
 
         team = {n: RoleConfig(n, n.title(), f"{n} works.", f"You are {n}.", []) for n in ("lead", "reviewer")}
         defaults = dict(data_dir=self.tmp / "data", workspaces_dir=self.tmp / "ws", subtask_timeout_s=10,
-                        lead_timeout_s=20, request_budget_s=270.0, closing_check=False, finish_not_before=0.0)
+                        lead_timeout_s=20, request_budget_s=270.0, closing_check=False, finish_not_before=0.0,
+                        requirements_check=False)
         system = build_system(Settings(**{**defaults, **settings}), MockLLM(responder=brain), AutoResponder(),
                               roles=team, worker_factory=factory)
         system.router.clock = lambda: now[0]

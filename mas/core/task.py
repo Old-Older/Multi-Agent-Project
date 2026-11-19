@@ -87,6 +87,8 @@ class TaskResult:
     artifacts: list[str] = field(default_factory=list)      # files written, auto-filled from tool calls
     refs: dict[str, str] = field(default_factory=dict)      # commit hash, URLs, ...
     open_issues: list[str] = field(default_factory=list)    # unfinished items for the board
+    # A lead's own check of the request's requirements: [{"id": "REQ1", "status": met|not_met|unverified, "evidence": ...}]
+    requirements: list[dict[str, str]] = field(default_factory=list)
     error: str | None = None
     failure_mode: FailureMode | None = None
     declined: bool = False

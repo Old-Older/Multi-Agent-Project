@@ -59,6 +59,10 @@ class Settings:
     finish_not_before: float = 0.5            # a lead that hands in with less than this share of the budget used is sent back (0: off)
     review_reserve_s: float = 120.0           # when a review does not pass, the time left is topped up to this, for the fix and the re-check
     max_review_extensions: int = 2            # how often that can happen in one request (0: never)
+    requirements_check: bool = True           # list what the request explicitly requires; the lead reports each one before it hands in
+    max_requirements: int = 12
+    max_review_rounds: int = 3                # reviews of the same file by the same reviewer in one request (0: no limit)
+    lead_summary_max_chars: int = 6000        # the message the human reads is not cut as short as a teammate's report
     review_final: bool = True                 # a lead may not hand in a deliverable no reviewer has seen (needs closing_check)
     closing_check: bool = True                # before a lead's final answer, one more step to check the loose ends
 

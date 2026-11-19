@@ -297,7 +297,8 @@ class TimingTest(unittest.IsolatedAsyncioTestCase):
         tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         team = {"dev": RoleConfig("dev", "Developer", "Writes code.", "You are the developer.", [])}
-        settings = Settings(data_dir=tmp / "data", workspaces_dir=tmp / "ws", subtask_timeout_s=5, lead_timeout_s=10)
+        settings = Settings(data_dir=tmp / "data", workspaces_dir=tmp / "ws", subtask_timeout_s=5, lead_timeout_s=10,
+                            requirements_check=False)
         system = build_system(settings, MockLLM(responder=brain), AutoResponder(), roles=team,
                               worker_factory=lambda role, parts: WorkerAgent(
                                   role, parts.bus, parts.router, parts.settings, parts.llm, [Slow()],

@@ -67,7 +67,7 @@ class ParallelDelegationTest(unittest.IsolatedAsyncioTestCase):
                                    parts.memory, peers=parts.peers)
             return Sleeper(role.agent_id, parts.bus, parts.router, parts.settings, log=self.log, fail=fail)
         settings = Settings(data_dir=self.tmp / "data", workspaces_dir=self.tmp / "ws", subtask_timeout_s=10,
-                            lead_timeout_s=20, **settings_overrides)
+                            lead_timeout_s=20, requirements_check=False, **settings_overrides)
         system = build_system(settings, MockLLM(responder=brain), AutoResponder(), roles=TEAM, worker_factory=factory)
         system.start()
         started = time.monotonic()

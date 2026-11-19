@@ -22,7 +22,7 @@ class HKGAIWorkerIntegrationTest(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(temporary.cleanup)
         root = Path(temporary.name)
         settings = Settings(hkgai_api_key="offline-fixture", data_dir=root / "data",
-                            workspaces_dir=root / "workspaces")
+                            workspaces_dir=root / "workspaces", requirements_check=False)
         client = make_llm(settings)
         role = RoleConfig("reader", "Reader", "Reads a workspace file.", "", ["read_file"])
         human = CliHumanIO(read_line=AsyncMock(return_value=None))

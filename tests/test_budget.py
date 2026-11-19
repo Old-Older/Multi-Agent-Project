@@ -28,7 +28,8 @@ class BudgetCase(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.tmp.cleanup)
         root = Path(self.tmp.name)
         self.settings = Settings(data_dir=root / "data", workspaces_dir=root / "workspaces", request_budget_s=100.0,
-                                 lead_wrapup_s=10.0, worker_wrapup_s=50.0, min_delegation_s=60.0, closing_check=False)
+                                 lead_wrapup_s=10.0, worker_wrapup_s=50.0, min_delegation_s=60.0, closing_check=False,
+                                 requirements_check=False)
         self.bus = InMemoryBus()
         for member in (HUMAN, "worker", "mate"):
             self.bus.join(member, GROUP_MAIN)

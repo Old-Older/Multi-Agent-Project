@@ -33,7 +33,8 @@ def _report_test(messages: list[ChatMessage], tools: list[FunctionSpec] | None) 
 
 
 async def run_example(root: Path) -> TaskResult:
-    settings = Settings(workspaces_dir=root / "workspaces", data_dir=root / "data")
+    # requirements_check off: the model here is a script that answers each step in turn
+    settings = Settings(workspaces_dir=root / "workspaces", data_dir=root / "data", requirements_check=False)
     role = RoleConfig("tester", "Tester", "Runs workspace tests.", "", ["run_python"])
     llm = MockLLM(script=[LLMResponse("", [
         ToolCall("check", "run_python", {"module": "unittest", "args": ["test_example"]}),

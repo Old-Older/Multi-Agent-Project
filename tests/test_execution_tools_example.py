@@ -30,7 +30,8 @@ class ExecutionExampleTest(unittest.IsolatedAsyncioTestCase):
 
     def system(self, names, llm):
         settings = Settings(workspaces_dir=self.root / "workspaces", data_dir=self.root / "data",
-                            search_api_key="offline-unit-test", github_token="offline-git-test")
+                            search_api_key="offline-unit-test", github_token="offline-git-test",
+                            requirements_check=False)
         role = RoleConfig("custom", "Custom", "Run configured tools.", "", names)
         human = CliHumanIO(read_line=lambda: asyncio.sleep(0, result=None))
         return build_system(settings, llm, human, roles={"custom": role},
