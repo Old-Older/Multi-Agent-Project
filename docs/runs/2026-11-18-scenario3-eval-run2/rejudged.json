@@ -1,0 +1,24 @@
+[
+  {
+    "scenario": "scenario_3_securities_fund 2",
+    "task_index": 1,
+    "title": "Scenario 3, Task 1: Develop a Simulated Investment Proposal",
+    "old_passed": false,
+    "old_score": 6,
+    "old_notes": "The team delivered a full proposal, risk assessment and plain-language introduction, and did ask the client about horizon/objective/risk. However, the documents are not internally consistent: the risk assessment reviews a 7-fund 45/10/15/15/5/5/5 allocation while the proposal and client introduction use a 6-fund 40/20/15/10/7.5/7.5 allocation, and FX is mixed between 7.80 and 7.846. The risk manager's own review flagged that the proposal file was never readable and that the HKD 5,000/month compounding figures (3.13m/7.87m) overstate outcomes by ~2.5x, yet the proposal still contains them; the ",
+    "new_passed": false,
+    "new_score": 6,
+    "new_notes": "All the requested deliverables exist and are substantive: a sourced market brief, a full proposal with allocation and rationale, a risk assessment, and a warm plain-language client introduction, plus documented assumptions from the clarifying questions. However, the team's own risk review found blocking errors that remain in the delivered proposal: the HKD 5,000/month compounding figures (HKD 3.13m at 10 yrs / 7.87m at 20 yrs at 8%) are overstated by roughly 2.5x versus the correct ~0.91m/~2.95m, and the allocation is inconsistent across documents (6-fund 40/20/15/10/7.5/7.5 in the proposal an"
+  },
+  {
+    "scenario": "scenario_3_securities_fund 2",
+    "task_index": 2,
+    "title": "Scenario 3, Task 2: The Future of the Semiconductor Industry: An HTML Slide Presentation",
+    "old_passed": true,
+    "old_score": 8,
+    "old_notes": "The delivered HTML deck, slides.json, build scripts and README substantiate an 18-slide, browser-navigable, end-2026 semiconductor outlook with sourced research, explicit investment implications (sleeve sizing, hedge) and a risk section plus monitoring dashboard. Minor residual issues remain: the risk reviewer's final verification could not read the revised deck directly, and some caveats (modelled rather than realised vols, unverified NVIDIA leadership item, Taiwan look-through not computed) are disclosed rather than resolved, so internal consistency is not fully closed out.",
+    "new_passed": true,
+    "new_score": 9,
+    "new_notes": "The HTML deck is complete, self-contained and navigable (arrow keys, fullscreen, print-to-PDF), with 18 substantive slides covering the full value chain, six judgments, three scenarios with probabilities, six implications, a sized portfolio with risk budget and hedge, a risk table, a monitoring dashboard and a sourced appendix. Research is dated and tagged, and the team clarified focus/audience with the human up front. Minor blemishes: one portfolio bar renders at 109% width (analog 26% × 4.2), and the deck itself flags that volatility figures are modelled rather than from the fund's risk syst"
+  }
+]

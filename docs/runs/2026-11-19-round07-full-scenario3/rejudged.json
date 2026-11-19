@@ -1,0 +1,24 @@
+[
+  {
+    "scenario": "scenario_3_securities_fund 2",
+    "task_index": 1,
+    "title": "Scenario 3, Task 1: Develop a Simulated Investment Proposal",
+    "old_passed": false,
+    "old_score": 6,
+    "old_notes": "The proposal and client intro are substantive, well-structured and cover allocation, rationale, risks and a plain-English guide. However, the team never asked the client the offered follow-up questions (objectives, horizon, risk preferences) and instead assumed them, and the final files still contain inconsistencies: client_intro.md §2 still describes sleeve 2 as 'a wider US / world fund' and §4 still contains the 'tech falls 40% → roughly 20%' row that the risk manager had required removed, contradicting proposal.md's US small/mid sleeve and stress tests. The risk manager's PASS confirmations",
+    "new_passed": false,
+    "new_score": 6,
+    "new_notes": "The proposal and intro are substantive and well-sourced, but the delivered client_intro.md still contains the 'Tech falls hard: a 40% fall in tech would cost this plan roughly 20%' row and the '85% in shares and 15% in safety' wording, which the risk manager had flagged as a contradiction and which the team claimed were fixed — the file does not back the claim. Also, sleeve 2 in the intro is described as 'a wider US / world fund', contradicting proposal.md's US small/mid-cap sleeve. The proposal itself is strong."
+  },
+  {
+    "scenario": "scenario_3_securities_fund 2",
+    "task_index": 2,
+    "title": "Scenario 3, Task 2: The Future of the Semiconductor Industry: An HTML Slide Presentation",
+    "old_passed": true,
+    "old_score": 8,
+    "old_notes": "The core request is fully met: a 10-slide browser-navigable HTML deck, IC-level and numbers-heavy, with sourced research, investment implications, a seven-part risk section and a concrete conditional stance, plus a plain-English companion note and README. The only shortfall is the companion note at ~535 words against the ~480 target, which is a secondary deliverable and was honestly flagged. Review trail shows deck and README passed re-checks after fixes.",
+    "new_passed": true,
+    "new_score": 8,
+    "new_notes": "The core request is fully met: a 10-slide, browser-navigable HTML deck with sourced figures, five judgments, a concrete conditional stance, and a seven-part risk section, reviewed and corrected through a documented risk-review trail. The only shortfall is the secondary companion note running ~535 words against a ~480 target, which is minor and does not affect the primary deliverable. Some underlying research items (TSMC share, CoWoS/HBM capacity, subsidies) were unverified, but the deck honestly labels and excludes them rather than asserting them."
+  }
+]

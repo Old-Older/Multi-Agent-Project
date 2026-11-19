@@ -1,0 +1,24 @@
+[
+  {
+    "scenario": "scenario_3_securities_fund 2",
+    "task_index": 1,
+    "title": "Scenario 3, Task 1: Develop a Simulated Investment Proposal",
+    "old_passed": true,
+    "old_score": 8,
+    "old_notes": "The team asked clarifying questions, received the client's default assumptions, and delivered a full proposal plus a plain-English introduction. The proposal covers allocation, reasoning, dollar-quantified risks, tax and estate-tax caveats, and an entry plan; the introduction is jargon-light and figure-checked against the proposal. Minor gaps (unverified 2026 YTD returns and 10-year Treasury yield, unverified withholding/estate-tax rates) are disclosed rather than hidden, which is acceptable for a simulated proposal.",
+    "new_passed": true,
+    "new_score": 9,
+    "new_notes": "The team asked clarifying questions, got the client's default assumptions, and delivered a full proposal plus a plain-English introduction that covers allocation, rationale, costs, dollar-quantified risks and next steps. A risk review caught nine issues that were fixed and re-verified, and the introduction's figures were checked against the proposal. Minor gaps: the 10-year Treasury yield and YTD returns were never obtained (disclosed as open items), and the withholding/estate-tax rates were not verified against primary sources."
+  },
+  {
+    "scenario": "scenario_3_securities_fund 2",
+    "task_index": 2,
+    "title": "Scenario 3, Task 2: The Future of the Semiconductor Industry: An HTML Slide Presentation",
+    "old_passed": false,
+    "old_score": 6,
+    "old_notes": "The deck is a real, navigable HTML presentation with sourced judgments, investment implications and ranked risks, so the core deliverable exists. However, the valuation slide rests on forward P/E for only a few names with no consensus 2026/2027 EPS growth, and the market data uses the Spring 2026 WSTS forecast rather than the November update — both material gaps for a fund-team investment case, and the team itself flags the valuation section as not usable for a valuation conclusion.",
+    "new_passed": false,
+    "new_score": 7,
+    "new_notes": "The deck is a complete, well-structured, navigable 10-slide HTML presentation with sourced judgments, investment implications and a ranked risk table, so the core request is largely met. However, the valuation slide is largely a gap: forward P/E exists for only four names, no EPS growth, no SOX level, and the deck itself states it has no valuation conclusion — a material weakness for a fund-team investment deck. The team also honestly flags that the final HTML was never reviewed and that the WSTS Autumn 2026 forecast was not retrieved."
+  }
+]
