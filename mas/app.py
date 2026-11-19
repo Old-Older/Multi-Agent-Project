@@ -66,12 +66,13 @@ def build_tools(role: RoleConfig, settings: Settings) -> list[Tool]:
 
     Every tool is built from the settings it needs (the Git tool the GitHub token, web search the
     search key). A name that is not a tool is a mistake in the team file and fails loudly."""
+    deepseek_key, search_key = settings.search_credentials()
     constructors: dict[str, Callable[[], Tool]] = {
         ReadFile.name: ReadFile, WriteFile.name: WriteFile,
         DeleteFile.name: DeleteFile, ListFiles.name: ListFiles,
         RunPython.name: RunPython,
         FetchURL.name: FetchURL,
-        WebSearch.name: lambda: WebSearch(api_key=settings.search_api_key),
+        WebSearch.name: lambda: WebSearch(api_key=search_key, deepseek_key=deepseek_key),
         Git.name: lambda: Git(github_token=settings.github_token),
     }
     result: list[Tool] = []
@@ -79,8 +80,8 @@ def build_tools(role: RoleConfig, settings: Settings) -> list[Tool]:
         if name not in constructors:
             raise ValueError(f"unknown tool {name!r} configured for {role.agent_id}")
         result.append(constructors[name]())
-    if WebSearch.name in role.tool_names and not settings.search_api_key:
-        log.info("%s has web_search and no SEARCH_API_KEY: it uses the keyless search (DuckDuckGo and others)",
+    if WebSearch.name in role.tool_names and not (deepseek_key or search_key):
+        log.info("%s has web_search and no search key: it uses the keyless search (DuckDuckGo and others)",
                  role.agent_id)
     return result
 

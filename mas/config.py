@@ -85,6 +85,22 @@ class Settings:
     # tools
     github_token: str = ""
     search_api_key: str = ""
+    # Which search backs web_search. "auto": with the DeepSeek model, DeepSeek's own search (same key); with the HKGAI
+    # model, the search key SEARCH_API_KEY (the course's own). "deepseek", "key" (SEARCH_API_KEY only) and "keyless"
+    # force one. Whichever is chosen, a failing search falls back to the keyless one.
+    search_provider: str = "auto"
+
+    def __post_init__(self) -> None:
+        if self.search_provider not in ("auto", "deepseek", "key", "keyless"):
+            raise ValueError(f"search_provider must be auto, deepseek, key or keyless, not {self.search_provider!r}")
+
+    def search_credentials(self) -> tuple[str, str]:
+        """(DeepSeek key, search key) that web_search may use: each is empty when the setting does not allow it.
+        The DeepSeek key is never used for search while the HKGAI model is the one in use."""
+        mode = self.search_provider
+        deepseek = self.deepseek_api_key if mode == "deepseek" or (mode == "auto" and self.llm_provider == "deepseek") else ""
+        key = self.search_api_key if mode in ("auto", "key", "deepseek") else ""
+        return deepseek, key
 
     @property
     def memory_dir(self) -> Path:
@@ -112,6 +128,7 @@ class Settings:
             "deepseek_thinking": os.getenv("DEEPSEEK_THINKING"),
             "github_token": os.getenv("GITHUB_TOKEN"),
             "search_api_key": os.getenv("SEARCH_API_KEY"),
+            "search_provider": os.getenv("SEARCH_PROVIDER"),
         }
         values = {k: v for k, v in env.items() if v}
         nudges = os.getenv("EARLY_STOP_NUDGES")

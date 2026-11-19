@@ -54,7 +54,7 @@ class ExecutionExampleTest(unittest.IsolatedAsyncioTestCase):
         with patch.object(WebSearch, "__init__", return_value=None) as construct_search, \
                 patch.object(Git, "__init__", return_value=None) as construct_git:
             worker = self.system(names, MockLLM()).workers["custom"]
-        construct_search.assert_called_once_with(api_key="offline-unit-test")
+        construct_search.assert_called_once_with(api_key="offline-unit-test", deepseek_key="")
         construct_git.assert_called_once_with(github_token="offline-git-test")
         self.assertEqual(list(worker.tools), names)
         self.assertTrue(worker.tools["git"].requires_approval)

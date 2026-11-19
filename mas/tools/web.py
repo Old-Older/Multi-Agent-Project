@@ -1,9 +1,10 @@
 """Web research tools.
 
-web_search uses the Brave Search API when a key is configured (the credential goes only to the
-fixed Brave endpoint) and otherwise, or when Brave cannot be reached or refuses (key rejected, quota
-used up, server error), a keyless search through DuckDuckGo and other engines (the `ddgs`
-package). The keyless path is what makes the system work on a machine that has no search key.
+web_search asks, in this order and only as far as it has keys: DeepSeek's own search API (when the DeepSeek model is
+in use; its key goes only to the fixed DeepSeek endpoint), the Brave Search API (SEARCH_API_KEY; the credential goes
+only to the fixed Brave endpoint), and a keyless search through DuckDuckGo and other engines (the `ddgs` package). A
+search that cannot be answered (key rejected, quota or balance used up, rate limit, server error) falls to the next one.
+The keyless path is what makes the system work on a machine that has no search key.
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ import socket
 import time
 import weakref
 import zlib
+from datetime import date, timedelta
 from html.parser import HTMLParser
 from typing import Any
 
@@ -34,6 +36,13 @@ _SEARCH_TIMEOUT = 20.0              # more than the keyless search's own deadlin
 _MAX_BYTES = 1_048_576
 _SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 _FRESHNESS = ("pd", "pw", "pm", "py")
+# DeepSeek's search API: one request, one answer in about a second; the query is at most 128 characters and takes
+# operators (after:, lang:, site:). Fixed endpoint: the key is sent nowhere else.
+_DEEPSEEK_SEARCH_URL = "https://api.deepseek.com/v1/tools/search"
+_DEEPSEEK_TIMEOUT = 8.0             # shorter than the whole search, so that a fallback still has time
+_DEEPSEEK_QUERY_MAX = 128
+_DEEPSEEK_DAYS = {"pd": 1, "pw": 7, "pm": 31, "py": 366}
+_DEEPSEEK_TEXT_MAX = 360
 _REDIRECTS = {301, 302, 303, 307, 308}
 # The keyless search is a stop-gap for machines with no search key: one call to ddgs, whose "auto" mode already
 # asks its own engines in parallel (naming one engine is not worth it: several, such as bing and google, are
@@ -145,6 +154,12 @@ def _keyless_text(query: str, count: int, freshness: str) -> list[dict[str, str]
     return results
 
 
+def _check_key(key: object, name: str) -> None:
+    """A key that cannot be sent as a header value is a mistake in the configuration: say so, never send it."""
+    if not isinstance(key, str) or not key.isascii() or not key.isprintable() or " " in key:
+        raise ValueError(f"invalid {name}")
+
+
 def _integer(value: int, name: str, maximum: int) -> None:
     if type(value) is not int or not 1 <= value <= maximum:
         raise ValueError(f"{name} must be an integer from 1 to {maximum}")
@@ -225,8 +240,9 @@ class WebSearch(_WebTool):
         "required": ["query"], "additionalProperties": False,
     }
 
-    def __init__(self, api_key: str = "") -> None:
+    def __init__(self, api_key: str = "", deepseek_key: str = "") -> None:
         self._api_key = api_key
+        self._deepseek_key = deepseek_key
 
     async def _request(self, *, query: str, count: int = 5, freshness: str = "") -> list[dict[str, str]]:
         if not isinstance(query, str) or not query.strip() or len(query) > 600 or len(query.split()) > 75:
@@ -240,10 +256,16 @@ class WebSearch(_WebTool):
         key = (" ".join(query.lower().split()), count, freshness)
         if (hit := _cached(key)) is not None:
             return hit
+        if self._deepseek_key:
+            _check_key(self._deepseek_key, "DEEPSEEK_API_KEY")
+            try:
+                results = await self._deepseek(query, count, freshness)
+                _remember(key, results)
+                return results
+            except _SearchUnavailable as exc:
+                log.warning("DeepSeek search unavailable (%s); trying the next search", exc)
         if self._api_key:
-            if not isinstance(self._api_key, str) or not self._api_key.isascii() \
-                    or not self._api_key.isprintable() or " " in self._api_key:
-                raise ValueError("invalid SEARCH_API_KEY")
+            _check_key(self._api_key, "SEARCH_API_KEY")
             try:
                 results = await self._brave(params, count)
                 _remember(key, results)
@@ -260,6 +282,64 @@ class WebSearch(_WebTool):
         results = self._clean(rows, count)
         _remember(key, results)
         return results
+
+    async def _deepseek(self, query: str, count: int, freshness: str) -> list[dict[str, str]]:
+        """DeepSeek's search API. Raises _SearchUnavailable when it cannot answer (key rejected, no balance, rate limit,
+        server or network trouble), so that the next search is tried."""
+        text = " ".join(query.split())
+        suffix = ""
+        if freshness:                                       # DeepSeek has no freshness parameter: the after: operator does it
+            suffix += f" after:{(date.today() - timedelta(days=_DEEPSEEK_DAYS[freshness])).isoformat()}"
+        if text.isascii() and "lang:" not in text:         # an English question gets English pages first
+            suffix += " lang:en"
+        text = text[:_DEEPSEEK_QUERY_MAX - len(suffix)].rstrip() + suffix
+        headers = {"Authorization": f"Bearer {self._deepseek_key}", "Content-Type": "application/json",
+                   "Accept-Encoding": "gzip, identity"}
+        try:
+            async with httpx.AsyncClient(timeout=_DEEPSEEK_TIMEOUT) as client:
+                async with client.stream("POST", _DEEPSEEK_SEARCH_URL, headers=headers, follow_redirects=False,
+                                         json={"query": text, "count": count, "need_content": False}) as response:
+                    if not response.is_success:
+                        raise _SearchUnavailable(f"HTTP {response.status_code}")
+                    body, truncated = await _bounded_body(response)
+        except (httpx.TimeoutException, httpx.RequestError) as exc:
+            raise _SearchUnavailable(type(exc).__name__) from None
+        if truncated:
+            raise ValueError("DeepSeek search response exceeded the byte limit")
+        try:
+            payload = json.loads(body)
+        except (ValueError, RecursionError) as exc:
+            raise ValueError("invalid DeepSeek search JSON response") from exc
+        rows = payload.get("results") if isinstance(payload, dict) else None
+        if not isinstance(rows, list):
+            raise ValueError("invalid DeepSeek search results")
+        results = []
+        for row in rows:
+            if not isinstance(row, dict) or not isinstance(row.get("title"), str):
+                continue
+            try:
+                _url(row.get("url"))
+            except (ValueError, httpx.InvalidURL):
+                continue
+            results.append({"title": row["title"].strip(), "url": row["url"], "description": self._deepseek_text(row)})
+            if len(results) == count:
+                break
+        return results
+
+    @staticmethod
+    def _deepseek_text(row: dict) -> str:
+        """What the model reads about one result: the date and site, then the start of the summary (the longer text,
+        without its repeated headline), or the snippet."""
+        text = " ".join(str(row.get("summary") or row.get("snippet") or "").split())
+        title = row["title"].strip()
+        text = re.sub(r"^#+\s*", "", text)
+        if text.startswith(title):
+            text = text[len(title):].lstrip(" -—:.…")
+        text = text[:_DEEPSEEK_TEXT_MAX].rstrip()
+        when = row.get("date") if isinstance(row.get("date"), str) else ""
+        site = row.get("site_name") if isinstance(row.get("site_name"), str) else ""
+        meta = " · ".join(filter(None, [when[:10], site.strip()]))
+        return f"[{meta}] {text}" if meta and text else meta and f"[{meta}]" or text
 
     async def _brave(self, params: dict[str, str], count: int) -> list[dict[str, str]]:
         headers = {"X-Subscription-Token": self._api_key, "Accept": "application/json",
