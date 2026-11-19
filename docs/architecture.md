@@ -226,7 +226,10 @@ be covered, not what is only permitted). The list goes to the lead and into ever
 must report each requirement as met, not met or unverified against the final files (counting with `run_python` when it can be
 counted; it may add `OWN1`, `OWN2`, ... for a target it set a teammate). It is sent back twice at most; what stays unmet or
 unverified is appended to the reply the human reads and to `open_issues`. What the human answered when asked is added to the list
-before the check (`requirements_check`).
+before the check (`requirements_check`). An invitation to consult the requester ("you can discuss ... with me") becomes ONE
+requirement ("Consult the requester about ..."): the lead is told to ask the human a single question before handing out work
+(covering every topic, with its own defaults), a first delegation made without asking is held back once, and the system, not the
+lead, records whether the human was asked.
 
 **Reviews.** A reviewer answers PASS or FAIL first and lists every problem at once. The `Router` reads a verdict from the wording
 (`review_verdict`, only for a task whose goal opens with a review verb) and keeps each reviewer's latest one. Gates before a lead
