@@ -69,6 +69,8 @@ def _timing(system, root_id: str, duration: float) -> dict:
     tasks = system.state.by_root(root_id)
     team: dict = {"llm_s": 0.0, "llm_calls": 0, "tool_s": 0.0, "by_tool": {}}
     lead: dict = {}
+    lead_steps: dict = {}
+    lead_tools: dict = {}
     for task in tasks:
         result = system.state.result(task.id)
         m = getattr(result, "metrics", None) or {}
@@ -83,12 +85,15 @@ def _timing(system, root_id: str, duration: float) -> dict:
             entry["s"] += v.get("s", 0.0)
         if task.parent_id is None:
             lead = {k: m.get(k, 0.0) for k in ("llm_s", "tool_s", "delegation_s", "human_s")}
+            lead_steps = dict(m.get("steps_by_kind") or {})
+            lead_tools = {name: v.get("calls", 0) for name, v in (m.get("by_tool") or {}).items()}
     if lead:
         lead["other_s"] = max(0.0, duration - sum(lead.values()))
     team["llm_s"], team["tool_s"] = round(team["llm_s"], 2), round(team["tool_s"], 2)
     for v in team["by_tool"].values():
         v["s"] = round(v["s"], 2)
-    return {"lead": {k: round(v, 2) for k, v in lead.items()}, "team": team}
+    return {"lead": {k: round(v, 2) for k, v in lead.items()}, "team": team,
+            "lead_steps": lead_steps, "lead_tools": lead_tools}
 
 
 def _clip(text: str, n: int) -> str:
@@ -293,6 +298,22 @@ def render_report(records: list[EvalRecord], *, title: str = "Evaluation report"
                        f"{lead.get('tool_s', 0):.0f} | {lead.get('delegation_s', 0):.0f} | {lead.get('human_s', 0):.0f} | "
                        f"{team.get('llm_calls', 0)} | {team.get('llm_s', 0):.0f} | {team.get('tool_s', 0):.0f} | "
                        f"{search.get('calls', 0)} | {search.get('s', 0):.0f} |")
+    stepped = [r for r in records if r.timing.get("lead_steps")]
+    if stepped:
+        out += ["", "## Where the lead's steps went", "",
+                "Each step is one model call of the lead. `tools` are its own tool calls (the second column lists them), "
+                "`delegate` the steps that handed work to teammates, `push_*` the steps it was sent back (to have a "
+                "deliverable reviewed, to check the requirements, to use more of the time, to check the loose ends), "
+                "`final` the answer that was accepted.", "",
+                "| scenario | run | task | steps | delegate | tools | push_review | push_requirements | push_early | "
+                "push_closing | format_error | final | the lead's own tool calls |",
+                "|---|---|---|---|---|---|---|---|---|---|---|---|---|"]
+        for r in stepped:
+            k = r.timing["lead_steps"]
+            tools = ", ".join(f"{n} {c}" for n, c in sorted(r.timing.get("lead_tools", {}).items(), key=lambda x: -x[1]))
+            out.append(f"| {r.scenario} | {r.run} | {r.task_index} | {r.lead_steps} | {k.get('delegate', 0)} | {k.get('tools', 0)} | "
+                       f"{k.get('push_review', 0)} | {k.get('push_requirements', 0)} | {k.get('push_early', 0)} | "
+                       f"{k.get('push_closing', 0)} | {k.get('format_error', 0)} | {k.get('final', 0)} | {tools or '-'} |")
     notes = [r for r in records if r.judge_notes or r.notes]
     if notes:
         out += ["", "## Notes", ""]

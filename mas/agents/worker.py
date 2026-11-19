@@ -146,13 +146,18 @@ class _Run:
     time_notes: set[str] = field(default_factory=set)       # the time reminders already given
     time_up_sent: bool = False
     time_up_retries: int = 0
+    step_kinds: dict[str, int] = field(default_factory=dict)       # what each step of the loop was spent on
     review_pushes: int = 0            # how often the lead was sent back to have its deliverable reviewed
     early_pushes: int = 0             # how often the lead was sent back for finishing early
     closing_rounds: int = 0           # how often the lead was asked to check the loose ends
 
+    def count(self, kind: str) -> None:
+        self.step_kinds[kind] = self.step_kinds.get(kind, 0) + 1
+
     def metrics(self) -> dict:
         tool_s = sum(s for _, s in self.by_tool.values())
         return {"llm_s": round(self.llm_s, 2), "llm_calls": self.llm_calls, "tool_s": round(tool_s, 2),
+                "steps_by_kind": dict(self.step_kinds),
                 "delegation_s": round(self.delegation_s, 2), "human_s": round(self.human_s, 2),
                 "by_tool": {name: {"calls": int(n), "s": round(s, 2)} for name, (n, s) in self.by_tool.items()}}
 
@@ -360,23 +365,30 @@ class WorkerAgent(Agent):
                     parsed = self._final_result(task, response.text)
                     unreviewed = self._unreviewed_push(task, run, parsed, left)
                     if unreviewed:
+                        run.count("push_review")
                         messages.append({"role": "user", "content": unreviewed})
                         continue
                     unmet = await self._requirements_push(task, run, parsed, left)
                     if unmet:
+                        run.count("push_requirements")
                         messages.append({"role": "user", "content": unmet})
                         continue
                     time_left = self.router.time_left(task.root_id)       # a top-up may have changed it
                     time_up = time_left is not None and time_left <= wrap
-                    check = None if time_up or left < 2 or (
-                        time_left is not None and time_left <= wrap + 15) else (
-                        self._early_finish_push(task, run, time_left) or self._closing_check(task, run))
+                    early = closing = None
+                    if not (time_up or left < 2 or (time_left is not None and time_left <= wrap + 15)):
+                        early = self._early_finish_push(task, run, time_left)
+                        closing = None if early else self._closing_check(task, run)
+                    check = early or closing
                     if check is None:
+                        run.count("final")
                         return parsed
                     run.closing_rounds += 1
+                    run.count("push_early" if early else "push_closing")
                     messages.append({"role": "user", "content": check})
                     continue
                 except (ValueError, TypeError) as exc:
+                    run.count("format_error")
                     format_errors += 1
                     if format_errors >= 3 or step == max_steps:
                         return TaskResult(task.id, False, "", error=f"invalid final result: {exc}",
@@ -388,6 +400,7 @@ class WorkerAgent(Agent):
             format_errors = 0
             if time_up:
                 # No tools were offered; the model asked for some anyway. Do not run them, ask again.
+                run.count("time_up_retry")
                 run.time_up_retries += 1
                 if run.time_up_retries > 2:
                     return TaskResult(task.id, False, "", error="the request's time budget ran out",
@@ -396,6 +409,7 @@ class WorkerAgent(Agent):
                 messages.append({"role": "user", "content": (
                     "Time is up and no tools are available. Reply with the final result JSON only.")})
                 continue
+            run.count("delegate" if any(self._is_delegation(c) for c in response.tool_calls) else "tools")
             messages.append(self._assistant_message(response.text, response.tool_calls))
             if len(response.tool_calls) > 1 and any(c.name == DECLINE for c in response.tool_calls):
                 for call in response.tool_calls:
