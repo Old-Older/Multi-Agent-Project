@@ -50,7 +50,7 @@
 - **记忆。** 每个 agent 有一份 JSONL 记录，保存任务和失败后总结的教训。类似的任务开始时会召回相关教训；
   决定把活交给谁的 agent 还能看到每位队友的近期表现简介。
 - **隔离。** 每个 agent 有自己的工作区目录（`workspaces/<agent>/`），文件只能通过 Router 在 agent 之间流转。
-- **工具。** `read_file`、`write_file`、`delete_file`、`list_files`、`run_python`、`web_search`（用 DeepSeek 模型时走 DeepSeek 自己的搜索，否则用无需 key 的应急搜索）、
+- **工具。** `read_file`、`write_file`、`edit_file`（精确替换）、`delete_file`、`list_files`、`run_python`、`web_search`（用 DeepSeek 模型时走 DeepSeek 自己的搜索，否则用无需 key 的应急搜索）、
   `fetch_url`、`git`（clone、add、commit、push，每次调用都需要你批准）。
 - **LLM。** 课程的 HKGAI 网关（默认）或 DeepSeek，这是课程允许的两种，都是兼容 OpenAI 接口的对话服务。
   课程禁止使用 OpenAI 和 Anthropic 的 API。
@@ -208,7 +208,7 @@ You are the software developer on a software development team. You are responsib
 ```
 ````
 
-成员数量不限，第一位是备用牵头者，每位成员都拥有全部八个工具。场景文件夹在此基础上增加任务文件
+成员数量不限，第一位是备用牵头者，每位成员都拥有全部九个工具。场景文件夹在此基础上增加任务文件
 （`02_task_1.md`、`03_task_2.md` ……），每个文件用一个围栏代码块写人类要说的话。
 
 ## 一次运行留下什么
@@ -278,7 +278,7 @@ python -m unittest tests.test_lead      # 单个模块
 
 ## 当前状态
 
-已可用：消息、路由、任务状态、会话看板、人在回路、带失败教训的每 agent 记忆、拥有八个工具的 worker、
+已可用：消息、路由、任务状态、会话看板、人在回路、带失败教训的每 agent 记忆、拥有九个工具的 worker、
 牵头者选择与委派、团队与场景加载、对话导出、无人值守运行。
 
 未完成：Docker 沙箱，以及在所有场景上的评测。评测框架已经有了（`python -m mas.eval`），但真实运行只做过场景 3（第一次：2 个请求都没完成；修复后：2/2 完成，子任务 83%，每个请求平均约 26 分钟，模型评分 7.0/10），所以还没有可靠的完成率和耗时结果（到底测过什么，见 [`docs/report.md`](docs/report.md)）。

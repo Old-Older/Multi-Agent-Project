@@ -315,6 +315,7 @@ its workspace mounted) is the planned stronger isolation and is not implemented.
 | Tool | Does | Notes |
 |---|---|---|
 | `read_file`, `write_file`, `list_files` | read, create or overwrite, list | relative paths inside the workspace |
+| `edit_file` | change a file by exact replacement | `{old, new}` pairs (or one `old`/`new`), applied in order all or nothing; a failure says which edit and why, with the closest line; success confirms the new size. Members are told to use it instead of rewriting a file or patching it with a script |
 | `delete_file` | delete a file | needs the human's approval |
 | `run_python` | run a script or a module (`unittest`, `pytest`) in the workspace | timeout (default 60 s), output returned with the exit code |
 | `web_search` | titles, URLs and snippets | DeepSeek's search API when the DeepSeek model is used (same key; `freshness` becomes an `after:` operator, an English query gets `lang:en`, the query is cut to 128 characters); otherwise, or if DeepSeek cannot answer (401, 402, 429, server or network trouble), a keyless stop-gap (`ddgs`, one call): 12 s deadline, and after 3 failures in a row it stands down for 30 s and tells the member to carry on without it. A real search API replaces it |
@@ -350,6 +351,7 @@ the team asked. It writes `report.md` and `results.json`, and the transcript and
 - `--judge` has a model grade each task's dialogue and deliverables (`mas/eval/judge.py`), as the course does.
 - `--repeat N --keep-memory` runs a scenario again with the agents' memory kept, to measure whether memory helps.
 - A scenario that does not finish in time is reported as a failure, never as a hang.
+- `python -m mas.eval.rejudge <archived run>` grades an archived run again from its transcript and delivered files (old and new mark side by side). The grader is shown every delivered file whole (up to 60,000 characters each, 160,000 in all, the dialogue 60,000); a longer file keeps its beginning and end with a line saying the middle is omitted from its view only. `report.md` also has a table of where the lead's steps went (tools, delegations, each kind of push).
 - `--time-budget SECONDS` (per request), `--research-limit N` (searches and fetches per task) and `--min-use FRACTION` (when a lead may hand in) set the profile; the report records them.
 
 Also recorded for every request, outside the harness: the `RootOutcome` and the final reply payload, and the

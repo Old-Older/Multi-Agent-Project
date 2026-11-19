@@ -8,7 +8,7 @@ python -X utf8 -m examples.execution_tools
 
 ## 把工具交给自己的 Worker
 
-默认的 `mas.app.build_tools` 已按角色配置注册全部八个工具：`read_file`、`write_file`、`delete_file`、`list_files`、`run_python`、`web_search`、`fetch_url`、`git`。`web_search` 用 DeepSeek 模型时走 DeepSeek 的搜索接口（同一把 key），否则（或 DeepSeek 答不了时）改用无需 key 的应急搜索（`ddgs` 包，只调一次，12 秒期限，连续失败 3 次后停手 30 秒），`git` 使用 `GITHUB_TOKEN`（`git push` 等操作执行前会向人类请求批准）。角色配置里出现不认识的工具名会直接报错。没有搜索 key 时 `web_search` 不会失败；所有引擎都没有响应时才返回错误，提示换个说法或稍后重试。
+默认的 `mas.app.build_tools` 已按角色配置注册全部九个工具：`read_file`、`write_file`、`edit_file`、`delete_file`、`list_files`、`run_python`、`web_search`、`fetch_url`、`git`。`web_search` 用 DeepSeek 模型时走 DeepSeek 的搜索接口（同一把 key），否则（或 DeepSeek 答不了时）改用无需 key 的应急搜索（`ddgs` 包，只调一次，12 秒期限，连续失败 3 次后停手 30 秒），`git` 使用 `GITHUB_TOKEN`（`git push` 等操作执行前会向人类请求批准）。角色配置里出现不认识的工具名会直接报错。没有搜索 key 时 `web_search` 不会失败；所有引擎都没有响应时才返回错误，提示换个说法或稍后重试。
 
 `examples.execution_tools.execution_worker_factory` 仍可使用，现在只是直接调用 `default_worker_factory`。
 

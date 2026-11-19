@@ -57,7 +57,7 @@ its own workspace and its own memory.
   whoever decides whom to delegate to.
 - **Isolation.** Every agent has its own workspace directory (`workspaces/<agent>/`); files only move
   between agents through the Router.
-- **Tools.** `read_file`, `write_file`, `delete_file`, `list_files`, `run_python`, `web_search`
+- **Tools.** `read_file`, `write_file`, `edit_file` (exact replacement), `delete_file`, `list_files`, `run_python`, `web_search`
   (DeepSeek's own search when the DeepSeek model is used, otherwise a keyless stop-gap search), `fetch_url` (reads the page here; a site that refuses it is read through DeepSeek's fetch API), `git` (clone, add, commit, push; each call needs your approval).
 - **LLM.** The course HKGAI gateway (default) or DeepSeek, the two the course allows; both are
   OpenAI-compatible chat endpoints. OpenAI and Anthropic APIs are not allowed.
@@ -219,7 +219,7 @@ You are the software developer on a software development team. You are responsib
 ```
 ````
 
-Any number of members works. The first one is the fallback lead. Every member gets all eight tools.
+Any number of members works. The first one is the fallback lead. Every member gets all nine tools.
 A scenario folder adds task files (`02_task_1.md`, `03_task_2.md`, ...), each with the human's words
 in a fenced block.
 
@@ -291,7 +291,7 @@ Commit small and often, from both members, every week; the history is graded.
 ## Status
 
 Working: messaging, routing, task state, session board, human in the loop, per-agent memory with
-failure lessons, workers with eight tools, lead selection and delegation, team and scenario loading,
+failure lessons, workers with nine tools, lead selection and delegation, team and scenario loading,
 transcript export, unattended runs.
 
 Not finished: the Docker sandbox, and the evaluation on all scenarios. The evaluation harness exists
