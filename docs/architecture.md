@@ -158,9 +158,14 @@ Delegations a member sends together in one reply run in parallel; see [4.5](#45-
 | `max_delegations_per_task` | 2 | delegations made by any other member for one task |
 | `max_delegation_depth` | 2 | how deep delegations can nest below the lead |
 | `max_retries_same_goal` | 2 | retries of the same goal on the same agent in one request |
+| `research_max_calls` | 14 | searches and page fetches one task may make; the next one is refused (0: no limit) |
+| `max_parallel_per_teammate` | 3 | jobs of one teammate that run at the same time for one requester |
+| `max_review_rounds` | 3 | how often one reviewer is asked to review the same file in one request (0: no limit) |
+| `request_budget_s` | 0 (off) | time budget of one request, see 4.8 |
+| `lead_summary_max_chars` | 6000 | length of the lead's reply to the human (a teammate's report is cut at `result_summary_max_chars`, 1500) |
 
 **Parallel delegation.** Delegations a member sends together in one reply run **at the same time**: jobs for
-different teammates in parallel, jobs for one teammate one after the other (they share its workspace). The answers
+different teammates in parallel, several jobs for one teammate too, at most `max_parallel_per_teammate` at a time (they share its workspace, so each is told to start its file names with `job1_`, `job2_`, ... and they cannot overwrite each other's files). The answers
 come back in the order asked; if one of the jobs ends the task (cancelled, timed out), the others are stopped. Any other tool
 call in the reply keeps its order, because a later delegation may depend on a file an earlier call wrote. A job that needs
 another's result goes in a later reply; the instructions say so. The time a member waits for teammates is recorded as the wall clock of
@@ -174,7 +179,7 @@ researching until the cap. They are suggestions in the conversation, not rules, 
 | Nudge | When | What the member sees |
 |---|---|---|
 | repeat note | a successful search or page fetch is repeated | "same call as step N, same result: use what you have" (the call still runs; searches and fetches are cached, so it costs nothing) |
-| research note | after `research_note_after` (12) searches or fetches, then every `research_note_every` (6) | "stop researching unless one specific fact is missing; write up what you have" |
+| research note | after `research_note_after` (6) searches or fetches, then every `research_note_every` (2) | "stop researching unless one specific fact is missing; write up what you have" |
 | progress check, worker | half the steps used and no file written | "write what you have and finish, or say what is missing" |
 | progress check, lead | half the steps used and no file exists anywhere in the request | "make sure the deliverable is being written: assign it now before more research or review" |
 
@@ -203,6 +208,43 @@ A lead that fails, times out or crashes still produces a reply, with the failure
 (delegations, human questions) and refuses further calls. The router cannot stop a running agent, so
 **workers check for cancellation before every step and before any tool that needs approval**; a human
 question that returns "cancelled" is treated as "stop", never as consent.
+
+### 4.8 Time budget and quality gates
+
+Added after the first real runs (`docs/report.md`, stage 4). The principle: **quality gates are hard requirements, and time is
+minimised subject to them**. The time budget is a safety net and is off by default.
+
+**Time budget.** `request_budget_s` (`--time-budget`, `REQUEST_BUDGET_S`) is shared by every member of a request; time spent
+waiting for the human does not count. A lead is reminded at half and at three quarters of it. A member within
+`worker_wrapup_s` (50 s; for the lead `lead_wrapup_s`, 30 s) of the end gets no tools and must answer with what it has. No
+delegation starts with less than `min_delegation_s` (80 s) left, and `budget_grace_s` (45 s) after the end whatever still runs is
+cut off. A lead that hands in with less than `finish_not_before` (0.5) of the budget used is sent back (twice at most;
+`--min-use 0` switches it off).
+
+**Requirements.** When a lead starts, one model call lists what the request explicitly requires (counts, sizes, formats, what must
+be covered, not what is only permitted). The list goes to the lead and into every teammate's context. Before the lead hands in it
+must report each requirement as met, not met or unverified against the final files (counting with `run_python` when it can be
+counted; it may add `OWN1`, `OWN2`, ... for a target it set a teammate). It is sent back twice at most; what stays unmet or
+unverified is appended to the reply the human reads and to `open_issues`. What the human answered when asked is added to the list
+before the check (`requirements_check`).
+
+**Reviews.** A reviewer answers PASS or FAIL first and lists every problem at once. The `Router` reads a verdict from the wording
+(`review_verdict`, only for a task whose goal opens with a review verb) and keeps each reviewer's latest one. Gates before a lead
+hands in: (1) a deliverable no reviewer was ever given is sent back to be reviewed (`review_final`; the time left is first topped up
+to `review_reserve_s`, 120 s, at most `max_review_extensions` (2) times, so that the fix and the re-check fit); (2) a reviewer whose
+latest verdict is a fail is "not cleared" and is listed by the closing check, which asks twice; (3) work done on an earlier
+version of a file that has changed since (content fingerprints are taken at every hand-over) is listed as out of date. Reviews
+run in rounds, not as a ping-pong: all reviewers in one reply, one revision that applies every item, one re-check; one reviewer is
+asked at most `max_review_rounds` (3) times to review the same file. A gate needs steps to act on it: with too few steps left
+(3 or 4) a final answer is handed in as it is, instead of being sent back and lost.
+
+**Files.** Besides the files listed in a call, the `Router` hands over the files the goal names that exist in the requester's
+workspace, and replaces an older copy of the same name in the teammate's inbox (`import_file` itself never overwrites). The files
+a teammate reports (scripts left out, at most 6) are copied back into the requester's inbox, because a reply is cut at 1500
+characters.
+
+**Closing check.** Before a lead's final answer is accepted: failed tasks, open issues, "could not read the file" reports,
+uncleared reviews and out-of-date work are put to it, with one more step to put them right (`closing_check`).
 
 ## 5. Human in the loop
 
@@ -276,7 +318,7 @@ its workspace mounted) is the planned stronger isolation and is not implemented.
 | `delete_file` | delete a file | needs the human's approval |
 | `run_python` | run a script or a module (`unittest`, `pytest`) in the workspace | timeout (default 60 s), output returned with the exit code |
 | `web_search` | titles, URLs and snippets | DeepSeek's search API when the DeepSeek model is used (same key; `freshness` becomes an `after:` operator, an English query gets `lang:en`, the query is cut to 128 characters); otherwise, or if DeepSeek cannot answer (401, 402, 429, server or network trouble), a keyless stop-gap (`ddgs`, one call): 12 s deadline, and after 3 failures in a row it stands down for 30 s and tells the member to carry on without it. A real search API replaces it |
-| `fetch_url` | the text of a public web page | public HTTP(S) only: private and mixed addresses are refused on every redirect hop, 20 s and 1 MiB limits, text, HTML, JSON and XML |
+| `fetch_url` | the text of a public web page | public HTTP(S) only: private and mixed addresses are refused on every redirect hop, 20 s and 1 MiB limits, text, HTML, JSON and XML. When the site refuses this machine (401, 403, 406, 429, 451 or a server error) and the DeepSeek model is in use, DeepSeek's fetch API reads the page with the same key (`"via": "deepseek"`) |
 | `git` | `init`, `clone`, `status`, `diff`, `add`, `commit`, `log`, `push` | every call needs the human's approval; the GitHub token is sent only to github.com over HTTPS and kept out of the output |
 
 Plain-text outputs only: documents are `.md` and `.txt` (HTML and code are allowed as files). Every tool
@@ -308,6 +350,7 @@ the team asked. It writes `report.md` and `results.json`, and the transcript and
 - `--judge` has a model grade each task's dialogue and deliverables (`mas/eval/judge.py`), as the course does.
 - `--repeat N --keep-memory` runs a scenario again with the agents' memory kept, to measure whether memory helps.
 - A scenario that does not finish in time is reported as a failure, never as a hang.
+- `--time-budget SECONDS` (per request), `--research-limit N` (searches and fetches per task) and `--min-use FRACTION` (when a lead may hand in) set the profile; the report records them.
 
 Also recorded for every request, outside the harness: the `RootOutcome` and the final reply payload, and the
 transcript. `docs/report.md` states what has been measured so far.
@@ -346,4 +389,4 @@ data/mas.log               the log (stack traces of internal errors)
   human who has real preferences (for example an investor's risk tolerance).
 - Keyless web search is a stop-gap: it depends on third-party engines that rate-limit or change, so some searches fail (about 2 in 8 in a test on one network). It is built so that a failing search costs seconds, not a run; DeepSeek's search API (with the DeepSeek model) is the way to make research reliable. With the HKGAI model the course's search service is not known yet, so only the keyless search is used.
 - Recall is keyword-based, and lessons are only learned from failures.
-- No end-to-end evaluation on a test set has been run with a real model yet (see the report).
+- Real-model evaluations so far use the DeepSeek model only, are single runs and are graded by the same model; scenario 3 was tuned on. The HKGAI model has not been run. Open problems are listed in `docs/report.md` (stage 4, section 9).

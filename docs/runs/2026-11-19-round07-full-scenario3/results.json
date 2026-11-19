@@ -1,0 +1,212 @@
+{
+  "info": {
+    "model provider": "deepseek",
+    "answers to questions": "llm",
+    "graded by a model": true,
+    "runs per scenario": 1,
+    "memory kept between runs": false,
+    "early-stop nudges": "on",
+    "time budget per request (s)": 900.0,
+    "research limit per task": 28,
+    "lead may hand in after (share of budget)": 0.0,
+    "wall time (s)": 1118
+  },
+  "summary": {
+    "overall": {
+      "requests": 2,
+      "completed": 2,
+      "completion_rate": 1.0,
+      "subtasks": 23,
+      "subtasks_done": 23,
+      "subtask_completion_rate": 1.0,
+      "duration_s": {
+        "mean": 555.77,
+        "median": 555.77,
+        "max": 607.7
+      },
+      "hitl_questions": 2,
+      "judged": 2,
+      "judged_passed": 1,
+      "judged_pass_rate": 0.5,
+      "mean_score": 7.0
+    },
+    "failure_modes": {},
+    "by_scenario": {
+      "scenario_3_securities_fund 2": {
+        "requests": 2,
+        "completed": 2,
+        "completion_rate": 1.0,
+        "subtasks": 23,
+        "subtasks_done": 23,
+        "subtask_completion_rate": 1.0,
+        "duration_s": {
+          "mean": 555.77,
+          "median": 555.77,
+          "max": 607.7
+        },
+        "hitl_questions": 2,
+        "judged": 2,
+        "judged_passed": 1,
+        "judged_pass_rate": 0.5,
+        "mean_score": 7.0
+      }
+    },
+    "by_run": {
+      "1": {
+        "requests": 2,
+        "completed": 2,
+        "completion_rate": 1.0,
+        "subtasks": 23,
+        "subtasks_done": 23,
+        "subtask_completion_rate": 1.0,
+        "duration_s": {
+          "mean": 555.77,
+          "median": 555.77,
+          "max": 607.7
+        },
+        "hitl_questions": 2,
+        "judged": 2,
+        "judged_passed": 1,
+        "judged_pass_rate": 0.5,
+        "mean_score": 7.0
+      }
+    }
+  },
+  "records": [
+    {
+      "scenario": "scenario_3_securities_fund 2",
+      "run": 1,
+      "task_index": 1,
+      "task_file": "02_task_1.md",
+      "title": "Scenario 3, Task 1: Develop a Simulated Investment Proposal",
+      "completed": true,
+      "failure_mode": null,
+      "subtask_total": 12,
+      "subtask_done": 12,
+      "duration": 503.835,
+      "lead": "fund_manager",
+      "hitl_count": 1,
+      "lead_steps": 36,
+      "deliverables": [
+        "proposal.md",
+        "client_intro.md"
+      ],
+      "output_dir": "eval_results/round7-full-scenario3/scenario_3_securities_fund 2/run1/data/output/R1-20261119-015151",
+      "summary": "Produced a simulated US-equity investment proposal for a 25-year-old HK client with HKD 1,000,000 (15+ yr horizon, growth, 30-40% drawdown tolerance, separate emergency savings) plus a plain-English client introduction. Three parallel research briefs (market backdrop/valuation, HK tax-estate-broker mechanics, candidate instruments) fed a six-sleeve allocation: 45% US S&P 500 core, 10% US small/mid, 15% Nasdaq-100, 15% ex-US, 10% short bonds, 5% HKD cash, all in Irish-domiciled UCITS. The risk manager failed proposal v1 (mislabelled sleeves, wrong drawdown arithmetic, unlabelled unverified fig…",
+      "judged": false,
+      "score": 6,
+      "judge_notes": "The proposal and client intro are substantive, well-structured and cover allocation, rationale, risks and a plain-English guide. However, the team never asked the client the offered follow-up questions (objectives, horizon, risk preferences) and instead assumed them, and the final files still contain inconsistencies: client_intro.md §2 still describes sleeve 2 as 'a wider US / world fund' and §4 still contains the 'tech falls 40% → roughly 20%' row that the risk manager had required removed, contradicting proposal.md's US small/mid sleeve and stress tests. The risk manager's PASS confirmations",
+      "timing": {
+        "lead": {
+          "llm_s": 128.21,
+          "tool_s": 0.23,
+          "delegation_s": 372.82,
+          "human_s": 1.13,
+          "other_s": 1.45
+        },
+        "team": {
+          "llm_s": 613.71,
+          "llm_calls": 194,
+          "tool_s": 97.44,
+          "by_tool": {
+            "read_file": {
+              "calls": 89,
+              "s": 0.04
+            },
+            "write_file": {
+              "calls": 42,
+              "s": 0.05
+            },
+            "run_python": {
+              "calls": 33,
+              "s": 1.4
+            },
+            "list_files": {
+              "calls": 4,
+              "s": 0.0
+            },
+            "web_search": {
+              "calls": 17,
+              "s": 59.24
+            },
+            "fetch_url": {
+              "calls": 44,
+              "s": 36.66
+            },
+            "delete_file": {
+              "calls": 1,
+              "s": 0.0
+            }
+          }
+        }
+      },
+      "notes": []
+    },
+    {
+      "scenario": "scenario_3_securities_fund 2",
+      "run": 1,
+      "task_index": 2,
+      "task_file": "03_task_2.md",
+      "title": "Scenario 3, Task 2: The Future of the Semiconductor Industry: An HTML Slide Presentation",
+      "completed": true,
+      "failure_mode": null,
+      "subtask_total": 11,
+      "subtask_done": 11,
+      "duration": 607.699,
+      "lead": "fund_manager",
+      "hitl_count": 1,
+      "lead_steps": 35,
+      "deliverables": [
+        "deck.html",
+        "companion_note.md",
+        "README.md"
+      ],
+      "output_dir": "eval_results/round7-full-scenario3/scenario_3_securities_fund 2/run1/data/output/R2-20261119-020015",
+      "summary": "Delivered a 10-slide HTML deck (deck.html) on the future of semiconductors from an end-2026 perspective, for the internal investment committee as you chose: numbers-heavy, ending in a concrete stance and risks. Open it in any browser and navigate with arrow keys, space, or clicking the left/right half of the screen. Three parallel research briefs (demand/end-markets, supply/geopolitics, valuation/vehicles) supplied every figure with source and date. Core thesis: 2026 was a memory price cycle (industry +89.9% to $1.51tn, memory +249.5% to $803.9bn), not a volume cycle; 2027 slows to ~+27% and …",
+      "judged": true,
+      "score": 8,
+      "judge_notes": "The core request is fully met: a 10-slide browser-navigable HTML deck, IC-level and numbers-heavy, with sourced research, investment implications, a seven-part risk section and a concrete conditional stance, plus a plain-English companion note and README. The only shortfall is the companion note at ~535 words against the ~480 target, which is a secondary deliverable and was honestly flagged. Review trail shows deck and README passed re-checks after fixes.",
+      "timing": {
+        "lead": {
+          "llm_s": 267.79,
+          "tool_s": 0.18,
+          "delegation_s": 338.49,
+          "human_s": 1.21,
+          "other_s": 0.03
+        },
+        "team": {
+          "llm_s": 727.69,
+          "llm_calls": 211,
+          "tool_s": 66.67,
+          "by_tool": {
+            "read_file": {
+              "calls": 89,
+              "s": 0.09
+            },
+            "write_file": {
+              "calls": 42,
+              "s": 0.05
+            },
+            "run_python": {
+              "calls": 25,
+              "s": 1.17
+            },
+            "web_search": {
+              "calls": 16,
+              "s": 36.19
+            },
+            "fetch_url": {
+              "calls": 62,
+              "s": 29.16
+            },
+            "list_files": {
+              "calls": 7,
+              "s": 0.0
+            }
+          }
+        }
+      },
+      "notes": []
+    }
+  ]
+}
