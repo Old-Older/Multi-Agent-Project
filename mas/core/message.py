@@ -14,7 +14,7 @@ from enum import Enum
 from typing import Any, TypedDict
 
 HUMAN = "human"
-ORCHESTRATOR = "orchestrator"
+ORCHESTRATOR = "orchestrator"   # the request layer (RequestTracker): requester of a lead's task, speaker of /status; not an agent
 GROUP_MAIN = "group:main"
 
 
@@ -53,7 +53,7 @@ class TaskResultPayload(TypedDict):
 
 class HitlRequestPayload(TypedDict):
     request_id: str                   # short id shown to the human, e.g. "h1"
-    task_id: str | None               # None when the Orchestrator asks for clarification
+    task_id: str | None               # None when the request layer asks for clarification
     root_id: str
     kind: str                         # HitlKind value
     question: str

@@ -1,0 +1,68 @@
+[
+  {
+    "scenario": "scenario_1_software_engineering 2",
+    "task_index": 1,
+    "title": "Scenario 1, Task 1: Build a Meeting Room Booking System",
+    "old_passed": true,
+    "old_score": 8,
+    "old_notes": "The core request is met: booking.py is a complete, working CLI system with availability, booking, cancellation, overlap prevention, plus a README and a user guide that were verified against real runs. The team never asked the human any clarifying questions in the group, and the guide slightly exceeds its internal 120-line target, but neither undermines the delivered system.",
+    "new_passed": true,
+    "new_score": 8,
+    "new_notes": "booking.py is a complete, working single-file CLI with rooms, availability, book, cancel, list and demo commands; overlap checking under a lock prevents double bookings and cancellation marks records cancelled so slots free up, with 64 passing tests and a README plus a detailed USER_GUIDE explaining usage. The guide is 129 lines rather than the internal ~120 target, and the guide's book example shows id #1/#4 illustratively, but these are minor and do not affect the user's request. The team did not ask the human any clarifying questions, but the request made that optional."
+  },
+  {
+    "scenario": "scenario_1_software_engineering 2",
+    "task_index": 2,
+    "title": "Scenario 1, Task 2: Add a Room Usage Dashboard",
+    "old_passed": true,
+    "old_score": 9,
+    "old_notes": "The delivered dashboard.py implements all requested features: interactive web page with date range, quick ranges, room filter, JSON API, refresh, inline errors, empty state, all required charts (bookings, hours/utilisation, weekday, dates, start hour, heatmap, cancellations), summary table, and 'What this suggests' block, plus a --text CLI mode sharing compute_stats. check_dashboard.py verifies text numbers and HTTP endpoints against a temporary data file, and README/USER_GUIDE document usage. Minor caveat: the lead's final reply was truncated and the dev's first attempt failed, but the actual",
+    "new_passed": true,
+    "new_score": 9,
+    "new_notes": "dashboard.py is complete and implements every required feature: interactive web page with date range, quick ranges, room filter, fetch-based /api/stats updates, inline errors, all charts (bars, heatmap), summary table, 'What this suggests' block, empty state, and a --text mode sharing compute_stats. check_dashboard.py provides concrete self-test evidence (Aurora 2 bookings/2.5h/1 cancelled/33.3%, HTTP 200, bad range 400). Minor gaps: the 'All time' quick range starts at 2000-01-01 rather than truly all time, and the cancellation chart shows cancelled counts per room rather than a stacked cance"
+  },
+  {
+    "scenario": "scenario_2_newsroom 2",
+    "task_index": 1,
+    "title": "Scenario 2, Task 1: Produce a News Report",
+    "old_passed": true,
+    "old_score": 8,
+    "old_notes": "The delivered final_package.md is a substantive, fact-checked multi-channel package (main article, X/LinkedIn/push/newsletter copy, broadcast script, Chinese headline and summary) on a specific recent HKUST AI event, with clear 'what happened' and 'why it matters' sections aimed at students and faculty. The only unmet item is the request to discuss the story choice and audience needs with the human, which the conversation shows was not done. Minor residual issues (e.g., a 'sought comment' line still present in the article despite being reported removed) do not undermine the core deliverable.",
+    "new_passed": false,
+    "new_score": 8,
+    "new_notes": "The package is substantive and well-sourced: a specific recent event (the HKUST ECE smart-glasses exam test), a full main article with 'what happened' and six 'why it matters' points, plus X, LinkedIn/Facebook, push, newsletter, broadcast and Chinese-channel copy aimed at students and faculty. The one clear miss is that the team never actually discussed the story choice or audience needs with the human, despite the request explicitly inviting that conversation; it went straight to research and production. Minor residual issues (a stray 'we have sought comment' line still in the article and bro"
+  },
+  {
+    "scenario": "scenario_2_newsroom 2",
+    "task_index": 2,
+    "title": "Scenario 2, Task 2: Fact-Check AI-Writing Detectors",
+    "old_passed": false,
+    "old_score": 5,
+    "old_notes": "The delivered factcheck_final.md is a substantive, well-sourced fact-check with a clear FALSE verdict, evidence, uncertainty and student/faculty sections, and the fact-checker confirmed all 22 items were addressed. However, the delivered file is visibly truncated mid-table in §4 (the base-rate table and everything after it, including the uncertainty and student/faculty sections, is cut off), so the article as delivered is incomplete. It also runs ~2,060 words against the team's own 1,100-1,400 target, and the editor's earlier v2 pass failed to edit at all.",
+    "new_passed": true,
+    "new_score": 8,
+    "new_notes": "The delivered factcheck_final.md is a complete, sourced fact-check article with a clear FALSE verdict, a section interpreting the claim's three parts, evidence with numbers and dates, a labelled own-calculation base-rate table, an honest uncertainty section, and separate actionable student and faculty sections. The main shortfall is process: the conversation shows no back-and-forth with the human on interpretation or editorial angle, despite the request inviting it, and the editor's v2 pass failed (carried over unedited) before the final file was produced. Some sources (Turnitin, FTC, institut"
+  },
+  {
+    "scenario": "scenario_3_securities_fund 2",
+    "task_index": 1,
+    "title": "Scenario 3, Task 1: Develop a Simulated Investment Proposal",
+    "old_passed": false,
+    "old_score": 7,
+    "old_notes": "The proposal is substantive and well sourced: it asks the clarifying questions, gives a full allocation with reasons, quantified risks (drawdown, 30% dividend withholding, USD 60,000 estate-tax threshold, FX under the peg) and a rewritten plain-language introduction with a glossary. However, the client's accepted default of keeping ~5% cash was not honoured — the plan holds 10% in SGOV/T-bills throughout, and the team explicitly flagged this as unmet rather than fixing it. That single deviation from an agreed constraint is why it does not pass.",
+    "new_passed": false,
+    "new_score": 7,
+    "new_notes": "The proposal is thorough, sourced, and covers the reasons, risks and a plain-language introduction with a glossary. However, the client accepted the stated defaults, which included keeping ~5% cash, and the delivered plan holds 10% in SGOV/T-bills; the team itself flagged this as unmet. The 10% is argued for, but it deviates from an explicit client-accepted constraint, so the request is not fully met."
+  },
+  {
+    "scenario": "scenario_3_securities_fund 2",
+    "task_index": 2,
+    "title": "Scenario 3, Task 2: The Future of the Semiconductor Industry: An HTML Slide Presentation",
+    "old_passed": false,
+    "old_score": 6,
+    "old_notes": "The deck is a real, navigable 14-slide HTML presentation with sourced research, investment implications and a risk section, so the core deliverable exists. However, both the risk and marketing reviewers found numerous internal contradictions (scenario probabilities vs triggers, FCF counts, de-rating vs price fall, capex figures, P/E construction) and unsourced claims, and the final reply claims a revision was made that the delivered file does not clearly reflect. These accuracy/consistency defects keep it from fully meeting the analytical-quality bar.",
+    "new_passed": false,
+    "new_score": 7,
+    "new_notes": "The deck is a complete, well-designed 14-slide HTML presentation with sourced research, investment implications and a risk section, so the core request is largely met. However, the team's own risk and marketing reviews (44 and 47 items) found numerous unresolved internal inconsistencies — scenario probabilities vs triggers, FCF counts, margin conflations, unsourced figures — and the final reply claims a revision round but the delivered file still contains several of the flagged problems (e.g. slide 14's 'every figure traces to a source' claim alongside a not-verified list, slide 10 probability"
+  }
+]

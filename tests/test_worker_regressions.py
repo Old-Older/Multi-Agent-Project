@@ -143,9 +143,8 @@ class WorkerRegressionTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.memory.all(), [])
         self.assertFalse(self.sandbox.exists("never-started.txt"))
 
-    async def test_human_advice_stops_the_old_batch_before_replanning(self):
+    async def test_a_repeated_failure_stops_the_old_batch_before_replanning(self):
         self.sandbox.write_text("keep.txt", "Important original contents")
-        advice = "Stop this plan. Leave keep.txt unchanged."
         worker, llm = self.worker([
             LLMResponse("", [
                 ToolCall("read", "read_file", {"path": "missing.txt"}),
@@ -155,12 +154,13 @@ class WorkerRegressionTest(unittest.IsolatedAsyncioTestCase):
             call("read_file", "replan", path="keep.txt"),
             final(summary="Kept the original contents."),
         ])
-        result = await self.run_with_answer(worker, self.task(), advice)
+        result = await asyncio.wait_for(worker.handle_task(self.task()), 2)
         self.assertTrue(result.success)
+        self.assertEqual(self.messages(MsgType.HITL_REQUEST), [])
         self.assertEqual(self.sandbox.read_text("keep.txt"), "Important original contents")
         observations = [message for message in llm.calls[1][0] if message["role"] == "tool"]
         self.assertEqual([message["tool_call_id"] for message in observations], ["read", "retry", "overwrite"])
-        self.assertEqual(json.loads(observations[1]["content"])["human_advice"], advice)
+        self.assertIn("failed twice in a row", json.loads(observations[1]["content"])["hint"])
         self.assertTrue(json.loads(observations[2]["content"])["skipped"])
         replanned = [message for message in llm.calls[2][0]
                      if message["role"] == "tool" and message["tool_call_id"] == "replan"]
@@ -322,19 +322,18 @@ class WorkerRegressionTest(unittest.IsolatedAsyncioTestCase):
                     call("delete_file", "delete", path="temp.txt"),
                     final(artifacts=claimed_artifacts),
                 ])
-                result = await self.run_with_answer(worker, self.task(), "yes")
+                result = await asyncio.wait_for(worker.handle_task(self.task()), 2)   # its own file: nobody is asked
                 self.assertTrue(result.success)
+                self.assertEqual(self.messages(MsgType.HITL_REQUEST), [])
                 self.assertFalse(self.sandbox.exists("temp.txt"))
                 self.assertEqual(result.artifacts, [])
 
-    async def test_denied_delete_preserves_the_existing_output(self):
-        worker, _ = self.worker([
-            call("write_file", path="temp.txt", content="keep this"),
-            call("delete_file", "delete", path="temp.txt"), final(artifacts=[]),
-        ])
+    async def test_denied_delete_preserves_a_file_that_was_there_before(self):
+        self.sandbox.write_text("temp.txt", "keep this")                    # not written by this task: approval is needed
+        worker, _ = self.worker([call("delete_file", "delete", path="temp.txt"), final(artifacts=[])])
         result = await self.run_with_answer(worker, self.task(), "no")
         self.assertTrue(result.success)
-        self.assertEqual(result.artifacts, ["temp.txt"])
+        self.assertEqual(result.artifacts, [])
         self.assertEqual(self.sandbox.read_text("temp.txt"), "keep this")
 
     async def test_deleted_then_recreated_output_is_reported_once(self):
@@ -344,7 +343,7 @@ class WorkerRegressionTest(unittest.IsolatedAsyncioTestCase):
             call("write_file", "recreate", path="temp.txt", content="new contents"),
             final(artifacts=["./temp.txt", "temp.txt"]),
         ])
-        result = await self.run_with_answer(worker, self.task(), "yes")
+        result = await asyncio.wait_for(worker.handle_task(self.task()), 2)
         self.assertTrue(result.success)
         self.assertEqual(result.artifacts, ["temp.txt"])
         self.assertEqual(self.sandbox.read_text("temp.txt"), "new contents")

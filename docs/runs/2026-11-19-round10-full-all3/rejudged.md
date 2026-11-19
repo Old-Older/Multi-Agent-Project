@@ -1,0 +1,21 @@
+# Graded again: 2026-11-19-round10-full-all3
+
+The grader now sees every delivered file whole (before, only its first 8000 characters).
+
+| scenario | task | graded then | graded now |
+|---|---|---|---|
+| scenario_1_software_engineering 2 | 1 | met (8/10) | met (8/10) |
+| scenario_1_software_engineering 2 | 2 | met (9/10) | met (9/10) |
+| scenario_2_newsroom 2 | 1 | met (8/10) | not met (8/10) |
+| scenario_2_newsroom 2 | 2 | not met (5/10) | met (8/10) |
+| scenario_3_securities_fund 2 | 1 | not met (7/10) | not met (7/10) |
+| scenario_3_securities_fund 2 | 2 | not met (6/10) | not met (7/10) |
+
+## Notes of the new grading
+
+- scenario_1_software_engineering 2 task 1: booking.py is a complete, working single-file CLI with rooms, availability, book, cancel, list and demo commands; overlap checking under a lock prevents double bookings and cancellation marks records cancelled so slots free up, with 64 passing tests and a README plus a detailed USER_GUIDE explaining usage. The guide is 129 lines rather than the internal ~120 target, and the guide's book example shows id #1/#4 illustratively, but these are minor and do not affect the user's request. The team did not ask the human any clarifying questions, but the request made that optional.
+- scenario_1_software_engineering 2 task 2: dashboard.py is complete and implements every required feature: interactive web page with date range, quick ranges, room filter, fetch-based /api/stats updates, inline errors, all charts (bars, heatmap), summary table, 'What this suggests' block, empty state, and a --text mode sharing compute_stats. check_dashboard.py provides concrete self-test evidence (Aurora 2 bookings/2.5h/1 cancelled/33.3%, HTTP 200, bad range 400). Minor gaps: the 'All time' quick range starts at 2000-01-01 rather than truly all time, and the cancellation chart shows cancelled counts per room rather than a stacked cance
+- scenario_2_newsroom 2 task 1: The package is substantive and well-sourced: a specific recent event (the HKUST ECE smart-glasses exam test), a full main article with 'what happened' and six 'why it matters' points, plus X, LinkedIn/Facebook, push, newsletter, broadcast and Chinese-channel copy aimed at students and faculty. The one clear miss is that the team never actually discussed the story choice or audience needs with the human, despite the request explicitly inviting that conversation; it went straight to research and production. Minor residual issues (a stray 'we have sought comment' line still in the article and bro
+- scenario_2_newsroom 2 task 2: The delivered factcheck_final.md is a complete, sourced fact-check article with a clear FALSE verdict, a section interpreting the claim's three parts, evidence with numbers and dates, a labelled own-calculation base-rate table, an honest uncertainty section, and separate actionable student and faculty sections. The main shortfall is process: the conversation shows no back-and-forth with the human on interpretation or editorial angle, despite the request inviting it, and the editor's v2 pass failed (carried over unedited) before the final file was produced. Some sources (Turnitin, FTC, institut
+- scenario_3_securities_fund 2 task 1: The proposal is thorough, sourced, and covers the reasons, risks and a plain-language introduction with a glossary. However, the client accepted the stated defaults, which included keeping ~5% cash, and the delivered plan holds 10% in SGOV/T-bills; the team itself flagged this as unmet. The 10% is argued for, but it deviates from an explicit client-accepted constraint, so the request is not fully met.
+- scenario_3_securities_fund 2 task 2: The deck is a complete, well-designed 14-slide HTML presentation with sourced research, investment implications and a risk section, so the core request is largely met. However, the team's own risk and marketing reviews (44 and 47 items) found numerous unresolved internal inconsistencies — scenario probabilities vs triggers, FCF counts, margin conflations, unsourced figures — and the final reply claims a revision round but the delivered file still contains several of the flagged problems (e.g. slide 14's 'every figure traces to a source' claim alongside a not-verified list, slide 10 probability

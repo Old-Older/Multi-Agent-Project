@@ -2,7 +2,34 @@
 
 > 用途：对齐框架设计，定完就可以确定接口、分头写代码。
 > 原则：**优先看测试集的任务完成率和执行时间**。所以规格要求的功能都要有，但方案要向完成率高、完成速度快的方向考虑。
-> LLM：**DeepSeek API**（OpenAI 兼容接口，`deepseek-chat`，使用 function calling）。
+> LLM：课程网关 **HKGAI**（默认）或 **DeepSeek**，都是 OpenAI 兼容接口，使用 function calling。
+
+> **本文是设计过程的记录，写于实现之前（2026-10-30），之后有改动。** 系统**现在**是什么样，看
+> [architecture.md](architecture.md)；接口看 [interfaces.md](interfaces.md)。下表给出每项决定今天的状态；
+> 正文里围绕 Orchestrator 的章节（§1、§2、§5、§12、§13）保留作历史，已在标题处标明。
+
+### 决定的当前状态（2026-11-18）
+
+| # | 状态 | 说明 |
+|---|---|---|
+| D1 协作拓扑 | **已取代** | 由 D18 取代：没有 Orchestrator agent，每个请求由团队里的一位成员牵头 |
+| D2 角色 | **已取代** | 团队由用户定义（`mas/team.py`），没有内置的 Researcher/Coder/Writer；`ROLES` 只剩演示和测试 |
+| D3 按 agent 拆 | 沿用 | 牵头者委派给队友时仍应给对方独立能完成的目标 |
+| D4 协商与改派 | 沿用 | 成员可以在第一步 `decline` 并建议人选，调用方改派 |
+| D5 能力档案 | 沿用 | 现在附在牵头者和队友看到的 `call_<队友>` 工具描述里 |
+| D6 并行 | 沿用 | 一个成员在同一次回复里连续发出的多个委派同时执行（不同队友并行，同一队友顺序）；其他工具调用保持顺序 |
+| D7 公开群聊 | 沿用 | 没有 @ 任何人的消息由请求层（`RequestTracker`）接住 |
+| D8 私聊 | 沿用 | |
+| D9 再委派 | 沿用 | 统一经 Router；牵头者的委派次数上限单独设为 `max_lead_delegations` |
+| D10 失败处理 | 沿用 | |
+| D11 循环上限 | **已改** | 取消 Orchestrator 8 轮；牵头者 40 步、worker 30 步（第一次真实运行里 12 步和 24 步都不够，见 report.md）；单任务时限 900 秒，整个请求 2400 秒 |
+| D12 HITL | 沿用 | `AutoResponder` 已实现，但只给固定默认答案 |
+| D13 记忆 | 沿用 | 已验证跨运行保存（`tests/test_memory_across_sessions.py`） |
+| D14 沙箱与产物 | 沿用 | 交接由 Router 完成，汇总到 `data/output/` 由请求层完成 |
+| D15 DockerSandbox | **未实现** | 目前只有 `LocalSandbox`，它不是安全边界 |
+| D16 练习集与评测 | **未完成** | 评测框架 `mas/eval/harness.py` 还是空的 |
+| D17 会话看板 | 沿用 | 只保存在内存里，重启后丢失 |
+| D18 牵头角色 | 现行 | |
 
 ---
 
@@ -10,7 +37,7 @@
 
 | # | 问题 | 决定 | 理由 |
 |---|---|---|---|
-| D1 | 协作拓扑 | **中心化 + agent as a tool**：Orchestrator 本身是一个 ReAct 循环，它的工具就是各个 Worker（`call_researcher` 等），每一步看到结果后再决定下一步 | 能根据实际结果调整计划、处理失败，完成率高；每次调用只指向一个 agent，不会出现"一个子任务需要两个 agent 的能力"的情况 |
+| D1 | 协作拓扑（**已被 D18 取代**） | **中心化 + agent as a tool**：Orchestrator 本身是一个 ReAct 循环，它的工具就是各个 Worker（`call_researcher` 等），每一步看到结果后再决定下一步 | 能根据实际结果调整计划、处理失败，完成率高；每次调用只指向一个 agent，不会出现"一个子任务需要两个 agent 的能力"的情况 |
 | D2 | Agent 角色 | Orchestrator + Researcher / Coder / Writer 三个 Worker；Git、文件操作作为 Coder 的工具 | agent 越多，路由出错和通信越多 |
 | D3 | 拆分粒度 | **按 agent 拆，不按技能拆**：每次调用的 goal 必须是该 agent 独立能完成的 | 跨 agent 的子任务交给一个人做，必然缺能力或缺工具 |
 | D4 | 角色协商 | Orchestrator 的 LLM 根据工具描述选人；被调用的 agent 可以**拒绝并建议人选**，Orchestrator 读到后改派 | 真正的协商，而不是固定路由表上的走过场；不增加额外的 LLM 调用 |
@@ -27,12 +54,15 @@
 | D15 | 沙箱实现 | 先用 LocalSandbox 开发；DockerSandbox 使用**常驻容器**（每个 agent 启动一次，之后只 exec） | 避免每条命令都启动容器带来的额外耗时 |
 | D16 | 练习集 | 测试集发布前自建约 20 个任务，覆盖 5 类题型，每周跑一次 | 测试集未知，只能靠练习集提前暴露失败模式 |
 | D17 | 共享上下文 | **会话看板**：由代码从结构化消息中维护会话的进展和重要信息（人类原话、已完成事项及产物、ID、未办事项），agent 开始任务时自动注入；**不用 LLM 做摘要** | 同一会话的进展在 agent 间共享；文件名、ID 这类信息一个字都不会丢；不增加 LLM 调用 |
+| D18 | 牵头角色，取代 D1 的中心化 Orchestrator | 每个请求由团队里的**一个角色牵头**：`LeadSelector`（`mas/core/lead.py`）用一次 LLM 调用按各角色职责选出牵头者，结果**按会话缓存**（同一会话的后续请求沿用），调用失败或选不出人就**退回角色表第一个**（不缓存）。牵头者是普通 `WorkerAgent`：自己拆任务、`call_<队友>` 委派、`ask_human` 向人提问、检查结果后以自己的名义汇报；**团队由用户定义**（`mas/team.py` 读 `01_role_initialization.md` 格式的角色文件），没有内置角色。原 Orchestrator 不再是 agent，而是不调 LLM 的 `RequestTracker`（`mas/core/requests.py`）：作为总线观察者接住没有 @ 任何人的人类消息，处理 `/status`、`/cancel`，开关 root，把请求整体交给牵头者，收集各角色的交付物，记录 `RootOutcome`（成功、失败模式、耗时、交付物、输出目录）并以牵头者的名义发最终回复。中心化循环已删除，可用 git tag `pre-lead-central` 取回 | 测试数据是 4 个平级角色在群里协作，由某个角色而不是隐藏的调度器牵头，更接近课程要求的"agent 自主拆解、协商、互相委派"；谁牵头不写死，换测试集不用改代码；评测要的数字由代码记录，不依赖 LLM 的自我描述 |
 
 下面是展开说明，需要讨论的点都标了 **【待确认】**，需要实测的点标了 **【待验证】**。
 
 ---
 
 ## 1. 总体架构
+
+> **⚠️ 历史记录。** 本节描述的是取消前的结构（Orchestrator + 三个固定 Worker）。现行结构见 [architecture.md §1–§2](architecture.md)。
 
 ```mermaid
 flowchart TB
@@ -73,6 +103,8 @@ flowchart TB
 ---
 
 ## 2. 一次任务怎么跑
+
+> **⚠️ 历史记录。** 其中 §2.1 的 Orchestrator 循环已不存在：由牵头成员自己的 ReAct 循环取代，见 [architecture.md §4](architecture.md)。§2.2、§2.3 的拒绝改派和能力档案仍然适用。
 
 ```mermaid
 sequenceDiagram
@@ -331,6 +363,8 @@ stateDiagram-v2
 
 ## 5. 再委派（D9）
 
+> 其中"Orchestrator 的路由代码"现在是 `Router`（纯代码）；牵头者的委派次数上限为 `max_lead_delegations`（16），其他成员为 `max_delegations_per_task`（2）。
+
 Worker 的工具列表里包含其他 agent 的 `call_xxx`（不含自己），例如 Coder 发现缺少资料时可以调用 `call_researcher`。
 
 **统一走中心化路由，只区分"谁能看到"**：不管任务来自群聊还是私聊，再委派都交给 Orchestrator 的**路由代码**处理：登记、检查限制、转发消息、转发 HITL。是否调用、交给谁，由 Worker 自己的 LLM 决定；Orchestrator 在这一步**不调 LLM**，只增加微秒级开销。
@@ -445,6 +479,8 @@ data/                ← 运行时数据（已在 .gitignore 中）
 
 ## 12. 分工
 
+> **⚠️ 历史记录。** 这是最初的分工；实际分工以 git 提交历史为准。
+
 | | JIAN Yimin：通信与编排 | LI Heyang：执行与评测 |
 |---|---|---|
 | 通信 | MessageBus、群聊与私聊协议、会话看板、CLI（`HumanIO` 的 CLI 实现） | — |
@@ -457,6 +493,8 @@ data/                ← 运行时数据（已在 .gitignore 中）
 ---
 
 ## 13. 下一步
+
+> **⚠️ 历史记录。** 这些步骤已完成；现在还没做的事见 [architecture.md §13](architecture.md) 和 [report.md](report.md)。
 
 1. 两人过一遍本文，处理 **【待确认】** 项，有异议直接在文中改。
 2. 先用一个小脚本验证两项 **【待验证】**：DeepSeek 能否在一次响应中返回多个并行的 tool call，以及 tool call 的格式是否稳定。

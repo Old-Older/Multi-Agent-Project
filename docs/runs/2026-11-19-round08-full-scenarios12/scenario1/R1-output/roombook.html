@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RoomBook — Meeting Room Booking</title>
+<style>
+  :root{--bg:#f6f7f9;--card:#fff;--ink:#1d2433;--muted:#6b7280;--line:#e3e6eb;--brand:#2f6fed;--brand-ink:#fff;--ok:#12805c;--bad:#b42318;--booked:#dbe6ff;--booked-line:#2f6fed}
+  *{box-sizing:border-box}
+  body{margin:0;font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink)}
+  header{background:var(--card);border-bottom:1px solid var(--line);padding:12px 20px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+  h1{font-size:18px;margin:0}
+  .spacer{flex:1}
+  label{font-size:13px;color:var(--muted)}
+  input,select,button{font:inherit}
+  input[type=text],input[type=date],input[type=time],input[type=number],select{padding:7px 9px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}
+  button{padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:#fff;cursor:pointer}
+  button.primary{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
+  button.danger{background:#fff;border-color:#f0b4ae;color:var(--bad)}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  main{padding:18px 20px 60px;max-width:1200px;margin:0 auto}
+  .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .tabs button.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:16px}
+  .row{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+  .field{display:flex;flex-direction:column;gap:4px}
+  .msg{padding:10px 12px;border-radius:8px;margin:10px 0;font-size:14px}
+  .msg.err{background:#fdecea;color:var(--bad);border:1px solid #f5c2bd}
+  .msg.ok{background:#e7f6ef;color:var(--ok);border:1px solid #b7e3cf}
+  .gridwrap{overflow:auto;border:1px solid var(--line);border-radius:10px}
+  table{border-collapse:collapse;width:100%;min-width:900px}
+  th,td{border-bottom:1px solid var(--line);border-right:1px solid var(--line);padding:0;font-size:12px;text-align:center}
+  th{background:#fafbfc;font-weight:600;color:var(--muted);padding:6px 4px;white-space:nowrap}
+  th.room,td.room{text-align:left;padding:8px 10px;font-size:13px;font-weight:600;background:#fafbfc;position:sticky;left:0;z-index:1;min-width:150px}
+  td.slot{height:38px;cursor:pointer;background:#fff}
+  td.slot:hover{background:#eef3ff}
+  td.slot.booked{background:var(--booked);cursor:pointer;padding:2px}
+  td.slot.booked .b{display:block;font-size:11px;line-height:1.2;color:#12306b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  td.slot.booked .b b{display:block;font-size:11px}
+  td.slot.past{background:#f3f4f6;cursor:not-allowed}
+  .list{list-style:none;padding:0;margin:0}
+  .list li{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .list li .grow{flex:1;min-width:200px}
+  .muted{color:var(--muted);font-size:13px}
+  .toast{position:fixed;right:18px;bottom:18px;background:var(--ink);color:#fff;padding:10px 14px;border-radius:10px;opacity:0;transform:translateY(8px);transition:.2s;pointer-events:none;z-index:20}
+  .toast.show{opacity:1;transform:none}
+  .hidden{display:none!important}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#eef1f5;font-size:12px;color:var(--muted)}
+</style>
+</head>
+<body>
+<header>
+  <h1>RoomBook</h1>
+  <span class="pill" id="todayPill"></span>
+  <div class="spacer"></div>
+  <div class="field"><label for="me">Your name</label><input id="me" type="text" placeholder="e.g. Alex" size="14"></div>
+</header>
+
+<main>
+  <div class="tabs">
+    <button id="tab-day" class="active" data-tab="day">Day view</button>
+    <button id="tab-avail" data-tab="avail">Check availability</button>
+    <button id="tab-mine" data-tab="mine">My bookings</button>
+    <button id="tab-rooms" data-tab="rooms">Rooms &amp; data</button>
+  </div>
+
+  <!-- DAY VIEW -->
+  <section id="view-day">
+    <div class="card">
+      <div class="row">
+        <div class="field"><label for="dayDate">Date</label><input id="dayDate" type="date"></div>
+        <button id="prevDay">‹ Previous</button>
+        <button id="nextDay">Next ›</button>
+        <button id="todayBtn">Today</button>
+        <span class="muted">Click a free cell to book. Click a booking to cancel it.</span>
+      </div>
+      <div id="dayMsg"></div>
+    </div>
+    <div class="card">
+      <div class="gridwrap"><table id="grid"></table></div>
+    </div>
+  </section>
+
+  <!-- AVAILABILITY -->
+  <section id="view-avail" class="hidden">
+    <div class="card">
+      <div class="row">
+        <div class="field"><label for="avDate">Date</label><input id="avDate" type="date"></div>
+        <div class="field"><label for="avStart">From</label><input id="avStart" type="time" step="1800" value="10:00"></div>
+        <div class="field"><label for="avEnd">To</label><input id="avEnd" type="time" step="1800" value="11:00"></div>
+        <div class="field"><label for="avPeople">People (optional)</label><input id="avPeople" type="number" min="1" style="width:110px"></div>
+        <button class="primary" id="avCheck">Check availability</button>
+      </div>
+      <div id="avMsg"></div>
+    </div>
+    <div class="card"><h3 style="margin-top:0;font-size:15px">Free rooms</h3><ul class="list" id="avFree"></ul>
+      <h3 style="font-size:15px">Busy rooms</h3><ul class="list" id="avBusy"></ul></div>
+  </section>
+
+  <!-- MY BOOKINGS -->
+  <section id="view-mine" class="hidden">
+    <div class="card"><h3 style="margin-top:0;font-size:15px">Upcoming bookings</h3><ul class="list" id="mineList"></ul></div>
+  </section>
+
+  <!-- ROOMS & DATA -->
+  <section id="view-rooms" class="hidden">
+    <div class="card">
+      <h3 style="margin-top:0;font-size:15px">Rooms</h3>
+      <ul class="list" id="roomList"></ul>
+      <div class="row" style="margin-top:10px">
+        <div class="field"><label for="newRoomName">New room name</label><input id="newRoomName" type="text" placeholder="e.g. Elm"></div>
+        <div class="field"><label for="newRoomCap">Capacity</label><input id="newRoomCap" type="number" min="1" value="6" style="width:100px"></div>
+        <button id="addRoom">Add room</button>
+      </div>
+      <div id="roomMsg"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-top:0;font-size:15px">Backup &amp; data</h3>
+      <p class="muted">Bookings are stored in this browser only. Export a backup file to share or move them.</p>
+      <div class="row">
+        <button id="exportBtn">Export JSON</button>
+        <label class="field"><span>Import JSON</span><input id="importFile" type="file" accept="application/json"></label>
+        <button class="danger" id="resetBtn">Reset to demo data</button>
+      </div>
+      <div id="dataMsg"></div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+"use strict";
+var KEY="roombook.v1";
+var SLOT_MIN=30, DAY_START=8*60, DAY_END=19*60; // 08:00–19:00
+var SLOTS=[]; for(var m=DAY_START;m<DAY_END;m+=SLOT_MIN) SLOTS.push(m);
+
+function pad(n){return (n<10?"0":"")+n;}
+function toMin(hhmm){var p=String(hhmm).trim().split(":");if(p.length!==2||!/^\d{1,2}$/.test(p[0])||!/^\d{2}$/.test(p[1]))return NaN;return (+p[0])*60+(+p[1]);}
+function toHHMM(min){return pad(Math.floor(min/60))+":"+pad(min%60);}
+function todayISO(){var d=new Date();return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate());}
+function uid(){return "b"+Date.now().toString(36)+Math.random().toString(36).slice(2,7);}
+function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+
+/* ---------- state ---------- */
+var state=null;
+function demo(){
+  var t=todayISO();
+  return {rooms:[{id:"r1",name:"Aurora",capacity:8},{id:"r2",name:"Birch",capacity:4},{id:"r3",name:"Cedar",capacity:12},{id:"r4",name:"Den",capacity:2}],
+    bookings:[
+      {id:uid(),roomId:"r1",date:t,start:9*60,end:10*60,title:"Sprint planning",by:"Sam",note:""},
+      {id:uid(),roomId:"r3",date:t,start:14*60,end:15*60,title:"Client call",by:"Priya",note:""}
+    ],cancelled:[]};
+}
+function load(){
+  try{var raw=localStorage.getItem(KEY);if(raw){var s=JSON.parse(raw);if(s&&s.rooms&&s.bookings){s.cancelled=s.cancelled||[];return s;}}}catch(e){}
+  return demo();
+}
+function save(){
+  try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){toast("Could not save (storage blocked)");}
+  renderAll();
+}
+function toast(t){var el=document.getElementById("toast");el.textContent=t;el.classList.add("show");clearTimeout(toast._t);toast._t=setTimeout(function(){el.classList.remove("show");},2200);}
+function showMsg(id,text,ok){var el=document.getElementById(id);el.innerHTML=text?'<div class="msg '+(ok?"ok":"err")+'">'+esc(text)+'</div>':"";}
+function me(){return document.getElementById("me").value.trim();}
+
+/* ---------- core logic ---------- */
+function overlaps(aS,aE,bS,bE){return aS<bE&&bS<aE;}
+function conflicts(roomId,date,start,end,ignoreId){
+  return state.bookings.filter(function(b){return b.roomId===roomId&&b.date===date&&b.id!==ignoreId&&overlaps(start,end,b.start,b.end);});
+}
+function roomName(id){var r=state.rooms.filter(function(x){return x.id===id;})[0];return r?r.name:"(removed room)";}
+function roomCap(id){var r=state.rooms.filter(function(x){return x.id===id;})[0];return r?r.capacity:0;}
+function validate(roomId,date,start,end,title){
+  if(!me()) return "Please enter your name at the top of the page first.";
+  if(!title) return "Please give the meeting a title.";
+  if(!roomId) return "Please choose a room.";
+  if(!date) return "Please choose a date.";
+  if(date<todayISO()) return "That date is in the past.";
+  if(!(end>start)) return "The end time must be after the start time.";
+  if(start<DAY_START||end>DAY_END) return "Bookings must be between "+toHHMM(DAY_START)+" and "+toHHMM(DAY_END)+".";
+  if(start%SLOT_MIN||end%SLOT_MIN) return "Times must be in 30-minute steps.";
+  var c=conflicts(roomId,date,start,end);
+  if(c.length){var b=c[0];return "Double booking blocked: "+roomName(roomId)+" is already booked "+toHHMM(b.start)+"–"+toHHMM(b.end)+" (\""+b.title+"\" by "+b.by+").";}
+  return "";
+}
+function addBooking(roomId,date,start,end,title,note){
+  var err=validate(roomId,date,start,end,title);
+  if(err) return err;
+  state.bookings.push({id:uid(),roomId:roomId,date:date,start:start,end:end,title:title,by:me(),note:note||""});
+  save(); toast("Booked "+roomName(roomId)+" "+toHHMM(start)+"–"+toHHMM(end));
+  return "";
+}
+function cancelBooking(id){
+  var i=-1;state.bookings.forEach(function(b,k){if(b.id===id)i=k;});
+  if(i<0) return "Booking not found.";
+  var b=state.bookings[i];
+  if(!confirm("Cancel \""+b.title+"\" in "+roomName(b.roomId)+" on "+b.date+" "+toHHMM(b.start)+"–"+toHHMM(b.end)+"?")) return "declined";
+  state.bookings.splice(i,1);
+  b.cancelledAt=new Date().toISOString();b.cancelledBy=me()||"(unknown)";
+  state.cancelled.push(b);
+  save(); toast("Cancelled — the slot is free again");
+  return "";
+}
+function freeRooms(date,start,end,people){
+  return state.rooms.filter(function(r){
+    if(people&&r.capacity<people) return false;
+    return conflicts(r.id,date,start,end).length===0;
+  });
+}
+function nextFree(roomId,date,start,end,people){
+  if(people&&roomCap(roomId)<people) return null;
+  var from=start;
+  var c=conflicts(roomId,date,start,end);
+  if(c.length) from=Math.max.apply(null,c.map(function(b){return b.end;}));
+  for(var s=from;s+(end-start)<=DAY_END;s+=SLOT_MIN){
+    if(conflicts(roomId,date,s,s+(end-start)).length===0) return s;
+  }
+  return null;
+}
+
+/* ---------- rendering ---------- */
+var tab="day";
+function renderAll(){renderGrid();renderAvail();renderMine();renderRooms();document.getElementById("todayPill").textContent="Today: "+todayISO();}
+function renderGrid(){
+  var date=document.getElementById("dayDate").value||todayISO();
+  var t=document.getElementById("grid");
+  var h="<thead><tr><th class='room'>Room</th>";
+  SLOTS.forEach(function(s){h+="<th>"+toHHMM(s)+"</th>";});
+  h+="</tr></thead><tbody>";
+  state.rooms.forEach(function(r){
+    h+="<tr><td class='room'>"+esc(r.name)+" <span class='muted'>("+r.capacity+")</span></td>";
+    SLOTS.forEach(function(s){
+      var b=state.bookings.filter(function(x){return x.roomId===r.id&&x.date===date&&x.start<=s&&s<x.end;})[0];
+      var past=date<todayISO();
+      if(b){
+        var first=(b.start===s);
+        h+="<td class='slot booked' data-book='"+b.id+"' title='"+esc(b.title+" — "+b.by+" "+toHHMM(b.start)+"–"+toHHMM(b.end))+"'>"+
+           (first?"<span class='b'><b>"+esc(b.title)+"</b>"+esc(b.by)+"</span>":"")+"</td>";
+      }else{
+        h+="<td class='slot"+(past?" past":"")+"' data-room='"+r.id+"' data-start='"+s+"' title='Free — click to book'></td>";
+      }
+    });
+    h+="</tr>";
+  });
+  h+="</tbody>";
+  t.innerHTML=h;
+  t.querySelectorAll("td.slot[data-room]").forEach(function(td){
+    td.addEventListener("click",function(){openBook(td.getAttribute("data-room"),date,+td.getAttribute("data-start"));});
+  });
+  t.querySelectorAll("td.slot[data-book]").forEach(function(td){
+    td.addEventListener("click",function(){var e=cancelBooking(td.getAttribute("data-book"));if(e==="declined")showMsg("dayMsg","Cancellation not confirmed — the booking is unchanged.");else if(e)showMsg("dayMsg",e);else showMsg("dayMsg","");});
+  });
+}
+function openBook(roomId,date,start){
+  var title=prompt("Meeting title for "+roomName(roomId)+" on "+date+" at "+toHHMM(start)+":");
+  if(title===null) return;
+  var endStr=prompt("End time as HH:MM (30-min steps, e.g. 11:00):",toHHMM(Math.min(start+60,DAY_END)));
+  if(endStr===null) return;
+  var end=toMin(endStr);
+  if(isNaN(end)){showMsg("dayMsg","Please enter the end time as HH:MM, e.g. 11:00. Nothing was booked.");return;}
+  var err=addBooking(roomId,date,start,end,title.trim(),"");
+  showMsg("dayMsg",err||"Booked "+roomName(roomId)+" "+toHHMM(start)+"–"+toHHMM(end)+".",!err);
+}
+function renderAvail(){
+  var date=document.getElementById("avDate").value||todayISO();
+  var s=toMin(document.getElementById("avStart").value||"10:00");
+  var e=toMin(document.getElementById("avEnd").value||"11:00");
+  var p=+document.getElementById("avPeople").value||0;
+  var freeEl=document.getElementById("avFree"),busyEl=document.getElementById("avBusy");
+  if(!(e>s)){freeEl.innerHTML="";busyEl.innerHTML="";showMsg("avMsg","The end time must be after the start time.");return;}
+  showMsg("avMsg","");
+  var free=freeRooms(date,s,e,p);
+  freeEl.innerHTML=free.length?free.map(function(r){
+    return "<li><div class='grow'><b>"+esc(r.name)+"</b> <span class='muted'>seats "+r.capacity+"</span></div><button class='primary' data-book-room='"+r.id+"' data-date='"+date+"' data-s='"+s+"' data-e='"+e+"'>Book this room</button></li>";
+  }).join(""):"<li class='muted'>No room is free for that whole window.</li>";
+  var busy=state.rooms.filter(function(r){return free.indexOf(r)<0;});
+  busyEl.innerHTML=busy.length?busy.map(function(r){
+    var c=conflicts(r.id,date,s,e)[0];
+    var tooSmall=!!(p&&r.capacity<p);
+    var why=tooSmall?"too small ("+r.capacity+" seats)":(c?"busy "+toHHMM(c.start)+"–"+toHHMM(c.end)+" — \""+esc(c.title)+"\"":"busy");
+    var nf=nextFree(r.id,date,s,e,p);
+    return "<li><div class='grow'><b>"+esc(r.name)+"</b> <span class='muted'>"+why+"</span></div>"+
+      (nf!==null?"<button data-book-room='"+r.id+"' data-date='"+date+"' data-s='"+nf+"' data-e='"+(nf+(e-s))+"'>Book "+toHHMM(nf)+"–"+toHHMM(nf+(e-s))+"</button>":"<span class='muted'>no free window left that day</span>")+"</li>";
+  }).join(""):"<li class='muted'>None — every room is free.</li>";
+  document.querySelectorAll("#view-avail [data-book-room]").forEach(function(btn){
+    btn.addEventListener("click",function(){
+      var err=addBooking(btn.getAttribute("data-book-room"),btn.getAttribute("data-date"),+btn.getAttribute("data-s"),+btn.getAttribute("data-e"),"Meeting");
+      showMsg("avMsg",err||"Booked. You can rename it later by cancelling and re-booking.",!err);
+    });
+  });
+}
+function renderMine(){
+  var t=todayISO(),n=me();
+  var list=state.bookings.filter(function(b){return b.date>=t&&(!n||b.by===n);}).sort(function(a,b){return (a.date+a.start)-(b.date+b.start);});
+  document.getElementById("mineList").innerHTML=list.length?list.map(function(b){
+    return "<li><div class='grow'><b>"+esc(b.title)+"</b><div class='muted'>"+esc(roomName(b.roomId))+" · "+b.date+" · "+toHHMM(b.start)+"–"+toHHMM(b.end)+" · booked by "+esc(b.by)+"</div></div><button class='danger' data-cancel='"+b.id+"'>Cancel</button></li>";
+  }).join(""):"<li class='muted'>"+(n?"No upcoming bookings for "+esc(n)+".":"Enter your name at the top to see your bookings.")+"</li>";
+  document.querySelectorAll("#mineList [data-cancel]").forEach(function(btn){
+    btn.addEventListener("click",function(){cancelBooking(btn.getAttribute("data-cancel"));});
+  });
+}
+function renderRooms(){
+  document.getElementById("roomList").innerHTML=state.rooms.map(function(r){
+    return "<li><div class='grow'><b>"+esc(r.name)+"</b> <span class='muted'>seats "+r.capacity+"</span></div><button class='danger' data-del-room='"+r.id+"'>Remove</button></li>";
+  }).join("")||"<li class='muted'>No rooms yet.</li>";
+  document.querySelectorAll("#roomList [data-del-room]").forEach(function(btn){
+    btn.addEventListener("click",function(){
+      var id=btn.getAttribute("data-del-room");
+      var used=state.bookings.filter(function(b){return b.roomId===id&&b.date>=todayISO();}).length;
+      if(used&&!confirm("This room has "+used+" upcoming booking(s). Remove it and its bookings anyway?")) return;
+      state.rooms=state.rooms.filter(function(r){return r.id!==id;});
+      state.bookings=state.bookings.filter(function(b){return b.roomId!==id;});
+      save();toast("Room removed");
+    });
+  });
+}
+
+/* ---------- wiring ---------- */
+document.getElementById("me").value=localStorage.getItem("roombook.me")||"";
+document.getElementById("me").addEventListener("input",function(){localStorage.setItem("roombook.me",me());renderMine();});
+document.getElementById("dayDate").value=todayISO();
+document.getElementById("avDate").value=todayISO();
+document.getElementById("dayDate").addEventListener("change",renderGrid);
+document.getElementById("prevDay").addEventListener("click",function(){shiftDay(-1);});
+document.getElementById("nextDay").addEventListener("click",function(){shiftDay(1);});
+document.getElementById("todayBtn").addEventListener("click",function(){document.getElementById("dayDate").value=todayISO();renderGrid();});
+function shiftDay(d){var el=document.getElementById("dayDate");var p=el.value.split("-");var dt=new Date(+p[0],+p[1]-1,+p[2]);dt.setDate(dt.getDate()+d);el.value=dt.getFullYear()+"-"+pad(dt.getMonth()+1)+"-"+pad(dt.getDate());renderGrid();}
+document.getElementById("avCheck").addEventListener("click",renderAvail);
+document.querySelectorAll(".tabs button").forEach(function(b){
+  b.addEventListener("click",function(){
+    tab=b.getAttribute("data-tab");
+    document.querySelectorAll(".tabs button").forEach(function(x){x.classList.toggle("active",x===b);});
+    ["day","avail","mine","rooms"].forEach(function(v){document.getElementById("view-"+v).classList.toggle("hidden",v!==tab);});
+    renderAll();
+  });
+});
+document.getElementById("addRoom").addEventListener("click",function(){
+  var n=document.getElementById("newRoomName").value.trim(),c=+document.getElementById("newRoomCap").value;
+  if(!n){showMsg("roomMsg","Please enter a room name.");return;}
+  if(!(c>0)){showMsg("roomMsg","Capacity must be at least 1.");return;}
+  state.rooms.push({id:"r"+Date.now().toString(36),name:n,capacity:c});
+  document.getElementById("newRoomName").value="";
+  save();showMsg("roomMsg","Room added.",true);
+});
+document.getElementById("exportBtn").addEventListener("click",function(){
+  var blob=new Blob([JSON.stringify(state,null,2)],{type:"application/json"});
+  var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="roombook-backup-"+todayISO()+".json";a.click();
+  showMsg("dataMsg","Backup downloaded.",true);
+});
+document.getElementById("importFile").addEventListener("change",function(ev){
+  var f=ev.target.files[0];if(!f)return;
+  var rd=new FileReader();
+  rd.onload=function(){
+    try{
+      var s=JSON.parse(rd.result);
+      if(!s||!Array.isArray(s.rooms)||!Array.isArray(s.bookings)) throw new Error("bad file");
+      s.cancelled=s.cancelled||[];
+      state=s;save();showMsg("dataMsg","Imported "+s.bookings.length+" booking(s).",true);
+    }catch(e){showMsg("dataMsg","That file is not a valid RoomBook backup.");}
+  };
+  rd.readAsText(f);
+});
+document.getElementById("resetBtn").addEventListener("click",function(){
+  if(!confirm("Replace all current data with the demo data?")) return;
+  state=demo();save();showMsg("dataMsg","Reset to demo data.",true);
+});
+
+state=load();
+renderAll();
+})();
+</script>
+</body>
+</html>

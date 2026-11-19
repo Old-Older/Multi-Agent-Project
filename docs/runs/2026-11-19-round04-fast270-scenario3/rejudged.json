@@ -1,0 +1,24 @@
+[
+  {
+    "scenario": "scenario_3_securities_fund 2",
+    "task_index": 1,
+    "title": "Scenario 3, Task 1: Develop a Simulated Investment Proposal",
+    "old_passed": false,
+    "old_score": 6,
+    "old_notes": "The team asked the right questions, produced a researched proposal with allocation rationale and a plain-language intro, and honestly flagged that the -20% drawdown limit is not met by the 55/45 mix (-25% to -30%). However, the two delivered files contradict each other: the proposal uses 25/12/8/5/5/20/25 (55% equity) while the intro still shows 30/15/10/5/15/20/5 (65% equity), and the intro's 'four questions' still say the 65/35 mix is right for a firm -20% limit. The risk manager's PASS on point (6) is not supported by the files, so the core requirement of a coherent, client-appropriate prop",
+    "new_passed": false,
+    "new_score": 6,
+    "new_notes": "The deliverables are substantive and well-researched, and the team honestly flags that the -20% drawdown limit is not met (stress test -25% to -30%). However, the client's core stated constraint is not satisfied by the proposed allocation, and the two files contradict each other: the proposal uses 55/45 (VOO 25%, VTI 12%, VXUS 8%, QQQM 5%, stocks 5%, BND 20%, SGOV 25%) while the intro still shows the older 65/35 mix (VOO 30%, VTI 15%, VXUS 10%, QQQM 5%, BND 15%, SGOV 20%, stocks 5%) and calls it 'right' for a firm -20% limit. The risk manager's PASS claim on point (6) is not supported by the d"
+  },
+  {
+    "scenario": "scenario_3_securities_fund 2",
+    "task_index": 2,
+    "title": "Scenario 3, Task 2: The Future of the Semiconductor Industry: An HTML Slide Presentation",
+    "old_passed": false,
+    "old_score": 6,
+    "old_notes": "The deck is a real, navigable 12-slide HTML presentation with sourced figures, an investment-implications slide and a risk slide, and it honestly flags unverified data. However, the delivered file contains a duplicated 2025 row on slide 3 (the same WSTS $796bn line appears twice), which is a visible content defect, and several key data points the request implies (SOX/peer valuations, customer concentration, power constraints) are marked unverified rather than researched, weakening the analytical depth. The risk reviewer's must-fix items were reportedly applied but the duplicate row shows the f",
+    "new_passed": false,
+    "new_score": 7,
+    "new_notes": "The deck is a complete, well-structured 12-slide browser presentation with sourced figures, investment implications and a risk table, and it honestly flags unverified items. However, slide 3 contains a duplicated 2025 WSTS row (a visible data error), and the risk review's must-fix items (e.g. slide 12's 'permanent capex line' framing, slide 10's underweight sizing) are only partly reflected in the delivered file, so the claim that all six were fixed is not fully backed by the HTML."
+  }
+]

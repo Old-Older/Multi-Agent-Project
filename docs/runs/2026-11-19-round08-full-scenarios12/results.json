@@ -1,0 +1,351 @@
+{
+  "info": {
+    "model provider": "deepseek",
+    "answers to questions": "llm",
+    "graded by a model": true,
+    "runs per scenario": 1,
+    "memory kept between runs": false,
+    "early-stop nudges": "on",
+    "time budget per request (s)": 900.0,
+    "research limit per task": 28,
+    "lead may hand in after (share of budget)": 0.0,
+    "wall time (s)": 2014
+  },
+  "summary": {
+    "overall": {
+      "requests": 4,
+      "completed": 2,
+      "completion_rate": 0.5,
+      "subtasks": 19,
+      "subtasks_done": 17,
+      "subtask_completion_rate": 0.8947,
+      "duration_s": {
+        "mean": 500.96,
+        "median": 465.2,
+        "max": 819.26
+      },
+      "hitl_questions": 3,
+      "judged": 4,
+      "judged_passed": 3,
+      "judged_pass_rate": 0.75,
+      "mean_score": 7.5
+    },
+    "failure_modes": {
+      "max_steps": 2
+    },
+    "by_scenario": {
+      "scenario_1_software_engineering 2": {
+        "requests": 2,
+        "completed": 1,
+        "completion_rate": 0.5,
+        "subtasks": 4,
+        "subtasks_done": 3,
+        "subtask_completion_rate": 0.75,
+        "duration_s": {
+          "mean": 536.71,
+          "median": 536.71,
+          "max": 819.26
+        },
+        "hitl_questions": 2,
+        "judged": 2,
+        "judged_passed": 2,
+        "judged_pass_rate": 1.0,
+        "mean_score": 8.0
+      },
+      "scenario_2_newsroom 2": {
+        "requests": 2,
+        "completed": 1,
+        "completion_rate": 0.5,
+        "subtasks": 15,
+        "subtasks_done": 14,
+        "subtask_completion_rate": 0.9333,
+        "duration_s": {
+          "mean": 465.2,
+          "median": 465.2,
+          "max": 473.4
+        },
+        "hitl_questions": 1,
+        "judged": 2,
+        "judged_passed": 1,
+        "judged_pass_rate": 0.5,
+        "mean_score": 7.0
+      }
+    },
+    "by_run": {
+      "1": {
+        "requests": 4,
+        "completed": 2,
+        "completion_rate": 0.5,
+        "subtasks": 19,
+        "subtasks_done": 17,
+        "subtask_completion_rate": 0.8947,
+        "duration_s": {
+          "mean": 500.96,
+          "median": 465.2,
+          "max": 819.26
+        },
+        "hitl_questions": 3,
+        "judged": 4,
+        "judged_passed": 3,
+        "judged_pass_rate": 0.75,
+        "mean_score": 7.5
+      }
+    }
+  },
+  "records": [
+    {
+      "scenario": "scenario_1_software_engineering 2",
+      "run": 1,
+      "task_index": 1,
+      "task_file": "02_task_1.md",
+      "title": "Scenario 1, Task 1: Build a Meeting Room Booking System",
+      "completed": true,
+      "failure_mode": null,
+      "subtask_total": 3,
+      "subtask_done": 2,
+      "duration": 819.258,
+      "lead": "lead",
+      "hitl_count": 1,
+      "lead_steps": 26,
+      "deliverables": [
+        "roombook.html",
+        "README.md",
+        "BUILD_NOTES.md"
+      ],
+      "output_dir": "eval_results/round8-full-scenarios12/scenario_1_software_engineering 2/run1/data/output/R1-20261119-021040",
+      "summary": "Built RoomBook, a single-file meeting room booking app (roombook.html) plus a plain-language README.md and a short BUILD_NOTES.md. It fixes the spreadsheet's two problems: every booking is checked for overlap in the same room and date and refused with a message naming the blocking booking (double bookings cannot be saved), and cancelling removes the booking from every view at once and frees the slot (records never go stale). Features: day grid (rooms × 30-min slots, 08:00–19:00) with click-to-book and click-to-cancel; Check availability (date + window + optional headcount → free rooms with on…",
+      "judged": true,
+      "score": 8,
+      "judge_notes": "The team delivered a single-file roombook.html app with day grid, availability check, my bookings, and rooms/data tabs, plus a plain-language README explaining how to open, book, cancel, and back up. Overlap prevention and immediate cancellation are implemented per QA code inspection. Caveat: the app was never run in a real browser (BUILD_NOTES admits this), so runtime behavior is unverified, but the deliverables are substantive and address the request.",
+      "timing": {
+        "lead": {
+          "llm_s": 100.65,
+          "tool_s": 0.59,
+          "delegation_s": 715.34,
+          "human_s": 1.23,
+          "other_s": 1.45
+        },
+        "team": {
+          "llm_s": 815.91,
+          "llm_calls": 74,
+          "tool_s": 0.61,
+          "by_tool": {
+            "list_files": {
+              "calls": 1,
+              "s": 0.0
+            },
+            "write_file": {
+              "calls": 38,
+              "s": 0.01
+            },
+            "read_file": {
+              "calls": 26,
+              "s": 0.02
+            },
+            "run_python": {
+              "calls": 7,
+              "s": 0.57
+            }
+          }
+        }
+      },
+      "notes": []
+    },
+    {
+      "scenario": "scenario_1_software_engineering 2",
+      "run": 1,
+      "task_index": 2,
+      "task_file": "03_task_2.md",
+      "title": "Scenario 1, Task 2: Add a Room Usage Dashboard",
+      "completed": false,
+      "failure_mode": "max_steps",
+      "subtask_total": 1,
+      "subtask_done": 1,
+      "duration": 254.169,
+      "lead": "lead",
+      "hitl_count": 1,
+      "lead_steps": 40,
+      "deliverables": [
+        "run_node.py",
+        "run_smoke.py",
+        "inspect_demo.py",
+        "show_demo.py",
+        "show_demo2.py",
+        "show_dash.py",
+        "show_dash2.py",
+        "show_dash3.py",
+        "show_dash4.py"
+      ],
+      "output_dir": "eval_results/round8-full-scenarios12/scenario_1_software_engineering 2/run1/data/output/R2-20261119-022420",
+      "summary": "worker step limit reached",
+      "judged": true,
+      "score": 8,
+      "judge_notes": "The delivered roombook.html contains a Dashboard tab with date-range selection, per-room booking counts and reserved hours, weekday/hour charts, cancellation rate, and a sortable per-room table with busiest/least-used badges. Demo data was extended with sample bookings and cancellations as the human approved. The lead's final reply was truncated by a step limit, but the actual deliverable file is present and complete.",
+      "timing": {
+        "lead": {
+          "llm_s": 81.14,
+          "tool_s": 0.81,
+          "delegation_s": 170.65,
+          "human_s": 1.54,
+          "other_s": 0.03
+        },
+        "team": {
+          "llm_s": 251.05,
+          "llm_calls": 69,
+          "tool_s": 1.52,
+          "by_tool": {
+            "list_files": {
+              "calls": 2,
+              "s": 0.0
+            },
+            "read_file": {
+              "calls": 22,
+              "s": 0.02
+            },
+            "run_python": {
+              "calls": 24,
+              "s": 1.48
+            },
+            "write_file": {
+              "calls": 21,
+              "s": 0.02
+            }
+          }
+        }
+      },
+      "notes": []
+    },
+    {
+      "scenario": "scenario_2_newsroom 2",
+      "run": 1,
+      "task_index": 1,
+      "task_file": "02_task_1.md",
+      "title": "Scenario 2, Task 1: Produce a News Report",
+      "completed": false,
+      "failure_mode": "max_steps",
+      "subtask_total": 7,
+      "subtask_done": 6,
+      "duration": 473.402,
+      "lead": "chief_editor",
+      "hitl_count": 1,
+      "lead_steps": 40,
+      "deliverables": [
+        "report_ai_on_campus.md",
+        "channels_ai_on_campus.md",
+        "count_words.py",
+        "editorial_note.md"
+      ],
+      "output_dir": "eval_results/round8-full-scenarios12/scenario_2_newsroom 2/run1/data/output/R1-20261119-022839",
+      "summary": "worker step limit reached",
+      "judged": false,
+      "score": 5,
+      "judge_notes": "The core news report is strong, well-sourced, fact-checked and revised to PASS, and the story choice was discussed with the human. However, the multi-channel deliverable is not publication-ready: the social post is ~226 words (target 120-180) and the briefing script ~515 words (target 400-450), and the word counts printed in the file are stale and wrong. The team itself flagged this as FAILED, so the cross-channel publication requirement is not met.",
+      "timing": {
+        "lead": {
+          "llm_s": 124.1,
+          "tool_s": 0.4,
+          "delegation_s": 345.57,
+          "human_s": 1.47,
+          "other_s": 1.86
+        },
+        "team": {
+          "llm_s": 558.57,
+          "llm_calls": 190,
+          "tool_s": 149.69,
+          "by_tool": {
+            "list_files": {
+              "calls": 2,
+              "s": 0.0
+            },
+            "read_file": {
+              "calls": 70,
+              "s": 0.04
+            },
+            "write_file": {
+              "calls": 55,
+              "s": 0.08
+            },
+            "run_python": {
+              "calls": 35,
+              "s": 40.89
+            },
+            "web_search": {
+              "calls": 28,
+              "s": 100.8
+            },
+            "fetch_url": {
+              "calls": 31,
+              "s": 7.84
+            }
+          }
+        }
+      },
+      "notes": []
+    },
+    {
+      "scenario": "scenario_2_newsroom 2",
+      "run": 1,
+      "task_index": 2,
+      "task_file": "03_task_2.md",
+      "title": "Scenario 2, Task 2: Fact-Check AI-Writing Detectors",
+      "completed": true,
+      "failure_mode": null,
+      "subtask_total": 8,
+      "subtask_done": 8,
+      "duration": 456.996,
+      "lead": "chief_editor",
+      "hitl_count": 0,
+      "lead_steps": 36,
+      "deliverables": [
+        "factcheck_ai_detectors.md",
+        "editorial_note_detectors.md"
+      ],
+      "output_dir": "eval_results/round8-full-scenarios12/scenario_2_newsroom 2/run1/data/output/R2-20261119-023632",
+      "summary": "Delivered the fact-check article factcheck_ai_detectors.md (final, ~1,080 words of body text) on the claim that AI-writing detectors can reliably determine whether a student's assignment was written by AI. Verdict: FALSE as stated — detectors are not reliable enough to decide a misconduct question on their own. The article sets the standard for 'reliably', then the evidence: Liang et al. (Patterns, 2023) on non-native English writers being misclassified; Sadasivan et al. (TMLR) on paraphrasing defeating detection; Weber-Wulff et al. (2023) finding tools 'neither accurate nor reliable'; a 2024…",
+      "judged": true,
+      "score": 9,
+      "judge_notes": "The delivered article is a complete, sourced fact-check with a clear 'FALSE as stated' verdict, an explicit reliability standard, evidence from peer-reviewed abstracts and vendor admissions, and a limitations section covering the biggest gaps (no real-assignment or non-English study, no primary wrongful-accusation case). The editorial note documents the interpretation, editorial judgments, review history and open questions, satisfying the request to discuss interpretation, angle and questions. Minor weakness: some evidence rests on abstracts and secondary sources, but this is disclosed rather ",
+      "timing": {
+        "lead": {
+          "llm_s": 115.92,
+          "tool_s": 0.03,
+          "delegation_s": 341.02,
+          "human_s": 0.0,
+          "other_s": 0.03
+        },
+        "team": {
+          "llm_s": 370.02,
+          "llm_calls": 125,
+          "tool_s": 173.98,
+          "by_tool": {
+            "list_files": {
+              "calls": 6,
+              "s": 0.0
+            },
+            "read_file": {
+              "calls": 67,
+              "s": 0.05
+            },
+            "write_file": {
+              "calls": 20,
+              "s": 0.03
+            },
+            "web_search": {
+              "calls": 14,
+              "s": 56.37
+            },
+            "fetch_url": {
+              "calls": 26,
+              "s": 65.99
+            },
+            "run_python": {
+              "calls": 21,
+              "s": 51.53
+            }
+          }
+        }
+      },
+      "notes": []
+    }
+  ]
+}

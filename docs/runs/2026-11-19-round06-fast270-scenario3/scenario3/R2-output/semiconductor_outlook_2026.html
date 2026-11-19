@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Semiconductors 2027–2030 — Fund Team Presentation (end-2026 vantage)</title>
+<style>
+  :root{--ink:#0e1726;--muted:#5b6b82;--line:#d8dee8;--accent:#1f5fd6;--warn:#b3261e;--ok:#0f7b4f;--bg:#f6f8fb;}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#0b1220;font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;color:var(--ink)}
+  .deck{height:100vh;display:flex;align-items:center;justify-content:center}
+  .slide{display:none;width:min(1180px,96vw);height:min(680px,92vh);background:var(--bg);border-radius:10px;
+         padding:38px 48px 54px;overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.45);position:relative}
+  .slide.active{display:block}
+  h1{font-size:34px;line-height:1.15;margin:0 0 10px}
+  h2{font-size:26px;margin:0 0 4px;color:var(--ink)}
+  .kicker{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:8px}
+  .sub{color:var(--muted);font-size:15px;margin:0 0 18px}
+  ul{margin:8px 0 0;padding-left:20px}
+  li{font-size:16px;line-height:1.5;margin-bottom:9px}
+  li b{color:var(--ink)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:14px 16px}
+  .card h3{margin:0 0 6px;font-size:15px;color:var(--accent)}
+  .card p{margin:0;font-size:14px;line-height:1.45;color:#243247}
+  table{border-collapse:collapse;width:100%;font-size:14px;margin-top:8px;background:#fff}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:#eaf0fa;font-size:13px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:4px;vertical-align:middle}
+  .v{background:#e3f4ea;color:var(--ok)} .s{background:#fff3d6;color:#8a5a00} .u{background:#fde7e5;color:var(--warn)}
+  .big{font-size:40px;font-weight:800;color:var(--accent);line-height:1}
+  .stat{display:flex;gap:26px;margin:14px 0 6px;flex-wrap:wrap}
+  .stat div{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px 16px;min-width:170px}
+  .stat span{display:block;font-size:12px;color:var(--muted);margin-top:4px}
+  .note{font-size:12px;color:var(--muted);margin-top:14px;border-top:1px solid var(--line);padding-top:8px}
+  .foot{position:absolute;bottom:14px;left:48px;right:48px;display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}
+  .title-slide{display:flex;flex-direction:column;justify-content:center;height:100%}
+  .title-slide h1{font-size:44px}
+  .nav{position:fixed;bottom:10px;right:16px;color:#9fb0c8;font-size:12px}
+  .warnbox{background:#fde7e5;border-left:4px solid var(--warn);padding:10px 14px;font-size:14px;border-radius:4px;margin-top:10px}
+  @media print{.slide{display:block!important;page-break-after:always;box-shadow:none;height:auto}.nav{display:none}}
+</style>
+</head>
+<body>
+<div class="deck">
+
+<!-- 1 -->
+<section class="slide active">
+  <div class="title-slide">
+    <div class="kicker">Investment Strategy · Internal · Fund Team</div>
+    <h1>The Semiconductor Industry, 2027–2030</h1>
+    <p class="sub" style="font-size:19px">A record cycle, a memory price shock, and the first signs of digestion — what to own, what to avoid, and what would change our mind.</p>
+    <p style="font-size:14px;color:var(--muted)">Vantage point: end-2026 (data as of 19 Nov 2026) · Prepared by the fund manager with research and risk management<br>
+    Use ← / → or click to advance · 10 slides</p>
+  </div>
+  <div class="foot"><span>Semiconductors 2027–2030</span><span>1 / 10</span></div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+  <div class="kicker">Executive summary</div>
+  <h2>Five judgments</h2>
+  <ul>
+    <li><b>1. 2026 was a memory price event, not a demand event.</b> Industry revenue +89.9% to USD 1.51tn, but memory alone went from USD 230bn to USD 804bn (+249.5%) and is ~53% of industry revenue vs ~28% in 2025. Underwrite 2027–30 on normalised memory, not on 2026 run-rates. <span class="tag v">WSTS</span></li>
+    <li><b>2. Near-term visibility is unusually high; the risk is 2028.</b> CoWoS (~200k wpm) and HBM are booked through 2027, with TSMC CoWoS capacity expanding &gt;60% — the shortage eases exactly as 2026–27 capacity lands. <span class="tag s">TrendForce</span></li>
+    <li><b>3. The first digestion signal has appeared.</b> Microsoft and Google both reported Q3-2026 capex below consensus (29 Oct 2026). One quarter is not a trend — Q4 prints and 2027 guides are the test. <span class="tag s">CNBC</span></li>
+    <li><b>4. Own the enablers, not the winner.</b> Foundry, advanced packaging, HBM, equipment and EDA/IP monetise merchant GPUs <i>and</i> custom ASICs; the merchant-GPU single name carries the concentration risk.</li>
+    <li><b>5. Position size is the real risk decision.</b> A plausible correlated stress is −35% to −50% on a concentrated sleeve; that argues for a capped sleeve with mechanical rebalancing, not for avoiding the sector.</li>
+  </ul>
+  <div class="note">Tags: <span class="tag v">verified</span> primary source · <span class="tag s">single/secondary source</span> · <span class="tag u">unverified</span> not used as a conclusion.</div>
+  <div class="foot"><span>Semiconductors 2027–2030</span><span>2 / 10</span></div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+  <div class="kicker">Where we are</div>
+  <h2>The cycle in numbers</h2>
+  <div class="stat">
+    <div><div class="big">$1.51tn</div><span>2026F industry revenue, +89.9% y/y <span class="tag v">WSTS</span></span></div>
+    <div><div class="big">$1.9tn</div><span>2027F, +27% <span class="tag v">WSTS</span></span></div>
+    <div><div class="big">+249.5%</div><span>2026F memory revenue growth <span class="tag v">WSTS</span></span></div>
+    <div><div class="big">~53%</div><span>Memory share of 2026 revenue (28% in 2025) <span class="tag v">WSTS</span></span></div>
+  </div>
+  <table>
+    <tr><th>Segment</th><th>2026F</th><th>y/y</th><th>2027F</th><th>y/y</th></tr>
+    <tr><td>Memory</td><td>USD 803.9bn</td><td>+249.5%</td><td>USD 1.06tn</td><td>+32.1%</td></tr>
+    <tr><td>Logic</td><td>USD 411.4bn</td><td>+37.3%</td><td>USD 522.8bn</td><td>+27.1%</td></tr>
+    <tr><td>MPU</td><td>USD 101.7bn</td><td>+19.8%</td><td>USD 122.0bn</td><td>+20.0%</td></tr>
+    <tr><td>Analog</td><td>USD 95.4bn</td><td>+10.2%</td><td>—</td><td>—</td></tr>
+  </table>
+  <p class="sub" style="margin-top:12px">Regional 2026F: Americas USD 543.7bn (+112%), APAC USD 823.9bn (+87.4%), Europe USD 86.6bn (+58.4%), Japan USD 57.1bn (+27.6%). <span class="tag v">WSTS</span></p>
+  <div class="note">Source: WSTS Spring 2026 forecast (released ~2 Jun 2026). Gartner (24 Aug 2026) is directionally similar at USD 1.6tn / 1.9tn but was available only as a headline. The WSTS Autumn 2026 (November) update was <b>not retrieved</b> and would supersede these figures — refresh before external use.</div>
+  <div class="foot"><span>Semiconductors 2027–2030</span><span>3 / 10</span></div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+  <div class="kicker">Demand</div>
+  <h2>AI capex: still rising, but the slope is the question</h2>
+  <div class="grid">
+    <div class="card"><h3>What the forecasts say</h3><p>Hyperscaler capex (MSFT/GOOGL/AMZN/META): <b>USD 785bn in 2026, approaching USD 1tn in 2027</b> (Moody's, May 2026). Morgan Stanley models combined data-centre capex from USD 466bn (2025) to a <b>~USD 1.47tn peak in 2027</b>, then +12% in 2028. <span class="tag s">secondary</span></p></div>
+    <div class="card"><h3>What the data says</h3><p>On 29 Oct 2026 <b>both Microsoft and Google reported Q3 capex below analyst estimates</b>; Microsoft cited reliance on third-party providers. This is the earliest hard datapoint of capex discipline. <span class="tag s">CNBC headline</span></p></div>
+    <div class="card"><h3>Concentration</h3><p>Four AI chip designers absorb <b>~90% of global CoWoS and HBM supply</b>; NVIDIA holds ~50%+ of TSMC advanced CoWoS through 2027. <span class="tag s">TrendForce</span></p></div>
+    <div class="card"><h3>Our read</h3><p>2027 is largely contracted. The investable question is <b>2028</b>: whether capex growth decelerates to low-teens (MS base case) or rolls over. We size for the second without forecasting it.</p></div>
+  </div>
+  <div class="warnbox">Forecast dispersion is wide and internally inconsistent (one MS note has 2027 capex +57% y/y, another a ~USD 1.47tn peak). Treat 2027 as a <b>range</b>, not a point estimate.</div>
+  <div class="foot"><span>Semiconductors 2027–2030</span><span>4 / 10</span></div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+  <div class="kicker">Supply</div>
+  <h2>Sold out through 2027 — and that is the 2028 problem</h2>
+  <ul>
+    <li><b>Advanced packaging is the binding constraint.</b> Industry CoWoS capacity ~200k wafers/month in 2026; TSMC capacity booked through 2027; TSMC's chairman said on the 16 Jul 2026 call that packaging capacity now limits customer growth. <span class="tag s">TrendForce / call</span></li>
+    <li><b>The relief arrives in 2027–28.</b> TSMC CoWoS output expanding &gt;60%, with the shortage expected to ease from 2027; 14-reticle CoWoS targeted for 2028 and panel-level CoPoS for late 2028–29. <span class="tag s">TrendForce</span></li>
+    <li><b>Memory supply is the swing factor.</b> Memory is ~53% of industry revenue, so memory-maker capex decisions in 2027 set 2028 supply. We could <b>not verify</b> SK Hynix / Samsung / Micron 2027 capex plans — this is the single most important missing input for the 2028 call. <span class="tag u">unverified</span></li>
+    <li><b>Implication:</b> earnings visibility is high for 2027 and low for 2028. Pay for 2027 visibility, but do not capitalise 2028 at 2026 margins.</li>
+  </ul>
+  <div class="foot"><span>Semiconductors 2027–2030</span><span>5 / 10</span></div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+  <div class="kicker">China &amp; geopolitics</div>
+  <h2>A bifurcated control regime, and a mature-node cycle already turning</h2>
+  <div class="grid">
+    <div class="card"><h3>Policy: looser on chips, tighter on tools</h3><p>13 Jan 2026 BIS final rule revised licence review for advanced AI chips to China (H200-class, case-by-case) <span class="tag v">BIS headline</span>. 22 Jun 2026: controls expanded to 12 equipment categories for HBM stacking, hybrid bonding and 3D IC testing <span class="tag s">single source</span>.</p></div>
+    <div class="card"><h3>Mature nodes: oversupply is in the price</h3><p>China added 1.2–1.5m wafer starts/month at 28–55nm, running at <b>~60% utilisation</b>, with <b>MCU prices down 20–30%</b> <span class="tag s">low-quality source</span>. China is ~22% of global 200mm capacity (SEMI) and roughly half of all mature-node capacity (CSIS) — definitions differ, do not add them.</p></div>
+    <div class="card"><h3>Taiwan concentration</h3><p>TSMC = <b>72.3% of global foundry revenue</b> (Q1-2026, TrendForce) and &gt;90% of ≤3nm logic <span class="tag s">secondary</span>. Leading-edge logic and advanced packaging sit in one earthquake- and blockade-exposed geography.</p></div>
+    <div class="card"><h3>Investment read</h3><p>Mature-node price pressure is an <b>earnings risk today</b> for analog/MCU/power names, not a 2027 story. Prefer names with &lt;15% China revenue or a genuine installed-base/service business.</p></div>
+  </div>
+  <div class="foot"><span>Semiconductors 2027–2030</span><span>6 / 10</span></div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+  <div class="kicker">Valuation</div>
+  <h2>What we can and cannot say about price</h2>
+  <table>
+    <tr><th>Name</th><th>Forward P/E</th><th>2026E / 2027E EPS growth</th><th>Status</th></tr>
+    <tr><td>NVIDIA</td><td>32.7x</td><td>not retrieved</td><td><span class="tag s">aggregator, 19 Nov 2026</span></td></tr>
+    <tr><td>AMD</td><td>61.3x</td><td>not retrieved</td><td><span class="tag s">aggregator</span></td></tr>
+    <tr><td>Broadcom</td><td>49.0x</td><td>not retrieved</td><td><span class="tag s">aggregator</span></td></tr>
+    <tr><td>Micron (context)</td><td>4.1x</td><td>not retrieved</td><td><span class="tag s">aggregator</span></td></tr>
+    <tr><td>TSMC, ASML, SK Hynix, Samsung, Applied Materials</td><td colspan="2">not retrieved (pages blocked / not found)</td><td><span class="tag u">unverified</span></td></tr>
+  </table>
+  <ul style="margin-top:14px">
+    <li><b>Micron at 4.1x is the point, not a bargain.</b> Peak-cycle memory EPS makes multiples optically meaningless; the same distortion applies to SK Hynix and Samsung. Memory must be valued on mid-cycle earnings.</li>
+    <li><b>We do not have a valuation conclusion.</b> No consensus EPS growth and no SOX index level or 2026 YTD return could be obtained. The full table must be rebuilt from Bloomberg/FactSet before this slide is used with clients.</li>
+  </ul>
+  <div class="warnbox">Action: pull forward P/E, 2026E/2027E EPS growth and SOX level/YTD from the terminal. Until then, treat valuation as a <b>positioning risk</b> (crowding), not a priced-in conclusion.</div>
+  <div class="foot"><span>Semiconductors 2027–2030</span><span>7 / 10</span></div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+  <div class="kicker">Investment implications</div>
+  <h2>How we would build the sleeve</h2>
+  <table>
+    <tr><th>Bucket</th><th>Weight</th><th>Rationale</th><th>Constraint</th></tr>
+    <tr><td>Foundry + advanced packaging</td><td>25–30%</td><td>Monetises merchant GPUs and custom ASICs; booked through 2027</td><td>Cap Taiwan-domiciled issuers ≤15% of sleeve</td></tr>
+    <tr><td>Memory (HBM-led)</td><td>≤10%</td><td>HBM pricing power persists even if commodity DRAM rolls over</td><td>Trading position, hard stop; no adds after &gt;100% 12-month gains</td></tr>
+    <tr><td>Equipment / EDA / IP</td><td>20–25%</td><td>Paid on capacity additions and design starts; less single-customer risk</td><td>Stress China revenue share per name</td></tr>
+    <tr><td>AI accelerators + networking</td><td>25–30%</td><td>Core of the cycle; highest growth and highest concentration</td><td>Single merchant-GPU name ≤15% of sleeve</td></tr>
+    <tr><td>Non-AI: analog, auto, industrial, power semis</td><td>15–20%</td><td>Cycle diversification and a partial hedge to grid/electrification</td><td>Avoid mature-node names exposed to China pricing</td></tr>
+    <tr><td>Cash / dry powder</td><td>5–10%</td><td>To add into a drawdown rather than average down blindly</td><td>Redeploy on valuation bands</td></tr>
+  </table>
+  <p class="sub" style="margin-top:12px"><b>Portfolio-level:</b> cap the whole semiconductor sleeve at <b>10–15% of a medium-risk client portfolio</b>; rebalance mechanically on valuation bands; no leverage or structured products on the sector; stagger entry over 2–3 tranches.</p>
+  <div class="note">Weights are the fund manager's proposed ranges for discussion, not a client recommendation. They are consistent with the risk memo's caps (accelerator sleeve 25–30%, memory ≤10%, single GPU name ≤15%, Taiwan ≤15%).</div>
+  <div class="foot"><span>Semiconductors 2027–2030</span><span>8 / 10</span></div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+  <div class="kicker">Key risks</div>
+  <h2>Eight risks, ranked — and the five that move together</h2>
+  <table>
+    <tr><th>#</th><th>Risk</th><th>Score (Sev×Lik)</th><th>Early-warning indicator</th><th>Mitigation</th></tr>
+    <tr><td>1</td><td>AI capex digestion / air-pocket</td><td>20</td><td>Two quarters of falling aggregate hyperscaler capex guidance; book-to-bill &lt;1.0</td><td>Cap accelerator sleeve 25–30%; hold dry powder</td></tr>
+    <tr><td>2</td><td>Memory cycle downturn</td><td>16</td><td>Contract DRAM price negative m/m for 2 months; HBM price roll-over</td><td>Memory ≤10%, trading position with stop</td></tr>
+    <tr><td>3</td><td>Export-control escalation</td><td>16</td><td>New BIS rule / entity-list additions; China revenue &gt;20% at risk</td><td>Prefer &lt;15% China revenue names</td></tr>
+    <tr><td>4</td><td>Customer concentration</td><td>16</td><td>Top-1 customer &gt;25% of revenue; in-house silicon on a second foundry</td><td>Diversify across the value chain</td></tr>
+    <tr><td>5</td><td>Valuation / positioning crowding</td><td>16</td><td>Sector forward P/E &gt;1.5× 10-yr average; record ETF inflows</td><td>Mechanical rebalancing; no leverage</td></tr>
+    <tr><td>6</td><td>Power / grid constraints</td><td>12</td><td>Interconnection queues; hyperscaler citing power as binding constraint</td><td>Own power semis / grid exposure as hedge</td></tr>
+    <tr><td>7</td><td>Taiwan / China geopolitical shock</td><td>10</td><td>Exercise escalation; Strait insurance premia</td><td>Taiwan-domiciled ≤15%; written −30/−50% scenario plan</td></tr>
+    <tr><td>8</td><td>Custom ASICs eroding merchant GPU share</td><td>9</td><td>Custom-silicon share of accelerator capex rising</td><td>Own enablers of both paths</td></tr>
+  </table>
+  <div class="warnbox">Risks 1, 2, 3, 4 and 5 are <b>correlated</b>: an AI capex air-pocket hits memory pricing, customer concentration and valuation at the same time. Treat them as one scenario — a plausible stress is <b>−35% to −50%</b> on a concentrated sleeve (estimate).</div>
+  <div class="foot"><span>Semiconductors 2027–2030</span><span>9 / 10</span></div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+  <div class="kicker">Decision &amp; next steps</div>
+  <h2>What we are asking the team to approve</h2>
+  <ul>
+    <li><b>Approve the framework:</b> a capped semiconductor sleeve (10–15% of a medium-risk portfolio) built on the six-bucket structure, with the stated caps and mechanical rebalancing.</li>
+    <li><b>Approve the 2027 stance:</b> own the enablers (foundry, packaging, HBM, equipment, EDA/IP) rather than a single merchant-GPU bet; keep 5–10% dry powder.</li>
+    <li><b>Set the 2028 trigger:</b> if two consecutive quarters of declining aggregate hyperscaler capex guidance appear, cut the accelerator sleeve to the low end and raise cash — do not wait for memory prices to confirm.</li>
+    <li><b>Close the data gaps before client use:</b> WSTS Autumn 2026 forecast; Q4-2026 DRAM/NAND/HBM contract prices; consensus forward P/E and 2026/27 EPS growth for the eight names; memory-maker 2027 capex; SOX level and YTD return.</li>
+    <li><b>What would change our mind:</b> a sustained capex re-acceleration with power constraints easing would justify the top of every range; a Taiwan quarantine or a memory price roll-over would justify the bottom.</li>
+  </ul>
+  <div class="note">Evidence base: <i>semiconductor_brief_2026.md</i> and <i>semiconductor_addendum_2026.md</i> (research), <i>risk_memo_semis.md</i> (risk). Figures marked unverified are not used as conclusions anywhere in this deck.</div>
+  <div class="foot"><span>Semiconductors 2027–2030</span><span>10 / 10</span></div>
+</section>
+
+</div>
+<div class="nav">← / → · click · F for fullscreen</div>
+<script>
+  const slides=[...document.querySelectorAll('.slide')];let i=0;
+  function show(n){i=Math.max(0,Math.min(slides.length-1,n));slides.forEach((s,k)=>s.classList.toggle('active',k===i));}
+  document.addEventListener('keydown',e=>{
+    if(['ArrowRight','ArrowDown','PageDown',' '].includes(e.key)){e.preventDefault();show(i+1);}
+    if(['ArrowLeft','ArrowUp','PageUp'].includes(e.key)){e.preventDefault();show(i-1);}
+    if(e.key==='Home')show(0); if(e.key==='End')show(slides.length-1);
+    if(e.key==='f'||e.key==='F'){document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen();}
+  });
+  document.addEventListener('click',e=>{if(e.clientX>window.innerWidth*0.5)show(i+1);else show(i-1);});
+</script>
+</body>
+</html>

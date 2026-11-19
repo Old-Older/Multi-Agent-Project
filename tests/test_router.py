@@ -329,13 +329,24 @@ class LimitTest(RouterTestBase):
     async def test_delegations_per_task(self):
         for n in ("researcher", "writer"):
             self.start_worker(n, self.ok())
-        parent = Task(goal="x", assignee="coder", requester="orchestrator", session_id=GROUP_MAIN,
-                      root_id="R1", origin_channel=GROUP_MAIN, chain=["orchestrator"])
+        parent = Task(goal="x", assignee="coder", requester="orchestrator", session_id=GROUP_MAIN, parent_id="t0",
+                      root_id="R1", origin_channel=GROUP_MAIN, chain=["orchestrator"])   # a task that has a parent: not the lead's
         self.settings.max_delegations_per_task = 2
         self.assertTrue((await self.call("researcher", goal="a", requester="coder", parent=parent)).success)
         self.assertTrue((await self.call("writer", goal="b", requester="coder", parent=parent)).success)
         await self.assertRefused(await self.call("researcher", goal="c", requester="coder", parent=parent),
-                                 "already delegated")
+                                 "already delegated 2 times")
+
+    async def test_the_lead_of_a_request_may_delegate_more_often(self):
+        self.start_worker("researcher", self.ok())
+        lead = Task(goal="x", assignee="coder", requester="orchestrator", session_id=GROUP_MAIN,
+                    root_id="R1", origin_channel=GROUP_MAIN, chain=["orchestrator"])              # no parent: the lead
+        self.settings.max_delegations_per_task = 2
+        self.settings.max_lead_delegations = 4
+        for n in range(4):
+            self.assertTrue((await self.call("researcher", goal=f"step {n}", requester="coder", parent=lead)).success)
+        await self.assertRefused(await self.call("researcher", goal="step 5", requester="coder", parent=lead),
+                                 "already delegated 4 times")
 
     async def test_same_goal_retries(self):
         async def fail(task): return TaskResult(task.id, False, "", error="x")
@@ -357,7 +368,7 @@ class LimitTest(RouterTestBase):
         for _ in range(5):                                # refused again and again, e.g. a bad file
             await self.assertRefused(await self.call(files=["nope.md"]), "file not found")
         self.assertTrue((await self.call()).success)      # the same goal still gets all its tries
-        parent = Task(goal="x", assignee="writer", requester="orchestrator", session_id=GROUP_MAIN,
+        parent = Task(goal="x", assignee="writer", requester="orchestrator", session_id=GROUP_MAIN, parent_id="t0",
                       root_id="R1", origin_channel=GROUP_MAIN, chain=["orchestrator"])
         self.settings.max_delegations_per_task = 1
         for _ in range(3):

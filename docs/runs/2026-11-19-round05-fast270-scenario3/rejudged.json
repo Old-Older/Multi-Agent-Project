@@ -1,0 +1,24 @@
+[
+  {
+    "scenario": "scenario_3_securities_fund 2",
+    "task_index": 1,
+    "title": "Scenario 3, Task 1: Develop a Simulated Investment Proposal",
+    "old_passed": true,
+    "old_score": 8,
+    "old_notes": "All core requirements are met: a full simulated proposal with allocation, rationale, quantified risks, execution rules, a plain-language client intro, a risk review, a market/FX brief with sources, and a consistency check. The team asked clarifying questions and used the confirmed profile. Minor gaps: several market data points (index YTD, P/E, VXF return, tariffs) remain unverified, though they are explicitly flagged and not used as fact, and the intro omits the costs/taxes section.",
+    "new_passed": true,
+    "new_score": 8,
+    "new_notes": "All core requirements are met: the team asked clarifying questions, produced a full allocation (VOO 45%, QQQ 15%, VXF 10%, VXUS 20%, cash 10%) with rationale, quantified risks, execution rules, a plain-English client intro, a sourced market brief and a risk review, and a final consistency check that passes. Weaknesses: several research items (index YTD returns, Nasdaq-100/Russell 2000 levels, forward P/E, VXF 1-yr return, tariff headlines) remain unverified, though they are honestly flagged and not used; the withholding-tax figures are marked uncertain; and the final reply is in Chinese while "
+  },
+  {
+    "scenario": "scenario_3_securities_fund 2",
+    "task_index": 2,
+    "title": "Scenario 3, Task 2: The Future of the Semiconductor Industry: An HTML Slide Presentation",
+    "old_passed": false,
+    "old_score": 6,
+    "old_notes": "The deck is a real, browser-presentable 10-slide HTML deck with a clear end-2026 framing, sourced judgments, investment implications and risks, so the core deliverable exists. However, the risk review returned FAIL with six concrete errors (memory share misstated, unverified CXMT claim presented as fact, wrong claim that all four hyperscalers raised guidance, implied export-control event, stance/risk/decision-rule inconsistencies, non-actionable rules), and the team admits the corrected final version was never re-reviewed, so accuracy and internal consistency cannot be confirmed.",
+    "new_passed": true,
+    "new_score": 8,
+    "new_notes": "The deck is a complete, self-contained 10-slide HTML presentation with keyboard/click navigation, sourced figures, a stance table, a risk slide and decision rules. The risk reviewer's six flagged errors (memory share, CXMT unverified claim, Microsoft guidance, policy-event wording, stance/risk trigger consistency, actionable rules) all appear corrected in the delivered file. The final version was not re-reviewed by risk, but the visible content is internally consistent and the unverified items are appropriately caveated."
+  }
+]

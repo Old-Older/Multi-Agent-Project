@@ -87,11 +87,11 @@ class InputTest(CliBase):
         self.assertIn("Usage", self.out[-1])
         self.assertEqual(self.sent(dm_channel(HUMAN, "nobody")), [])
 
-    async def test_status_and_cancel_go_to_the_orchestrator(self):
+    async def test_status_and_cancel_go_to_the_group_unaddressed(self):
         await self.type("/status")
         await self.type("/cancel")
         self.assertEqual([(m.content, m.receiver) for m in self.sent()],
-                         [("/status", ORCHESTRATOR), ("/cancel", ORCHESTRATOR)])
+                         [("/status", None), ("/cancel", None)])
 
     async def test_cancel_with_an_agent_name_goes_to_that_dm(self):
         await self.type("/cancel coder")
@@ -99,12 +99,12 @@ class InputTest(CliBase):
         self.assertEqual((m.content, m.receiver), ("/cancel", "coder"))
         self.assertEqual(self.sent(), [])
 
-    async def test_cancel_without_an_agent_name_goes_to_the_orchestrator(self):
+    async def test_cancel_without_an_agent_name_goes_to_the_group_unaddressed(self):
         await self.type("/cancel")
         await self.type("/cancel R2")                      # not an agent: passed on as it is
         await self.type("/cancel nobody")
         self.assertEqual([(m.content, m.receiver) for m in self.sent()],
-                         [("/cancel", ORCHESTRATOR), ("/cancel R2", ORCHESTRATOR), ("/cancel nobody", ORCHESTRATOR)])
+                         [("/cancel", None), ("/cancel R2", None), ("/cancel nobody", None)])
 
     async def test_help_unknown_command_and_blank_lines(self):
         await self.type("/help")
@@ -139,7 +139,7 @@ class CancelNoticeTest(CliBase):
         await self.feed(hitl_request(channel=dm, rid="h1"))                              # a DM's R1
         await self.feed(self.notice(["R1"]))
         self.assertEqual(sorted(self.cli._pending), sorted([(GROUP_MAIN, "h3"), (dm, "h1")]))
-        self.assertEqual(self.out[-1], "[orchestrator] Cancelled R1")                        # the notice itself is shown
+        self.assertEqual(self.out[-1], "[system] Cancelled R1")                        # the notice itself is shown
         await self.type("/reply h1 yes")                                                 # h1 is the DM's now
         self.assertEqual([m.channel for m in self.bus.history(dm) if m.type == MsgType.HITL_RESPONSE], [dm])
         await self.type("/reply h2 yes")
@@ -168,16 +168,19 @@ class ShutdownTest(CliBase):
 
 class OutputTest(CliBase):
     async def test_what_is_shown(self):
-        await self.feed(Message(MsgType.CHAT, "orchestrator", GROUP_MAIN, "OK, I'll arrange it"))
-        await self.feed(Message(MsgType.TASK_ASSIGN, "orchestrator", GROUP_MAIN, "@coder write a script", receiver="coder"))
+        await self.feed(Message(MsgType.CHAT, "writer", GROUP_MAIN, "OK, I'll arrange it"))
+        await self.feed(Message(MsgType.TASK_ASSIGN, "writer", GROUP_MAIN, "@coder write a script", receiver="coder"))
+        # the request handed to its lead, and the lead's result, are between the request layer and the lead
+        await self.feed(Message(MsgType.TASK_ASSIGN, "orchestrator", GROUP_MAIN, "@writer build it", receiver="writer"))
+        await self.feed(Message(MsgType.TASK_RESULT, "writer", GROUP_MAIN, "@orchestrator Done: built", receiver="orchestrator"))
         await self.feed(Message(MsgType.STATUS, "coder", GROUP_MAIN, "coder: Received t1: write a script",
                                 payload={"task_id": "t1", "status": "running", "note": "", "public": True}))
-        await self.feed(Message(MsgType.TASK_RESULT, "coder", GROUP_MAIN, "@orchestrator Done: finished"))
+        await self.feed(Message(MsgType.TASK_RESULT, "coder", GROUP_MAIN, "@writer Done: finished"))
         self.assertEqual(self.out[1:], [
-            "[orchestrator] OK, I'll arrange it",
-            "[orchestrator] @coder write a script",
+            "[writer] OK, I'll arrange it",
+            "[writer] @coder write a script",
             "· coder: Received t1: write a script",
-            "[coder] @orchestrator Done: finished"])
+            "[coder] @writer Done: finished"])
 
     async def test_what_is_not_shown(self):
         n = len(self.out)
@@ -307,7 +310,7 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
         running = [asyncio.create_task(cli.run(bus)), asyncio.create_task(coder.run())]
         try:
             dispatch = asyncio.create_task(router.dispatch(
-                requester="orchestrator", target="coder", goal="write a script and push it", session_id=GROUP_MAIN,
+                requester="writer", target="coder", goal="write a script and push it", session_id=GROUP_MAIN,
                 root_id="R1", origin_channel=GROUP_MAIN))
             await _until(lambda: any("asks for approval" in o for o in out))
             [task] = state.by_root("R1")
@@ -317,8 +320,8 @@ class IntegrationTest(unittest.IsolatedAsyncioTestCase):
             result = await asyncio.wait_for(dispatch, 2)
             self.assertEqual((result.success, result.summary), (True, "human said yes"))
             self.assertEqual(task.status, TaskStatus.DONE)
-            self.assertTrue(any("[orchestrator] @coder write a script and push it" == o for o in out))
-            self.assertTrue(any("@orchestrator Done: human said yes" in o for o in out))
+            self.assertTrue(any("[writer] @coder write a script and push it" == o for o in out))
+            self.assertTrue(any("@writer Done: human said yes" in o for o in out))
         finally:
             for t in running:
                 t.cancel()

@@ -1,30 +1,32 @@
 """A demo that runs without an API key and without the parts other people are still writing.
 
-`python -m mas --demo` assembles the real bus, router, state table, memory, Orchestrator
+`python -m mas --demo` assembles the real bus, router, state table, memory, request tracker
 and command line, and replaces three things with small stand-ins:
 
-  DemoBrain    a rule-based "LLM" for the Orchestrator (a function MockLLM can call)
-  DemoWorker   a worker that pretends to work, writes one file and records a memory
+  DemoBrain    a rule-based "LLM" that only chooses the lead (a function MockLLM can call)
+  DemoWorker   a worker that pretends to work, writes one file and records a memory; the one
+               that leads a request also splits it among its teammates, like a real lead would
   DemoSandbox  a workspace that can only read and write files
 
-It shows the whole flow: delegation, parallel agents, an agent declining and the job being
-reassigned, asking the human for approval, /status, /cancel, deliverables, and memory
-(a lesson from one run shows up in the next).
+It shows the whole flow: a lead chosen for the request, delegation, parallel agents, an agent
+declining and the job being reassigned, asking the human for approval, /status, /cancel,
+deliverables, and memory (a lesson from one run shows up in the next).
 """
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 import shutil
 from pathlib import Path
 
 from mas.agents.base import Agent
-from mas.agents.roles import RoleConfig
+from mas.agents.roles import ROLES, RoleConfig
 from mas.app import System, WorkerParts, build_system
 from mas.config import Settings
 from mas.core.human import CANCELLED_ANSWER, CliHumanIO, HitlKind
-from mas.core.task import Task, TaskResult, TaskStatus
+from mas.core.lead import CHOOSE_LEAD
+from mas.core.message import ORCHESTRATOR
+from mas.core.task import FailureMode, Task, TaskResult, TaskStatus
 from mas.llm.base import ChatMessage, FunctionSpec, LLMResponse, ToolCall
 from mas.llm.mock import MockLLM
 from mas.memory.base import Experience, tags_for_tools
@@ -41,12 +43,7 @@ _DEMO_TOOLS = {"researcher": ["web_search", "write_file"], "coder": ["run_python
                "writer": ["write_file"]}
 
 
-# ---- the Orchestrator's "LLM" ----------------------------------------------------------
-
-def _request_of(messages: list[ChatMessage]) -> str:
-    first_user = next(m["content"] for m in messages if m["role"] == "user")
-    return first_user.removeprefix("Human request:").split("\n\n")[0].strip()
-
+# ---- the "LLM": it only chooses the lead ------------------------------------------------
 
 def _pick_agents(request: str) -> list[str]:
     picked = [name for name, pattern in (("researcher", _RESEARCH), ("coder", _CODE), ("writer", _DOC))
@@ -55,34 +52,11 @@ def _pick_agents(request: str) -> list[str]:
 
 
 def demo_brain(messages: list[ChatMessage], tools: list[FunctionSpec] | None = None) -> LLMResponse:
-    """Decide like an Orchestrator would, from the messages only: round 1 sends the request to
-    the agents it mentions (in parallel); a declined job goes to the agent that was suggested;
-    when nothing is left it calls finish with the files that were produced."""
-    request = _request_of(messages)
-    tool_messages = [m for m in messages if m["role"] == "tool"]
-    if not tool_messages:
-        agents = _pick_agents(request)
-        calls = [ToolCall(f"c{i}", f"call_{a}", {"goal": f"{request}" if len(agents) == 1 else f"{a}'s part of: {request}"})
-                 for i, a in enumerate(agents)]
-        return LLMResponse(f"Remaining steps: {', '.join(agents)}, then finish", calls)
-    asked = {tc["id"]: json.loads(tc["function"]["arguments"])
-             for m in messages if m["role"] == "assistant" for tc in m.get("tool_calls") or []}
-    last_assistant = max(i for i, m in enumerate(messages) if m["role"] == "assistant")
-    latest = [(m["tool_call_id"], json.loads(m["content"])) for m in messages[last_assistant + 1:]
-              if m["role"] == "tool"]
-    redo = [ToolCall(f"r{n}", f"call_{obs['suggest']}", {"goal": asked[cid]["goal"]})
-            for n, (cid, obs) in enumerate(latest) if obs.get("declined") and obs.get("suggest")]
-    if redo:
-        return LLMResponse("Remaining steps: reassign, then finish", redo)
-    observations = [json.loads(m["content"]) for m in tool_messages]
-    files = list(dict.fromkeys(a for o in observations for a in o.get("artifacts", [])))
-    said = [o["summary"] for o in observations if o.get("success") and o.get("summary")]
-    failed = [o.get("error") or o.get("reason") or "unknown" for o in observations
-              if not o.get("success") and not o.get("declined")]
-    summary = " ".join(said) or "Nothing was produced."
-    if failed:
-        summary += f" (did not work out: {'; '.join(failed)})"
-    return LLMResponse("", [ToolCall("done", "finish", {"summary": summary, "deliverables": files})])
+    """Choose the lead like the real selector's LLM would: the first of the agents the request
+    needs, so that the lead has something of its own to do and delegates the rest."""
+    request = messages[-1]["content"].split("Request from the human:", 1)[-1].strip()
+    lead = _pick_agents(request)[0]
+    return LLMResponse("", [ToolCall("lead", CHOOSE_LEAD, {"agent_id": lead, "reason": "demo rule"})])
 
 
 # ---- the workspace -------------------------------------------------------------------------
@@ -134,9 +108,41 @@ class DemoWorker(Agent):
         self.role, self.sandbox, self.memory, self.delay = role, parts.sandbox, parts.memory, delay
 
     async def handle_task(self, task: Task) -> TaskResult:
+        if task.chain == [ORCHESTRATOR]:                  # the request was handed to this agent: it leads
+            return await self._lead(task)
+        return await self._work(task, task.goal)
+
+    async def _lead(self, task: Task) -> TaskResult:
+        """Split the request among the agents it mentions (the others in parallel, its own part
+        itself), send a declined job to the agent that was suggested, and report together."""
+        goals = {a: task.goal if len(_pick_agents(task.goal)) == 1 else f"{a}'s part of: {task.goal}"
+                 for a in _pick_agents(task.goal)}
+        results = await self._run_parts(task, goals)
+        for agent, result in list(results.items()):       # a declined job goes to the suggested agent
+            if result.declined and result.suggest and result.suggest not in results:
+                results[result.suggest] = (await self._run_parts(task, {result.suggest: goals[agent]}))[result.suggest]
+        done = [r for r in results.values() if not r.declined]
+        failed = [r.error or "unknown" for r in done if not r.success]
+        summary = " ".join(r.summary for r in done if r.success and r.summary) or "Nothing was produced."
+        if failed:
+            summary += f" (did not work out: {'; '.join(failed)})"
+        artifacts = list(dict.fromkeys(a for r in done if r.success for a in r.artifacts))
+        return TaskResult(task.id, not failed and bool(artifacts), summary, artifacts=artifacts,
+                          error="; ".join(failed) or None,
+                          failure_mode=FailureMode.TOOL_ERROR if failed else None)
+
+    async def _run_parts(self, task: Task, goals: dict[str, str]) -> dict[str, TaskResult]:
+        async def part(agent: str, goal: str) -> TaskResult:
+            if agent == self.agent_id:
+                return await self._work(task, goal)
+            return await self.call_agent(task, agent, goal)
+        done = await asyncio.gather(*(part(a, g) for a, g in goals.items()))
+        return dict(zip(goals, done))
+
+    async def _work(self, task: Task, goal: str) -> TaskResult:
         name = self.role.agent_id
-        remembered = [e.lesson for e in self.memory.recall(task.goal, self.settings.memory_recall_k) if e.lesson]
-        if name == "writer" and _RUNS_CODE.search(task.goal):
+        remembered = [e.lesson for e in self.memory.recall(goal, self.settings.memory_recall_k) if e.lesson]
+        if name == "writer" and _RUNS_CODE.search(goal):
             return TaskResult(task.id, False, "I only write documents", declined=True, suggest="coder",
                               error="I cannot run code")
         for step in ("planning", "working", "finishing"):
@@ -144,8 +150,8 @@ class DemoWorker(Agent):
                 return TaskResult(task.id, False, "", error="cancelled")
             await self.report_status(task, TaskStatus.RUNNING, step)
             await asyncio.sleep(self.delay)
-        if _RISKY.search(task.goal):
-            answer = await self.ask_human(task, f"{name} is about to: {task.goal[:70]}. Go ahead?",
+        if _RISKY.search(goal):
+            answer = await self.ask_human(task, f"{name} is about to: {goal[:70]}. Go ahead?",
                                           HitlKind.APPROVAL, ["yes", "no"])
             if answer == CANCELLED_ANSWER or self.is_cancelled(task):
                 return TaskResult(task.id, False, "", error="cancelled")
@@ -155,9 +161,9 @@ class DemoWorker(Agent):
                 return TaskResult(task.id, False, "", error="the human did not approve")
         stem, ext = _DEMO_FILE[name]
         file = f"{stem}-{task.id}.{ext}"
-        self.sandbox.write_text(file, f"# {name}\n\nGoal: {task.goal}\n"
+        self.sandbox.write_text(file, f"# {name}\n\nGoal: {goal}\n"
                                 + (f"\nLessons from earlier: {'; '.join(remembered)}\n" if remembered else ""))
-        summary = f"{name} finished '{_clip(task.goal)}'" + (f" (remembering: {remembered[0]})" if remembered else "")
+        summary = f"{name} finished '{_clip(goal)}'" + (f" (remembering: {remembered[0]})" if remembered else "")
         self._remember(task, True, summary, _DEMO_TOOLS[name], "", [file])
         return TaskResult(task.id, True, summary, artifacts=[file])
 
@@ -176,13 +182,14 @@ def demo_settings(base: Settings, data_dir: Path) -> Settings:
     """Settings that keep everything the demo writes under data_dir/demo."""
     root = Path(data_dir) / "demo"
     return Settings.from_env(data_dir=root, workspaces_dir=root / "workspaces", subtask_timeout_s=60.0,
-                             max_orchestrator_rounds=base.max_orchestrator_rounds)
+                             lead_timeout_s=120.0)
 
 
 def build_demo_system(settings: Settings, *, delay: float = 0.4, read_line=None, write=None) -> System:
     """The demo system. `read_line` and `write` replace the terminal (the tests use them)."""
     return build_system(
         settings, MockLLM(responder=demo_brain), CliHumanIO(read_line=read_line, write=write),
+        roles=ROLES,
         worker_factory=lambda role, parts: DemoWorker(role, parts, delay),
         sandbox_factory=lambda agent_id, root: DemoSandbox(agent_id, root))
 

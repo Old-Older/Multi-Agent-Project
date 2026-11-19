@@ -3,7 +3,7 @@
 Owner: JIAN Yimin. Changes need agreement from both members.
 
 One Task is created for every call_<agent> tool call, whether it comes from
-the Orchestrator or from a Worker re-delegating.
+the request layer or from a Worker re-delegating.
 """
 from __future__ import annotations
 
@@ -68,7 +68,7 @@ class Task:
 
     @property
     def depth(self) -> int:
-        """Delegation depth: 0 for a task issued by the Orchestrator or a human."""
+        """Delegation depth: 0 for a task issued by the request layer or a human."""
         return max(len(self.chain) - 1, 0)
 
     def to_dict(self) -> dict[str, Any]:
@@ -87,12 +87,17 @@ class TaskResult:
     artifacts: list[str] = field(default_factory=list)      # files written, auto-filled from tool calls
     refs: dict[str, str] = field(default_factory=dict)      # commit hash, URLs, ...
     open_issues: list[str] = field(default_factory=list)    # unfinished items for the board
+    # A lead's own check of the request's requirements: [{"id": "REQ1", "status": met|not_met|unverified, "evidence": ...}]
+    requirements: list[dict[str, str]] = field(default_factory=list)
     error: str | None = None
     failure_mode: FailureMode | None = None
     declined: bool = False
     suggest: str | None = None        # when declined: the agent that fits better
     steps: int = 0
     duration: float = 0.0
+    # Where the worker's time went, measured by code: llm_s / llm_calls, tool_s, delegation_s (waiting
+    # for teammates), human_s (waiting for the human) and by_tool {name: {"calls", "s"}}. Empty if not measured.
+    metrics: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

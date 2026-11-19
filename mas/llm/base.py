@@ -37,7 +37,7 @@ class ToolCall:
 
 @dataclass
 class LLMResponse:
-    text: str                         # may be non-empty alongside tool calls (Orchestrator plan line)
+    text: str                         # may be non-empty alongside tool calls (a plan line)
     tool_calls: list[ToolCall] = field(default_factory=list)  # may hold several -> run in parallel
     usage: dict[str, int] = field(default_factory=dict)
     finish_reason: str = ""

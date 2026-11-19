@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Semiconductors 2027 — Fund Team Deck</title>
+<style>
+:root{--bg:#0d1117;--fg:#e6edf3;--mut:#8b949e;--acc:#58a6ff;--warn:#f0883e;--bad:#f85149;--good:#3fb950}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif}
+.slide{display:none;width:100vw;height:100vh;padding:4vh 5vw;flex-direction:column}
+.slide.on{display:flex}
+h1{font-size:3.2vh;margin:0 0 1.2vh;color:#fff;font-weight:650}
+h2{font-size:2.2vh;margin:1.6vh 0 .6vh;color:var(--acc);font-weight:600}
+p,li,td,th{font-size:1.75vh;line-height:1.45}
+ul{margin:.4vh 0;padding-left:2.2vw}
+table{border-collapse:collapse;width:100%;margin:.8vh 0}
+th,td{border-bottom:1px solid #30363d;padding:.55vh .6vw;text-align:left;vertical-align:top}
+th{color:var(--mut);font-weight:600;font-size:1.55vh}
+.kicker{color:var(--mut);font-size:1.5vh;letter-spacing:.08em;text-transform:uppercase}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:2.5vw;flex:1}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1.8vw}
+.box{border:1px solid #30363d;border-radius:8px;padding:1.4vh 1.2vw;background:#161b22}
+.big{font-size:4.2vh;font-weight:700;color:#fff;line-height:1.1}
+.mut{color:var(--mut)}
+.warn{color:var(--warn)}.bad{color:var(--bad)}.good{color:var(--good)}
+.tag{display:inline-block;font-size:1.3vh;border:1px solid #30363d;border-radius:10px;padding:.1vh .6vw;color:var(--mut);margin-right:.4vw}
+.foot{position:fixed;bottom:1.2vh;left:5vw;right:5vw;display:flex;justify-content:space-between;font-size:1.3vh;color:var(--mut)}
+.src{font-size:1.25vh;color:var(--mut);margin-top:auto;padding-top:1vh}
+.bar{height:1.6vh;background:#21262d;border-radius:3px;overflow:hidden;margin:.3vh 0}
+.bar>i{display:block;height:100%;background:var(--acc)}
+</style></head><body>
+
+<!-- 1 -->
+<section class="slide on">
+<div class="kicker">Investment Committee · Internal · December 2026</div>
+<h1 style="font-size:5vh;margin-top:14vh">Semiconductors in 2027:<br>a price cycle, not a volume cycle</h1>
+<p style="font-size:2.2vh;max-width:60vw">What the 2026 boom actually was, why the sector trades at 13.6× forward after a −34% drawdown, and the stance we recommend for 2027.</p>
+<div class="src">Prepared by the fund manager with research, risk and marketing input. All figures sourced and dated; unverified items are labelled <span class="tag">UNVERIFIED</span> on the slide where they appear.</div>
+</section>
+
+<!-- 2 -->
+<section class="slide">
+<div class="kicker">Executive summary</div>
+<h1>Five judgments</h1>
+<div class="two">
+<div>
+<h2>1. 2026 was a memory price shock</h2>
+<p>WSTS: market <b>$1.51tn in 2026, +89.9%</b>; memory alone <b>$803.9bn, +249.5%</b> — 53% of the industry. Strip memory and growth is <b>+24.8%</b> ($565.6bn → ~$706bn) <span class="tag">DERIVED</span>.</p>
+<h2>2. 2027 decelerates, and splits</h2>
+<p>WSTS 2027: <b>~$1.9tn, +27%</b>. TrendForce: <b>DRAM tight through 2027, NAND eases in 2H27</b>. The first crack is NAND, not DRAM.</p>
+<h2>3. Valuation is not the risk; earnings are</h2>
+<p>SOX forward P/E <b>13.6×</b> (0th pct of 5 yrs, 9th since 2002) after <b>−34.1%</b> from the 22 Jun 2026 high. Cheap only if 2027 estimates hold.</p>
+</div>
+<div>
+<h2>4. Policy has become a cost line, not a headline</h2>
+<p>Section 232: <b>25%</b> on defined advanced chips from 15 Jan 2026, data-centre end-uses exempt; Phase 2 broad tariff recommended. Nov 2026 BIS rules shift controls to <b>customer verification</b>.</p>
+<h2>5. Stance: neutral-to-modest overweight, barbell</h2>
+<p>Own <b>foundry, equipment and networking</b>; keep memory at or below benchmark; size for a <b>50%+ drawdown</b> (SOX fell 87.2% in 2000–08).</p>
+<div class="box" style="margin-top:1.5vh"><b>What would change our mind:</b> 2027 CSP capex guidance cut below +30%; DRAM contract prices turning negative; a Taiwan or broad-tariff shock.</div>
+</div>
+</div>
+<div class="src">Sources: WSTS Spring 2026 forecast (2 Jun 2026); TrendForce (30 Jul 2026); historyofmarket.com &amp; dollarliquidity.com (17 Nov 2026); EY Tax News (15 Jan 2026); TrendForce (18 Nov 2026).</div>
+</section>
+
+<!-- 3 -->
+<section class="slide">
+<div class="kicker">The cycle · 1 of 2</div>
+<h1>2026: the industry nearly doubled — on price</h1>
+<div class="three">
+<div class="box"><div class="mut">Global semis 2026F</div><div class="big">$1.51tn</div><div class="good">+89.9% YoY</div></div>
+<div class="box"><div class="mut">Memory 2026F</div><div class="big">$803.9bn</div><div class="good">+249.5% YoY</div></div>
+<div class="box"><div class="mut">Memory share of industry</div><div class="big">53%</div><div class="mut">28.9% in 2025 · Axis Intelligence derivation, not in the WSTS release <span class="tag">UNVERIFIED</span></div></div>
+</div>
+<table>
+<tr><th>Segment (WSTS, 2 Jun 2026)</th><th>2025</th><th>2026F</th><th>2027F</th></tr>
+<tr><td>Memory</td><td>$230.0bn</td><td>$803.9bn (+249.5%)</td><td>$1.06tn (+32.1%)</td></tr>
+<tr><td>Logic</td><td>$299.5bn</td><td>$411.4bn (+37.3%)</td><td>$522.8bn (+27.1%)</td></tr>
+<tr><td>Microprocessors</td><td>$84.9bn</td><td>$101.7bn (+19.8%)</td><td>$122.0bn (+20.0%)</td></tr>
+<tr><td>Analog</td><td>$86.5bn</td><td>$95.4bn (+10.2%)</td><td>$101.7bn (+6.6%)</td></tr>
+<tr><td><b>Total</b></td><td><b>~$795.6bn</b></td><td><b>$1.51tn (+89.9%)</b></td><td><b>~$1.9tn (+27%)</b></td></tr>
+</table>
+<p><b>Why it matters:</b> the prior WSTS forecast (Autumn 2025) was +22.5% for 2025 and +26.3% for 2026 — the Spring 2026 edition was a ~3.4× upward revision in dollars. A revision of that size is a price event, and price events mean-revert.</p>
+<p class="warn">Watch: WSTS Autumn 2026 forecast publishes 1 Dec 2026 — after this deck. It can move the 2027 number materially. No credible 2028 industry forecast was found <span class="tag">UNVERIFIED</span>.</p>
+<div class="src">Sources: WSTS press release (wsts.org/76), 2 Jun 2026; segment detail via TelecomLead, 2 Jun 2026; prior forecast via creating-nanotech.com, 2 Dec 2025; memory share derived by Axis Intelligence, 4 Nov 2026 (third-party derivation, not in the WSTS release).</div>
+</section>
+
+<!-- 4 -->
+<section class="slide">
+<div class="kicker">The cycle · 2 of 2</div>
+<h1>2027: deceleration, and a DRAM/NAND split</h1>
+<div class="two">
+<div>
+<h2>Memory pricing path (TrendForce)</h2>
+<table>
+<tr><th>Period</th><th>DRAM contract price / industry revenue</th></tr>
+<tr><td>1Q26</td><td class="good">+93% to +98% QoQ</td></tr>
+<tr><td>2Q26</td><td class="good">Industry revenue +59.5% QoQ to $154.7bn (revenue, not price)</td></tr>
+<tr><td>3Q26</td><td class="good">Server DRAM +13–18% QoQ</td></tr>
+<tr><td>4Q26</td><td class="good">Increases sustained — no % published, qualitative only (30 Sep 2026)</td></tr>
+<tr><td>2027</td><td class="warn">DRAM tight; NAND eases in 2H27</td></tr>
+</table>
+<p>HBM contract prices expected to <b>"surge multiples higher in 2027"</b> (TrendForce, 2 Jun 2026) — the annual pricing mechanism has lagged spot.</p>
+</div>
+<div>
+<h2>Demand is still being funded</h2>
+<ul>
+<li>CSP capex <b>+~90% in 2026</b> (3 Aug 2026), revised to <b>+98%</b> (25 Aug 2026); <b>+50% in 2027</b>; total <b>&gt;$1.5tn in 2027</b> (14 Oct 2026).</li>
+<li>AI server revenue <b>+&gt;90% YoY in 2027</b>; shipments +31% in 2026.</li>
+<li>AI networking <b>$37.9bn (2024) → $279.8bn (2027E)</b>.</li>
+<li>DRAM+NAND = <b>68% of major CSP capex in 2027</b> (TrendForce, 25 Aug 2026).</li>
+</ul>
+<h2>But the consumer end is breaking</h2>
+<ul>
+<li>Notebooks <b>−9.4% in 2026</b>, low-single-digit decline in 2027; risk shifts to <b>cost-driven demand destruction</b>.</li>
+<li>iPhone 18 Pro BOM <b>+~38% YoY</b>, led by memory.</li>
+<li>NAND spot <b>−20% in two weeks</b> (18 Nov 2026) on YMTC competition.</li>
+</ul>
+</div>
+</div>
+<div class="src">Sources: TrendForce press releases, 1 Jun, 2 Jun, 3 Jul, 30 Jul, 3 Aug, 10 Aug, 14 Oct, 18 Nov 2026. Note: TrendForce's $1.28tn 2027 memory market and WSTS' $1.06tn are different houses — do not mix them in one chart.</div>
+</section>
+
+<!-- 5 -->
+<section class="slide">
+<div class="kicker">Valuation</div>
+<h1>Cheap versus its own history — if the estimates hold</h1>
+<div class="three">
+<div class="box"><div class="mut">SOX forward P/E</div><div class="big">13.6×</div><div class="mut">0th pct of 5 yrs · 9th since 2002</div></div>
+<div class="box"><div class="mut">SOX vs 22 Jun 2026 high</div><div class="big bad">−34.1%</div><div class="mut">YTD still +36.1%</div></div>
+<div class="box"><div class="mut">Post-2011 median fwd P/E</div><div class="big">15.7×</div><div class="mut">Cycle peak 21.7× (5 Aug 2026)</div></div>
+</div>
+<table>
+<tr><th>Company</th><th>Mkt cap</th><th>Rev ttm (YoY)</th><th>Fwd P/E</th><th>vs 52-wk high</th></tr>
+<tr><td>NVIDIA</td><td>$3.84T</td><td>$361.8bn (+93%)</td><td>11.1×</td><td class="bad">−35%</td></tr>
+<tr><td>TSMC (ADR)</td><td>$1.71T</td><td>$155.2bn (+36%)</td><td>17.2×</td><td class="bad">−26%</td></tr>
+<tr><td>Broadcom</td><td>$1.66T</td><td>$89.1bn (+49%)</td><td>20.0×</td><td class="bad">−30%</td></tr>
+<tr><td>AMD</td><td>$843bn</td><td>$45.4bn (+42%)</td><td>33.9×</td><td class="bad">−23%</td></tr>
+<tr><td>Micron</td><td>$805bn</td><td>$133.2bn (+256%)</td><td class="warn">4.0×</td><td class="bad">−43%</td></tr>
+<tr><td>ASML</td><td>$524bn</td><td>$45.0bn (+23%)</td><td>21.7×</td><td class="bad">−30%</td></tr>
+<tr><td>SK hynix</td><td>₩833.8T</td><td>₩269.3T (+220%)</td><td class="warn">2.2×</td><td class="bad">−62%</td></tr>
+<tr><td>Samsung Elec.</td><td>₩1,247.3T</td><td>₩594.5T (+88%)</td><td class="warn">2.7×</td><td class="bad">−48%</td></tr>
+</table>
+<p><b>Read-through:</b> the de-rating came from price falling faster than estimates rose. Memory at 2–4× forward is the market capitalising a <b>cycle peak</b>, not value. The bear case is not multiple compression — it is a 30–50% cut to 2027 consensus EPS.</p>
+<div class="src">Sources: historyofmarket.com/semi and /semi-fwdpe; dollarliquidity.com (5 Nov 2026); stockanalysis.com company pages, 18 Nov 2026. Market caps are aggregator computations (price × shares); KRW figures not converted.</div>
+</section>
+
+<!-- 6 -->
+<section class="slide">
+<div class="kicker">Supply &amp; policy</div>
+<h1>Policy is now a cost line and a compliance tax</h1>
+<div class="two">
+<div>
+<h2>Section 232 — verified</h2>
+<ul>
+<li>Proclamation signed <b>14 Jan 2026</b>; <b>25% ad valorem</b> effective 15 Jan 2026 on advanced computing chips meeting specific TPP/DRAM-bandwidth thresholds (HTSUS 8471.50/8471.80/8473.30).</li>
+<li><b>US data-centre, R&amp;D, startup and repair end-uses exempt</b>; no drawback; FTZ privileged foreign status.</li>
+<li><b>Phase 2:</b> Commerce recommended broader tariffs at a "significant" rate after negotiations, with a tariff-offset programme for domestic investment.</li>
+<li>1 Jul 2026 data-centre review trigger — outcome <span class="tag">UNVERIFIED</span>.</li>
+</ul>
+<h2>Export controls — Nov 2026</h2>
+<ul>
+<li>BIS narrowed foundry/OSAT licence exemptions and tightened <b>customer verification</b> for TSMC, Samsung, ASE, Amkor.</li>
+<li>Immediate supply impact judged <b>limited</b>: advanced AI packaging remains <b>fully utilised</b>.</li>
+</ul>
+</div>
+<div>
+<h2>Supply stress is showing in margins</h2>
+<table>
+<tr><th>Signal</th><th>Figure</th></tr>
+<tr><td>NVIDIA gross margin</td><td>74.8% (3Q) → <b>71–72%</b> (4Q)</td></tr>
+<tr><td>NVIDIA purchase commitments</td><td><b>$390bn</b></td></tr>
+<tr><td>ASE advanced-packaging quotes</td><td><b>+&gt;20%</b></td></tr>
+<tr><td>NAND spot, two weeks</td><td class="bad">−20%</td></tr>
+<tr><td>8-inch utilisation, top-10 foundries</td><td>~90% in 2026</td></tr>
+</table>
+<h2>Concentration we cannot verify</h2>
+<p class="warn">TSMC advanced-node share, CoWoS wafers/month, HBM capacity by supplier, 2026 Entity List additions, SMIC/Huawei progress and CHIPS/EU/Japan subsidy totals were <b>not retrieved</b> in this research pass. We do not put numbers on them. The verified evidence of concentration is <b>pricing power</b> (sold-out CoWoS, +20% packaging quotes), not a share statistic.</p>
+</div>
+</div>
+<div class="src">Sources: EY Tax News, 15 Jan 2026; CBP CSMS #67400472; Federal Register 2026-01052; TrendForce, 18 Nov 2026; Commercial Times via TrendForce, 18 Nov 2026; MoneyDJ via TrendForce, 1 Jul 2026.</div>
+</section>
+
+<!-- 7 -->
+<section class="slide">
+<div class="kicker">Investment implications · 1 of 2</div>
+<h1>Where the risk-adjusted return sits</h1>
+<table>
+<tr><th>Sub-segment</th><th>Stance</th><th>Evidence</th><th>Main risk</th></tr>
+<tr><td>Foundry / advanced packaging</td><td class="good">Overweight*</td><td>CoWoS sold out; 8-inch util ~90%; TSMC 17.2× fwd</td><td>Taiwan concentration; customer-verification drag</td></tr>
+<tr><td>Semicap (ASML, WFE)</td><td class="good">Overweight*</td><td>Memory capex wave; ASML 21.7× fwd; shortage extending to equipment</td><td>Order lumpiness; China exposure</td></tr>
+<tr><td>AI networking / custom silicon</td><td class="good">Overweight*</td><td>$37.9bn → $279.8bn (2027E); AVGO 20.0× fwd</td><td>Customer concentration</td></tr>
+<tr><td>Accelerators (NVDA)</td><td>Neutral</td><td>11.1× fwd, lowest of AI era; GM compressing to 71–72%</td><td>Export rules; $390bn commitments</td></tr>
+<tr><td>DRAM / HBM</td><td class="warn">Neutral, trim into strength</td><td>Tight through 2027; HBM pricing "multiples higher"</td><td>Peak-cycle earnings; 2–4× fwd is a warning</td></tr>
+<tr><td>NAND</td><td class="bad">Underweight</td><td>Eases 2H27; spot −20%; YMTC</td><td>Price war</td></tr>
+<tr><td>Consumer / analog / auto</td><td class="bad">Underweight</td><td>Notebooks −9.4%; analog +10.2% then +6.6%</td><td>Cost-driven demand destruction</td></tr>
+</table>
+<p class="warn">* <b>Conditional:</b> the three overweights are held at half the normal active weight until the TrendForce foundry/packaging release confirms TSMC advanced-node share and CoWoS/HBM capacity (slide 10, open items). If that check fails, they revert to neutral. The deck's own evidence for concentration is pricing power, not a verified share statistic — so the overweight is sized for that uncertainty, not asserted despite it.</p>
+<p><b>Logic of the barbell:</b> own the <b>toll roads</b> (foundry, equipment, networking) whose revenue is a function of capex and complexity, and avoid the <b>price-takers</b> (NAND, consumer analog) whose 2027 revenue is a function of a price that is already falling.</p>
+<div class="src">Sources: as cited on slides 4–6; forward P/Es from stockanalysis.com, 18 Nov 2026. Stances are the fund manager's judgment, not a published forecast.</div>
+</section>
+
+<!-- 8 -->
+<section class="slide">
+<div class="kicker">Investment implications · 2 of 2</div>
+<h1>How we would implement it</h1>
+<div class="two">
+<div>
+<h2>Vehicle choice matters more than the theme</h2>
+<table>
+<tr><th>Fund</th><th>TER</th><th>AUM</th><th>Top-10</th></tr>
+<tr><td>SMH (VanEck)</td><td>0.35%</td><td>$64.4bn</td><td>69.0%</td></tr>
+<tr><td>SOXX (iShares)</td><td>0.33%</td><td>$38.1bn</td><td>62.5%</td></tr>
+<tr><td>SOXQ (Invesco)</td><td class="good">0.19%</td><td>$2.8bn</td><td>60.9%</td></tr>
+<tr><td>PSI (Invesco)</td><td>0.55%</td><td>$1.9bn</td><td class="good">49.5%</td></tr>
+</table>
+<ul>
+<li>SMH is <b>33.8% NVDA+TSM+AVGO</b>; SOXX is <b>32.9% AMD+AVGO+MU+NVDA</b>. Same theme, different bet.</li>
+<li>1-yr returns: SOXX <b>+47.6%</b> vs SMH <b>+33.8%</b> — index construction, not skill.</li>
+<li>16 bp (SOXQ vs SMH) on a $50m ticket ≈ <b>$400k over 5 years</b>; SOXQ's thinner liquidity is the trade-off.</li>
+</ul>
+</div>
+<div>
+<h2>Proposed sleeve (illustrative, within a global equity allocation)</h2>
+<table>
+<tr><th>Sleeve</th><th>Weight</th><th>Instrument</th></tr>
+<tr><td>Core semi beta</td><td>50%</td><td>SOXQ or SOXX (liquidity)</td></tr>
+<tr><td>Less-concentrated satellite</td><td>25%</td><td>PSI</td></tr>
+<tr><td>Single-name toll roads</td><td>25%</td><td>TSM, ASML, AVGO</td></tr>
+</table>
+<p class="mut">Sleeve weights are illustrative of structure, not a client-specific allocation; sizing must follow the mandate's drawdown tolerance.</p>
+<h2>Non-US holders</h2>
+<ul>
+<li>US-domiciled ETFs: <b>30% statutory dividend withholding</b> (treaty-dependent — confirm with tax counsel) and US estate-tax situs. UCITS clones exist (VanEck SMH UCITS, iShares SEMI, Invesco SOXX UCITS) — but semi ETFs yield only 0.2–0.4%, so the saving is small (~5 bp p.a., <span class="tag">ESTIMATE</span> on unverified yields); the estate-tax and platform arguments are the real ones.</li>
+<li>UCITS TERs/ISINs <span class="tag">UNVERIFIED</span> — confirm on issuer KIIDs before trading.</li>
+<li>Do not confuse US-listed "SEMI" (Columbia Select Technology) with the iShares UCITS fund.</li>
+</ul>
+</div>
+</div>
+<div class="src">Sources: stockanalysis.com ETF pages, 14–18 Nov 2026; ETF Trends, 17 Nov 2026.</div>
+</section>
+
+<!-- 9 -->
+<section class="slide">
+<div class="kicker">Risks</div>
+<h1>What breaks the thesis</h1>
+<div class="two">
+<div>
+<h2>1. Estimate risk (highest)</h2>
+<p>2–4× forward P/E on memory and 11× on NVDA are only cheap if 2027 estimates hold. A 30–50% EPS cut turns "cheap" into "fair".</p>
+<h2>2. Concentration</h2>
+<p>Top-10 = 61–69% of the cap-weighted vehicles; NVDA+TSM+AVGO = 34% of SMH. A single-customer or Taiwan shock is a fund-level event, not diversifiable inside the sleeve.</p>
+<h2>3. Taiwan / cross-Strait</h2>
+<p>TSM is 10.1% of SMH and 4.3% of SOXQ. No verified share statistic was retrieved, but sold-out advanced packaging is the verified evidence of dependence.</p>
+<h2>4. Policy</h2>
+<p>Section 232 Phase 2 broad tariff; the 1 Jul 2026 data-centre review outcome is unconfirmed; Nov 2026 BIS customer-verification rules add lead time.</p>
+</div>
+<div>
+<h2>5. Demand destruction</h2>
+<p>Notebooks −9.4% in 2026; iPhone BOM +38%; reballed memory at 7–9% brand penetration in 2027. High memory prices are now taxing the end market that funds the cycle.</p>
+<h2>6. Drawdown history</h2>
+<p>SOX fell <b>87.2%</b> peak-to-trough (Mar 2000–Nov 2008) and took 17 years to recover; −48% in 2008 alone. Position sizing must assume a 50%+ drawdown is possible.</p>
+<h2>7. Data risk in this deck</h2>
+<p>WSTS Autumn 2026 publishes 1 Dec 2026; no 2028 forecast exists; TSMC share, CoWoS/HBM capacity, Entity List and subsidy figures are unverified and excluded from the numbers above.</p>
+<div class="box" style="margin-top:1.2vh"><b>Monitoring dashboard:</b> DRAM contract price QoQ · NAND spot vs contract · CSP capex guidance · NVDA gross margin · SOX forward EPS revisions · Section 232 Phase 2.</div>
+</div>
+</div>
+<div class="src">Sources: as cited on slides 3–8; historyofmarket.com/semi (1995–2025).</div>
+</section>
+
+<!-- 10 -->
+<section class="slide">
+<div class="kicker">Recommendation</div>
+<h1>Decision requested</h1>
+<div class="two">
+<div>
+<h2>We recommend</h2>
+<ul>
+<li><b>Neutral-to-modest overweight</b> semiconductors versus the benchmark, entered after a −34% de-rating rather than at the June high.</li>
+<li><b>Barbell:</b> conditionally overweight foundry, semicap and AI networking (half-size until verified); neutral accelerators and DRAM; underweight NAND and consumer analog.</li>
+<li><b>Structure:</b> core index (SOXQ/SOXX) + PSI satellite + 3 toll-road names; review UCITS alternatives for non-US holders.</li>
+<li><b>Size for a 50% drawdown</b> and set a hard stop on the thesis, not the price.</li>
+</ul>
+<h2>What we would need to go to full overweight</h2>
+<p>WSTS Autumn 2026 confirming 2027 ≥ +27%; CSP 2027 capex guidance ≥ +50%; DRAM contract prices still positive in 1Q27.</p>
+</div>
+<div>
+<h2>What we would need to go underweight</h2>
+<p>Any one of: 2027 CSP capex guidance cut below +30%; DRAM contract prices turning negative; Section 232 Phase 2 broad tariff; a cross-Strait escalation.</p>
+<h2>Open items before the next IC</h2>
+<ul>
+<li>Verify TSMC advanced-node share and CoWoS/HBM capacity (TrendForce quarterly).</li>
+<li>Confirm Section 232 Phase 2 status and the 1 Jul 2026 review outcome.</li>
+<li>Confirm UCITS TERs/ISINs on issuer KIIDs.</li>
+<li>Refresh with the WSTS Autumn 2026 forecast (1 Dec 2026).</li>
+</ul>
+<div class="box" style="margin-top:1.2vh"><b>Bottom line:</b> the 2026 boom was a memory price cycle. 2027 is a slower, more selective year — and the sector's low multiple is a bet on estimates, not a margin of safety.</div>
+</div>
+</div>
+<div class="src">Prepared for internal investment committee discussion. Not investment advice to any client.</div>
+</section>
+
+<div class="foot"><span>Semiconductors 2027 · Fund team · Dec 2026</span><span id="pg">1 / 10</span></div>
+<script>
+var s=document.querySelectorAll('.slide'),i=0;
+function show(n){s[i].classList.remove('on');i=Math.max(0,Math.min(s.length-1,n));s[i].classList.add('on');document.getElementById('pg').textContent=(i+1)+' / '+s.length;}
+document.addEventListener('keydown',function(e){if(['ArrowRight','ArrowDown','PageDown',' '].indexOf(e.key)>-1){e.preventDefault();show(i+1);}if(['ArrowLeft','ArrowUp','PageUp'].indexOf(e.key)>-1){e.preventDefault();show(i-1);}if(e.key==='Home')show(0);if(e.key==='End')show(s.length-1);});
+document.addEventListener('click',function(e){show(e.clientX>window.innerWidth/2?i+1:i-1);});
+</script>
+</body></html>

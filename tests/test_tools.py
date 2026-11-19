@@ -134,3 +134,50 @@ class FileToolsTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReadWindowTest(unittest.IsolatedAsyncioTestCase):
+    """A long file is read in pieces that say how to continue, so a worker need not write a script to read it."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+        from pathlib import Path
+
+        from mas.sandbox.base import LocalSandbox
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.sandbox = LocalSandbox("a", self.tmp)
+
+    async def test_a_short_file_comes_back_whole_and_unchanged(self):
+        self.sandbox.write_text("n.md", "short\n")
+        self.assertEqual((await ReadFile().run(self.sandbox, path="n.md")).output, "short\n")
+
+    async def test_a_long_file_is_read_piece_by_piece_until_the_end(self):
+        from mas.tools.files import READ_WINDOW
+        text = "".join(f"{n:05d}" for n in range(2000))                # 10000 characters
+        self.sandbox.write_text("big.md", text)
+        got, offset = "", 0
+        for _ in range(10):
+            result = await ReadFile().run(self.sandbox, path="big.md", offset=offset)
+            self.assertTrue(result.ok, result.output)
+            body, _, note = result.output.partition("\n[")
+            got += body
+            self.assertLessEqual(len(result.output), 4000)            # survives the worker's own clipping
+            if "to continue" not in note:
+                self.assertIn("end of file", note)
+                break
+            offset = int(note.split("offset=")[1].split(" ")[0])
+            self.assertEqual(offset, len(got))
+        self.assertEqual(got, text)
+        self.assertEqual(READ_WINDOW, 3500)
+
+    async def test_a_bad_offset_is_a_failure_the_model_can_read(self):
+        self.sandbox.write_text("n.md", "x" * 4000)
+        for offset in (-1, True, "3", 1.5):
+            result = await ReadFile().run(self.sandbox, path="n.md", offset=offset)
+            self.assertFalse(result.ok)
+            self.assertIn("offset must be a non-negative integer", result.output)
+        past = await ReadFile().run(self.sandbox, path="n.md", offset=9999)
+        self.assertFalse(past.ok)
+        self.assertIn("past the end", past.output)

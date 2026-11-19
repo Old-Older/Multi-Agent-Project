@@ -39,7 +39,7 @@ CANCELLED_ANSWER = "cancelled"
 class HitlRequest:
     request_id: str         # "h1", "h2", ... unique within a session
     agent_id: str
-    task_id: str            # "" when the Orchestrator asks for clarification
+    task_id: str            # "" when the request layer asks for clarification
     channel: str            # the task's origin_channel
     kind: HitlKind
     question: str
@@ -145,7 +145,7 @@ def default_reader():
 
 
 HELP_TEXT = """Commands:
-  just type text            say it in the group (nobody @mentioned: the Orchestrator handles it; @coder: coder handles it directly)
+  just type text            say it in the group (nobody @mentioned: the team handles it under a lead; @coder: coder handles it directly)
   /dm <agent> <message>     private chat with an agent, handing it a task directly
   /status                   show the progress of the current tasks
   /cancel                   cancel the current request in the group
@@ -238,8 +238,11 @@ class CliHumanIO(HumanIO):
         if msg.sender == HUMAN:
             return None
         tag = "" if is_group(msg.channel) else f"(DM·{_other(msg.channel)}) "
+        if msg.type in (MsgType.TASK_ASSIGN, MsgType.TASK_RESULT) and ORCHESTRATOR in (msg.sender, msg.receiver):
+            return None                   # the request handed to its lead, and the lead's result: internal
         if msg.type in (MsgType.CHAT, MsgType.TASK_ASSIGN, MsgType.TASK_RESULT):
-            return f"{tag}[{msg.sender}] {msg.content}"
+            who = "system" if msg.sender == ORCHESTRATOR else msg.sender   # /status, /cancel: the request layer
+            return f"{tag}[{who}] {msg.content}"
         if msg.type == MsgType.STATUS:
             return f"{tag}· {msg.content}" if msg.payload.get("public") and msg.content else None
         if msg.type == MsgType.HITL_REQUEST:
@@ -268,7 +271,7 @@ class CliHumanIO(HumanIO):
         elif cmd == "/cancel" and rest in self._agents():
             await self._send(dm_channel(HUMAN, rest), "/cancel", rest)   # that agent cancels its DM tasks
         elif cmd in ("/status", "/cancel"):
-            await self._send(GROUP_MAIN, text, ORCHESTRATOR)       # the Orchestrator answers these
+            await self._send(GROUP_MAIN, text, None)               # the request layer answers these
         elif cmd == "/reply":
             self._reply(rest)
         elif cmd == "/help":
@@ -391,16 +394,26 @@ class AutoResponder(HumanIO):
 
     def __init__(self) -> None:
         self.hitl_count = 0
+        self.shown: list[Message] = []            # everything the human would have seen
 
     async def run(self, bus: MessageBus) -> None:
-        raise NotImplementedError
+        """Read the human's inbox for ever: answer every HITL request, keep the rest."""
+        inbox = bus.subscribe(HUMAN)
+        try:
+            while True:
+                await self.handle_incoming(bus, await inbox.get())
+        finally:
+            await self._stop_answering()
 
     async def show(self, msg: Message) -> None:
-        raise NotImplementedError
+        self.shown.append(msg)
 
     async def answer(self, req: HitlRequest) -> str:
-        raise NotImplementedError
+        self.hitl_count += 1
+        return self.DEFAULT_ANSWERS[req.kind]
 
     async def submit(self, bus: MessageBus, text: str, channel: str) -> str:
         """Post a task as the human (used by the eval harness); returns the message id."""
-        raise NotImplementedError
+        msg = Message(MsgType.CHAT, HUMAN, channel, text)
+        await bus.publish(msg)
+        return msg.id

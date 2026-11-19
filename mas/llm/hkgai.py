@@ -41,6 +41,12 @@ def _arguments(raw: str) -> dict[str, Any]:
             value = json.loads(text, parse_float=_finite_float, parse_constant=_finite_float)
             return value if isinstance(value, dict) else {}
         except json.JSONDecodeError as error:
+            if text[error.pos:error.pos + 1] == ",":
+                # Python 3.14 points at the trailing comma itself; older versions point at the bracket.
+                if text[error.pos + 1:].lstrip()[:1] not in ("}", "]"):
+                    return {}
+                text = text[:error.pos] + text[error.pos + 1:]
+                continue
             prefix = text[:error.pos].rstrip()
             if text[error.pos:error.pos + 1] not in ("}", "]") or not prefix.endswith(","):
                 return {}
@@ -50,7 +56,7 @@ def _arguments(raw: str) -> dict[str, Any]:
     return {}
 
 
-def _response(completion: Any) -> LLMResponse:
+def _response(completion: Any, label: str = "HKGAI") -> LLMResponse:
     """Check fields the SDK may leave unvalidated on an HTTP 200 response."""
     try:
         choice = completion.choices[0]
@@ -75,7 +81,7 @@ def _response(completion: Any) -> LLMResponse:
         counts = {key: value for key, value in usage.items() if type(value) is int}
         return LLMResponse(content or "", calls, counts, reason)
     except (AttributeError, IndexError, KeyError, TypeError, ValueError):
-        raise LLMError("HKGAI returned an invalid chat completion") from None
+        raise LLMError(f"{label} returned an invalid chat completion") from None
 
 
 def _retry_after(header: str | None) -> float:
@@ -93,11 +99,16 @@ def _retry_after(header: str | None) -> float:
 
 
 class HKGAIClient(LLMClient):
+    """Any OpenAI-compatible chat endpoint; `label` only names the provider in error messages.
+    DeepSeekClient (mas/llm/deepseek.py) is this class with DeepSeek's defaults."""
+
+    label = "HKGAI"
+
     def __init__(self, api_key: str, base_url: str = DEFAULT_HKGAI_BASE_URL,
                  model: str = DEFAULT_HKGAI_MODEL, timeout: float = 60.0,
                  max_retries: int = 3) -> None:
         if not api_key.strip() or not model.strip():
-            raise ValueError("HKGAI API key, base URL and model are required")
+            raise ValueError(f"{self.label} API key, base URL and model are required")
         try:
             if not isinstance(base_url, str):
                 raise ValueError
@@ -110,7 +121,7 @@ class HKGAIClient(LLMClient):
             httpx.URL(base_url)
         except (httpx.InvalidURL, ValueError):
             # Parser diagnostics can contain embedded credentials or invalid port text.
-            raise ValueError("HKGAI base URL must be an absolute HTTP(S) URL "
+            raise ValueError(f"{self.label} base URL must be an absolute HTTP(S) URL "
                              "without credentials, query or fragment, and with a valid port") from None
         if not math.isfinite(timeout) or timeout <= 0:
             raise ValueError("timeout must be positive and finite")
@@ -122,6 +133,10 @@ class HKGAIClient(LLMClient):
         self.timeout = timeout
         self.max_retries = max_retries
 
+    def _extra_request(self) -> dict[str, Any]:
+        """Provider-specific fields added to every request (none for the base client)."""
+        return {}
+
     async def chat(self, messages: list[ChatMessage],
                    tools: list[FunctionSpec] | None = None,
                    temperature: float = 0.2) -> LLMResponse:
@@ -130,6 +145,7 @@ class HKGAIClient(LLMClient):
         }
         if tools:
             request["tools"] = [tool.to_openai() for tool in tools]
+        request.update(self._extra_request())
 
         # A chat owns its transport, including on cancellation. There is no
         # process-wide client or second layer of SDK retries to keep track of.
@@ -140,7 +156,7 @@ class HKGAIClient(LLMClient):
                 try:
                     completion = await asyncio.wait_for(
                         client.chat.completions.create(**request), timeout=self.timeout)
-                    return _response(completion)
+                    return _response(completion, self.label)
                 except (asyncio.TimeoutError, APITimeoutError):
                     failure = "request timed out"
                 except APIConnectionError:
@@ -149,16 +165,16 @@ class HKGAIClient(LLMClient):
                     failure = f"HTTP {error.status_code}"
                     if error.code in ("invalid_request", "convert_request_failed", "too_many_failed_keys",
                                       "model_not_found", "do_request_failed"):
-                        raise LLMError(f"HKGAI {failure} ({error.code})") from None
+                        raise LLMError(f"{self.label} {failure} ({error.code})") from None
                     if error.status_code not in {408, 409, 429} and error.status_code < 500:
-                        raise LLMError(f"HKGAI {failure}") from None
+                        raise LLMError(f"{self.label} {failure}") from None
                     wait = _retry_after(error.response.headers.get("Retry-After"))
                     if wait > self.timeout:
-                        raise LLMError(f"HKGAI {failure}: Retry-After exceeds the configured timeout") from None
+                        raise LLMError(f"{self.label} {failure}: Retry-After exceeds the configured timeout") from None
                     delay = max(delay, wait)
                 except (APIError, ValueError, RecursionError):
-                    raise LLMError("HKGAI returned an invalid chat completion") from None
+                    raise LLMError(f"{self.label} returned an invalid chat completion") from None
 
                 if attempt == self.max_retries:
-                    raise LLMError(f"HKGAI {failure} after {attempt + 1} attempt(s)")
+                    raise LLMError(f"{self.label} {failure} after {attempt + 1} attempt(s)")
                 await asyncio.sleep(delay)

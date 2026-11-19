@@ -21,7 +21,7 @@ from mas.core.task import Task, TaskResult
 class RootRecord:
     root_id: str
     human_messages: list[str] = field(default_factory=list)   # verbatim, request + interjections
-    plan: str = ""                    # latest "remaining steps" line from the Orchestrator
+    plan: str = ""                    # latest plan line (who leads this request)
     finish_summary: str = ""          # from finish(summary, ...)
     deliverables: list[str] = field(default_factory=list)
     finished: bool = False
@@ -73,7 +73,7 @@ class SessionBoard:
         self.roots: dict[str, RootRecord] = {}
         self.tasks: dict[str, TaskEntry] = {}
         self.hitl: dict[str, HitlEntry] = {}
-        # Human messages seen before the Orchestrator opened a root for them.
+        # Human messages seen before the request layer opened a root for them.
         self._pending_human: list[str] = []
 
     # ---- updates ---------------------------------------------------------

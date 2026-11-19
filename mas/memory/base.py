@@ -4,7 +4,7 @@ Owner: JIAN Yimin.
 
 Two uses of the same records:
   recall()  -> past lessons injected into the worker prompt ("how to do it")
-  profile() -> capability profile shown to the Orchestrator ("who should do it")
+  profile() -> capability profile shown to the teammates ("who should do it")
 Neither calls an LLM. The only LLM call is the async failure reflection that
 produces Experience.lesson, done by the worker after it has returned.
 """

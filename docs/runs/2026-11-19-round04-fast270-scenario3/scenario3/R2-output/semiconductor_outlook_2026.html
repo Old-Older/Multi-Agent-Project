@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Semiconductors: Outlook from End-2026 — Fund Team Deck</title>
+<style>
+  :root{--ink:#0f172a;--muted:#5b6b82;--line:#dbe3ee;--accent:#1d4ed8;--warn:#b45309;--bg:#f6f8fc;}
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:#0b1220;font-family:-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;color:var(--ink);}
+  #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;}
+  #deck{width:1280px;height:720px;position:relative;transform-origin:center center;}
+  .slide{position:absolute;inset:0;background:#fff;border-radius:6px;padding:44px 56px 56px;display:none;flex-direction:column;overflow:hidden;}
+  .slide.active{display:flex;}
+  .kicker{font-size:15px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:10px;}
+  h1{font-size:40px;line-height:1.15;margin:0 0 6px;font-weight:800;letter-spacing:-.01em;}
+  h2{font-size:30px;line-height:1.2;margin:0 0 18px;font-weight:750;letter-spacing:-.01em;}
+  h2 .hl{color:var(--accent);}
+  p,li{font-size:19px;line-height:1.45;}
+  ul{margin:0;padding-left:22px;}
+  li{margin-bottom:9px;}
+  .sub{font-size:19px;color:var(--muted);margin:0 0 22px;}
+  .grid{display:grid;gap:18px;}
+  .g2{grid-template-columns:1fr 1fr;}
+  .g3{grid-template-columns:repeat(3,1fr);}
+  .card{border:1px solid var(--line);border-radius:10px;padding:16px 18px;background:var(--bg);}
+  .card h3{margin:0 0 6px;font-size:17px;color:var(--accent);letter-spacing:.02em;text-transform:uppercase;}
+  .card p{font-size:17px;margin:0;line-height:1.4;}
+  .big{font-size:34px;font-weight:800;letter-spacing:-.02em;margin:0;}
+  .small{font-size:14px;color:var(--muted);}
+  .src{position:absolute;left:56px;right:56px;bottom:20px;font-size:12.5px;color:#8494a8;line-height:1.35;}
+  .num{position:absolute;right:26px;bottom:16px;font-size:13px;color:#9aa8bb;}
+  .tag{display:inline-block;font-size:13px;font-weight:700;padding:2px 8px;border-radius:999px;background:#e8eefc;color:var(--accent);margin-right:6px;}
+  .tag.warn{background:#fdf1e3;color:var(--warn);}
+  table{border-collapse:collapse;width:100%;font-size:17px;}
+  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);}
+  th{font-size:14px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+  td.n{text-align:right;font-variant-numeric:tabular-nums;}
+  .bar{height:22px;background:var(--accent);border-radius:3px;display:inline-block;vertical-align:middle;}
+  .bar.m{background:#0ea5a4;}
+  .bar.g{background:#94a3b8;}
+  .callout{border-left:5px solid var(--accent);background:#f2f6ff;padding:14px 18px;border-radius:0 8px 8px 0;font-size:19px;line-height:1.4;}
+  .callout.warn{border-color:var(--warn);background:#fdf6ec;}
+  .foot{display:flex;justify-content:space-between;align-items:flex-end;margin-top:auto;}
+  .nav{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);color:#8fa0b8;font-size:13px;letter-spacing:.05em;}
+  @media print{
+    html,body{background:#fff;height:auto;}
+    #stage{position:static;display:block;}
+    #deck{width:auto;height:auto;transform:none!important;}
+    .slide{display:flex!important;position:relative;inset:auto;page-break-after:always;height:720px;border-radius:0;}
+    .nav{display:none;}
+  }
+</style>
+</head>
+<body>
+<div id="stage"><div id="deck">
+
+<!-- 1 TITLE -->
+<section class="slide active">
+  <div class="kicker">Investment Committee · Fund Team Briefing</div>
+  <h1>The semiconductor industry after the super-cycle</h1>
+  <p class="sub">An end-2026 view: what is structural, what is cyclical, and what we are willing to pay for it</p>
+  <div class="grid g3" style="margin-top:26px">
+    <div class="card"><h3>2026 market</h3><p class="big">$1.51tn</p><p class="small">WSTS Spring-26 forecast, +89.9% y/y</p></div>
+    <div class="card"><h3>Memory share of revenue</h3><p class="big">53%</p><p class="small">vs 29% in 2025 — the cycle is a memory story</p></div>
+    <div class="card"><h3>Big-4 capex 2026</h3><p class="big">$720–745bn</p><p class="small">H2 step-up ~40–48% h/h</p></div>
+  </div>
+  <div class="callout" style="margin-top:26px"><b>Our call:</b> AI demand is real and showed no sign of digestion through 2026, but 2026 earnings are flattered by a memory price spike. We stay invested, rotate toward the durable toll-takers, and size for a 2027 memory rollover.</div>
+  <div class="src">Data as of 18 Nov 2026. Sources: WSTS Spring-2026 forecast (2 Jun 2026); SIA monthly (5 Oct 2026); TMT Finance hyperscaler capex (23 Sep 2026); Axis Intelligence on WSTS (4 Nov 2026).</div>
+  <div class="num">1 / 12</div>
+</section>
+
+<!-- 2 WHAT CHANGED -->
+<section class="slide">
+  <div class="kicker">Framing</div>
+  <h2>Three things changed in 2026 — and only one of them is permanent</h2>
+  <div class="grid g3">
+    <div class="card"><h3>1 · Structural</h3><p><b>AI compute became a capex line, not a project.</b> Big-4 hyperscaler capex guided to $720–745bn for 2026, with H2 running ~$419–444bn vs ~$301bn in H1.</p></div>
+    <div class="card"><h3>2 · Cyclical</h3><p><b>Memory repriced violently.</b> DRAM contract prices +50%+ q/q entering 2026 (some trackers +90–95%); memory is 53% of industry revenue.</p></div>
+    <div class="card"><h3>3 · Policy</h3><p><b>Tariffs and export controls became permanent features.</b> Section 232 action signed 14 Jan 2026; Nvidia guides China data-centre compute at zero.</p></div>
+  </div>
+  <div class="callout warn" style="margin-top:24px"><b>Why it matters:</b> a deck that treats all three as "AI growth" will over-pay. Only #1 deserves a multiple; #2 deserves a cycle discount; #3 is a cost line and a moat.</div>
+  <div class="src">Sources: TMT Finance (23 Sep 2026); Avnet memory outlook (9 Feb 2026); White House Section 232 action (14 Jan 2026); Nvidia FQ2-27 guidance commentary (Jul 2026).</div>
+  <div class="num">2 / 12</div>
+</section>
+
+<!-- 3 MARKET SIZE -->
+<section class="slide">
+  <div class="kicker">Demand</div>
+  <h2>The industry nearly doubled in 2026 — but consensus has been chasing the number all year</h2>
+  <table style="margin-top:6px">
+    <tr><th>Year</th><th>Industry revenue</th><th>y/y</th><th style="width:46%">Scale</th></tr>
+    <tr><td>2024</td><td class="n">$630.5bn</td><td class="n">+19.1%</td><td><span class="bar g" style="width:33%"></span></td></tr>
+    <tr><td>2025 (SIA)</td><td class="n">$791.7bn</td><td class="n">+25.6%</td><td><span class="bar g" style="width:42%"></span></td></tr>
+    <tr><td>2025 (WSTS Q4-25)</td><td class="n">$796bn</td><td class="n">+26%</td><td><span class="bar g" style="width:42%"></span></td></tr>
+    <tr><td>2025 (WSTS Q4-25)</td><td class="n">$796bn</td><td class="n">+26%</td><td><span class="bar g" style="width:42%"></span></td></tr>
+    <tr><td>2026 (WSTS Spring-26)</td><td class="n">$1.51tn</td><td class="n">+89.9%</td><td><span class="bar" style="width:80%"></span></td></tr>
+    <tr><td>2027 (WSTS Spring-26)</td><td class="n">~$1.9tn</td><td class="n">+27%</td><td><span class="bar" style="width:100%"></span></td></tr>
+  </table>
+  <div class="grid g2" style="margin-top:22px">
+    <div class="card"><h3>Forecast dispersion is the story</h3><p>The 2026 estimate moved from <b>$975bn</b> (WSTS Autumn-25) to <b>$1.51tn</b> (Spring-26) in six months — a ~55% revision. Consensus is a lagging indicator here.</p></div>
+    <div class="card"><h3>Momentum is still positive</h3><p>Aug-2026 monthly sales <b>$159.7bn, +144.3% y/y</b>; YTD through August already above <b>$1tn</b>. WSTS Autumn-26 revision due 1 Dec 2026.</p></div>
+  </div>
+  <div class="src">Sources: SIA (6 Feb 2026); WSTS Q4-2025 release (6 Mar 2026); WSTS Spring-2026 forecast (2 Jun 2026); SIA monthly data (5 Oct 2026). 2024 figure is an estimate.</div>
+  <div class="num">3 / 12</div>
+</section>
+
+<!-- 4 MEMORY -->
+<section class="slide">
+  <div class="kicker">The swing factor</div>
+  <h2>Memory is now more than half the industry — and it is the part most likely to break</h2>
+  <div class="grid g2">
+    <div>
+      <table>
+        <tr><th>Memory revenue</th><th>Share of semis</th></tr>
+        <tr><td class="n">$230.0bn (2025)</td><td class="n">28.9%</td></tr>
+        <tr><td class="n">$803.9bn (2026E)</td><td class="n">53.2%</td></tr>
+        <tr><td class="n">$1.06tn (2027E)</td><td class="n">55.5%</td></tr>
+      </table>
+      <p class="small" style="margin-top:10px">Memory grows +249.5% in 2026 vs logic +37.3% and analog +10.2%.</p>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:14px"><h3>Bull case</h3><p>Structural shortage: DRAM contract +50%+ q/q entering 2026; tight allocation expected through 2027 as new capacity lags demand.</p></div>
+      <div class="card"><h3>Bear case (the one that matters)</h3><p>SK hynix itself flags an <b>HBM price correction after 2026</b> as competitors add capacity. A memory rollover would remove the majority of 2026's growth.</p></div>
+    </div>
+  </div>
+  <div class="callout warn" style="margin-top:20px"><b>Judgement:</b> treat 2026 memory earnings as peak-cycle, not run-rate. We do not capitalise memory at AI multiples.</div>
+  <div class="src">Sources: WSTS Spring-2026 forecast; Axis Intelligence on WSTS (4 Nov 2026); Avnet (9 Feb 2026); SK hynix 2026 market outlook (5 Jan 2026).</div>
+  <div class="num">4 / 12</div>
+</section>
+
+<!-- 5 CAPEX -->
+<section class="slide">
+  <div class="kicker">Demand quality</div>
+  <h2>Four buyers fund the boom — that is the concentration risk in one sentence</h2>
+  <div class="grid g2">
+    <div>
+      <table>
+        <tr><th>2026 capex guide</th><th>FY26</th></tr>
+        <tr><td>Amazon</td><td class="n">~$220bn</td></tr>
+        <tr><td>Alphabet</td><td class="n">$195–205bn</td></tr>
+        <tr><td>Microsoft</td><td class="n">~$175bn*</td></tr>
+        <tr><td>Meta</td><td class="n">$130–145bn</td></tr>
+        <tr><td><b>Big-4 total</b></td><td class="n"><b>$720–745bn</b></td></tr>
+      </table>
+      <p class="small" style="margin-top:8px">*lease-accounting basis. Including Oracle FY27, the pool is ~$835bn.</p>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:14px"><h3>Still accelerating</h3><p>H2-2026 implied spend ~$419–444bn vs ~$301bn in H1 — a ~40–48% half-on-half step-up. No evidence of digestion or order cuts in 2026.</p></div>
+      <div class="card"><h3>But fragile</h3><p>One guide-down from a single buyer is $20–45bn of demand. Nvidia's FQ1-27 revenue was a record $81.6bn — the whole chain leans on that order book.</p></div>
+    </div>
+  </div>
+  <div class="src">Sources: TMT Finance (23 Sep 2026); company Q2-2026 calls (22–30 Jul 2026); Nvidia FQ1-27 results. Top-customer concentration percentages not verified for 2026.</div>
+  <div class="num">5 / 12</div>
+</section>
+
+<!-- 6 SUPPLY -->
+<section class="slide">
+  <div class="kicker">Supply</div>
+  <h2>Leading-edge supply is a one-company bottleneck that is only now leaving Taiwan</h2>
+  <div class="grid g3">
+    <div class="card"><h3>Node ramp</h3><p>TSMC N2 in volume ramp in 2026; N2/A16 capacity growing ~70% CAGR 2026–28; CoWoS advanced packaging &gt;80% CAGR.</p></div>
+    <div class="card"><h3>Geography</h3><p>Nine new fabs/packaging plants in 2026 across Taiwan, Arizona, Japan and Germany. Kumamoto in volume since Feb 2024; Dresden in build.</p></div>
+    <div class="card"><h3>Concentration</h3><p>TSMC holds the large majority of ≤3nm capacity; Samsung SF2 and Intel 18A are the only credible alternatives. This is a moat and a single point of failure.</p></div>
+  </div>
+  <div class="callout" style="margin-top:24px"><b>Investment read-through:</b> scarcity of advanced nodes and packaging is the most defensible profit pool in the sector — it is priced as a toll road, and it behaves like one until the second source qualifies.</div>
+  <div class="src">Sources: TSMC Taiwan Tech Symposium (May 2026); TSMC overseas fab ramp commentary (2026). Advanced-node share is an estimate, not re-verified.</div>
+  <div class="num">6 / 12</div>
+</section>
+
+<!-- 7 CHINA -->
+<section class="slide">
+  <div class="kicker">Policy</div>
+  <h2>China is no longer a revenue story for US AI chips — it is a substitution story</h2>
+  <div class="grid g2">
+    <div>
+      <ul>
+        <li>Nvidia's FQ2-27 guidance assumes <b>zero China data-centre compute revenue</b>; H200 approvals in early 2026 had booked <b>no revenue</b>.</li>
+        <li>Huawei China AI-chip revenue projected up to <b>$12bn in 2026</b>, share toward 50–60% of domestic accelerators.</li>
+        <li>Self-sufficiency <b>70% by unit volume</b> (Jun 2026) but only ~33% by value (2024); target reset to 80% by 2030.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:14px"><h3>Mature nodes: risk, not fact</h3><p>China's share of mature-node capacity goes 25% (2024) → 42% (2028E). But SMIC ran at <b>93.7% utilisation</b> with record Q2-26 revenue — no 2026 oversupply evidence. The glut is a 2027–28 risk.</p></div>
+      <div class="card"><h3>Direction of travel</h3><p>Managed restriction plus Beijing-side substitution. Pending US bills (Chip Security, GAIN AI) would tighten, not ease. We do not underwrite a normalisation deal.</p></div>
+    </div>
+  </div>
+  <div class="src">Sources: Nvidia FQ2-27 guidance commentary (Jul 2026); Goldman Sachs via Epignosis Insights (10 Oct 2026); SEMI mature-node capacity; SMIC Q2-2026 results; NBS/GACC trade data.</div>
+  <div class="num">7 / 12</div>
+</section>
+
+<!-- 8 TARIFFS -->
+<section class="slide">
+  <div class="kicker">Policy</div>
+  <h2>Tariffs landed in 2026 — and the asymmetry favours the AI leaders</h2>
+  <table style="margin-top:4px">
+    <tr><th>Origin</th><th>Cumulative landed rate on semis</th><th>Who pays</th></tr>
+    <tr><td>China</td><td class="n">~75%</td><td>Mature-node and legacy supply chains</td></tr>
+    <tr><td>Korea / EU / Malaysia / Vietnam</td><td class="n">~25%</td><td>Memory and analog exporters</td></tr>
+    <tr><td>Japan</td><td class="n">~15%</td><td>Equipment and materials</td></tr>
+    <tr><td><b>Taiwan (semis)</b></td><td class="n"><b>0%*</b></td><td>*reported 2025 bilateral carve-out — TSMC-sourced AI accelerators</td></tr>
+  </table>
+  <div class="callout" style="margin-top:22px"><b>Read-through (reported, not confirmed):</b> Section 232 (presidential action 14 Jan 2026; a 10% → 15% → 25% phase-in is reported by trade press, final rate unconfirmed) is a <b>cost to non-Taiwan, non-US supply</b>, not to Nvidia. It widens the gap between the AI leaders and everyone else — and it is a margin risk for analog, MCU and mature-node names.</div>
+  <div class="src">Sources: White House Section 232 action (14 Jan 2026); TariffWise phase-in tracking (upd. 21 Jun 2026) — trade blog, final implemented rate unconfirmed; ITIF critique (24 Jun 2026).</div>
+  <div class="num">8 / 12</div>
+</section>
+
+<!-- 9 VALUATION -->
+<section class="slide">
+  <div class="kicker">Valuation</div>
+  <h2>The multiple has de-rated while earnings exploded — that is the whole debate</h2>
+  <div class="grid g2">
+    <div>
+      <div class="card" style="margin-bottom:14px"><h3>Nvidia, 18 Nov 2026</h3><p class="big">$154.30</p><p class="small">Market cap $3.73tn · trailing P/E ~16.6x · P/S 10.4x · EV/EBITDA 15.2x · ROE 117%</p></div>
+      <div class="card"><h3>What that means</h3><p>Price is below the late-2025 peak zone while FQ1-27 revenue hit a record $81.6bn. The market is already discounting a slowdown — the question is whether it discounts enough.</p></div>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:14px"><h3>What we could not verify</h3><p>SOX index level and forward P/E; TSMC, ASML, AMD, SK hynix and Micron multiples. Forward P/E vendors disagree by 3x on Nvidia (10.8x vs 32.7x) — we will not put a single forward multiple on a slide.</p></div>
+      <div class="callout warn"><b>Discipline:</b> value the sector on trailing earnings and cash flow, and stress-test memory at mid-cycle prices. Do not underwrite a forward multiple we cannot source.</div>
+    </div>
+  </div>
+  <div class="src">Sources: stockanalysis.com NVDA statistics (18 Nov 2026); financecharts (17 Nov 2026); valueinvesting.io (18 Nov 2026). Index-level valuation not verified.</div>
+  <div class="num">9 / 12</div>
+</section>
+
+<!-- 10 IMPLICATIONS -->
+<section class="slide">
+  <div class="kicker">Investment implications</div>
+  <h2>Own the toll roads, rent the cycle, avoid the middle</h2>
+  <div class="grid g3">
+    <div class="card"><h3>Overweight</h3><p><b>Foundry &amp; advanced packaging</b> and <b>leading-edge equipment</b>: scarcity, pricing power, and the only assets that benefit whichever AI buyer wins.</p></div>
+    <div class="card"><h3>Neutral / tactical</h3><p><b>Memory</b>: participate while allocation stays tight, but size for a 2027 correction and take profits into strength. <b>AI compute</b>: hold, do not chase.</p></div>
+    <div class="card"><h3>Underweight</h3><p><b>Mature-node, analog and MCU</b> exposed to China capacity additions (a 2027-28 risk, not yet visible) and to tariffs; <b>China-exposed</b> revenue lines we cannot underwrite. Sizing: no single name above 1.5% of the fund.</p></div>
+  </div>
+  <div class="callout" style="margin-top:22px"><b>Portfolio construction:</b> cap the sector at a measured weight, spread across foundry / equipment / memory / compute rather than one name, and rebalance on a 5-point drift. Review quarterly against the four triggers on the next slide.</div>
+  <div class="src">Judgement of the fund team, based on the data in slides 3–9. Not a recommendation to any individual client.</div>
+  <div class="num">10 / 12</div>
+</section>
+
+<!-- 11 RISKS -->
+<section class="slide">
+  <div class="kicker">Key risks</div>
+  <h2>Four things would make us wrong — each has a trigger and a response</h2>
+  <table>
+    <tr><th style="width:26%">Risk</th><th style="width:40%">What would confirm it</th><th>What we do</th></tr>
+    <tr><td><b>Memory rollover</b></td><td>DRAM contract prices turn negative q/q; HBM pricing breaks as capacity lands</td><td>Trim memory into strength; value at mid-cycle</td></tr>
+    <tr><td><b>AI capex digestion</b></td><td>Any big-4 guide-down, or H2-26 step-up not delivered</td><td>Cut compute beta first; keep foundry</td></tr>
+    <tr><td><b>Geopolitical shock</b></td><td>Taiwan Strait disruption; export controls tightened further</td><td>Size for it; prefer non-Taiwan capacity exposure</td></tr>
+    <tr><td><b>Policy cost</b></td><td>Section 232 broadened to finished electronics; retaliation</td><td>Avoid tariff-exposed mature-node names</td></tr>
+  </table>
+  <div class="callout warn" style="margin-top:20px"><b>Also unverified and therefore un-underwritten:</b> AI data-centre power constraints, Nvidia top-customer concentration, and the final Section 232 rate. We will not claim these are benign — we simply do not have the numbers.</div>
+  <div class="src">Sources as per slides 3–9. Trigger levels are the fund team's own thresholds.</div>
+  <div class="num">11 / 12</div>
+</section>
+
+<!-- 12 CLOSE -->
+<section class="slide">
+  <div class="kicker">Conclusion</div>
+  <h2>Stay invested, but stop paying for the cycle as if it were the trend</h2>
+  <div class="grid g2">
+    <div>
+      <ul>
+        <li><b>The trend is real:</b> AI compute has become a standing capex line for the big-4, and 2026 demand accelerated rather than digested.</li>
+        <li><b>The cycle is loud:</b> memory is 53% of revenue and most of the growth; 2026 earnings are peak, not normal.</li>
+        <li><b>Valuation is the open question:</b> Nvidia has de-rated to ~16.6x trailing while revenue hit records, but we could not verify index or peer multiples — so we do not claim the sector is cheap.</li>
+      </ul>
+    </div>
+    <div>
+      <div class="card" style="margin-bottom:14px"><h3>What we ask the committee to approve</h3><p>Maintain a measured sector weight; overweight foundry, packaging and leading-edge equipment; neutral memory with a trim discipline; underweight mature-node and China-exposed lines.</p></div>
+      <div class="card"><h3>Next steps</h3><p>Incorporate the WSTS Autumn-26 revision (1 Dec 2026); verify SOX and peer multiples; re-run the four triggers at Q4 results.</p></div>
+    </div>
+  </div>
+  <div class="src">Prepared by the fund manager with research and marketing input, 18 Nov 2026. Data as of that date; figures marked unverified are stated as such.</div>
+  <div class="num">12 / 12</div>
+</section>
+
+</div></div>
+<div class="nav">← / → or click to navigate · F for fullscreen · Ctrl/Cmd+P to print</div>
+<script>
+(function(){
+  var slides=[].slice.call(document.querySelectorAll('.slide')),i=0,deck=document.getElementById('deck');
+  function show(n){i=Math.max(0,Math.min(slides.length-1,n));slides.forEach(function(s,k){s.classList.toggle('active',k===i);});}
+  function fit(){var s=Math.min(window.innerWidth/1280,window.innerHeight/720);deck.style.transform='scale('+s+')';}
+  document.addEventListener('keydown',function(e){
+    if(e.key==='ArrowRight'||e.key==='PageDown'||e.key===' '){e.preventDefault();show(i+1);}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();show(i-1);}
+    else if(e.key==='Home'){show(0);} else if(e.key==='End'){show(slides.length-1);}
+    else if(e.key==='f'||e.key==='F'){if(!document.fullscreenElement){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();}else{document.exitFullscreen&&document.exitFullscreen();}}
+  });
+  document.addEventListener('click',function(e){if(e.clientX>window.innerWidth*0.5){show(i+1);}else{show(i-1);}});
+  window.addEventListener('resize',fit);fit();show(0);
+})();
+</script>
+</body>
+</html>

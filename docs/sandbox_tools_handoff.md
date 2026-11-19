@@ -1,5 +1,9 @@
 # 第一阶段交接：LocalSandbox 与文件工具
 
+> **状态（2026-11-18）：这是 2026-11-13 的交接记录，保留原文。** 文中"留待后续"的 Worker、HKGAI/DeepSeek 客户端、
+> `run_python`、网络和 Git 工具已经完成并接入 `build_tools`（见 [execution_tools_handoff.md](execution_tools_handoff.md)）；
+> Docker 执行和评测框架仍未完成。沙箱本身的行为描述仍然有效。
+
 本批以已 fetch 核对的 `origin/main = 216191e` 为基线，在
 `feat/heyang-sandbox-tools` 实现。公共方法签名、ExecResult、ToolResult、角色完整工具清单和
 Router 均未改动。按后续请求补修了 Agent 基类内部的 Windows 短任务耗时统计，使用 `time.perf_counter()`，

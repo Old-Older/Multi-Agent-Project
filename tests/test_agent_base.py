@@ -225,13 +225,33 @@ class RunLoopTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((res.success, res.error, agent.handled), (False, "cancelled", []))
         self.assertEqual(t.status, TaskStatus.CANCELLED)
 
-    async def test_summary_is_clipped_and_task_id_corrected(self):
+    async def delegated(self, **kwargs):
+        """A dispatch made by a member while it works on a task of its own, as a lead's delegation is."""
+        parent = Task("lead task", "orchestrator", "human", GROUP_MAIN, "R1", GROUP_MAIN, chain=["human"])
+        self.state.register(parent)
+        return await self.router.dispatch(requester="orchestrator", target="coder", goal="write a script", parent=parent,
+                                          session_id=GROUP_MAIN, root_id="R1", origin_channel=GROUP_MAIN, **kwargs)
+
+    async def test_a_teammates_summary_is_clipped_and_task_id_corrected(self):
         self.settings.result_summary_max_chars = 20
         self.start(handler=lambda t: _ret(TaskResult("wrong-id", True, "very long" * 50)))
-        r = await self.dispatch()
+        r = await self.delegated()
         self.assertEqual(len(r.summary), 20)
         self.assertTrue(r.summary.endswith("…"))
         self.assertEqual(self.state.get(r.task_id).status, TaskStatus.DONE)    # matched the real task
+
+    async def test_the_reply_to_a_request_is_clipped_at_its_own_longer_limit(self):
+        """Round 10: the lead's reply was cut at 1500 characters although 6000 had been set for it."""
+        self.settings.result_summary_max_chars = 20
+        self.settings.lead_summary_max_chars = 3000
+        self.start(handler=lambda t: _ret(TaskResult(t.id, True, "word " * 500)))             # 2,500 characters
+        r = await self.dispatch()                                                              # no parent: a request
+        self.assertEqual(len(r.summary), 2500)
+        self.assertFalse(r.summary.endswith("…"))
+        self.settings.lead_summary_max_chars = 100
+        r = await self.dispatch(root="R2")
+        self.assertEqual(len(r.summary), 100)
+        self.assertTrue(r.summary.endswith("…"))
 
     async def test_dm_task_stays_in_the_dm(self):
         dm = dm_channel("human", "coder")

@@ -5,6 +5,8 @@ description = "Evolutionary multi-agent collaboration system (MAIE5221 final pro
 requires-python = ">=3.10"
 dependencies = [
     "openai>=1.0",
+    "httpx>=0.27",
+    "ddgs>=9.0",
     "python-dotenv>=1.0",
     "prompt_toolkit>=3.0",
 ]
