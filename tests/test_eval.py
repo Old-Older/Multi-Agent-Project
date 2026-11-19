@@ -199,18 +199,43 @@ class JudgeTest(unittest.IsolatedAsyncioTestCase):
         for text in ("no json here", '{"passed": "yes"}', "{broken"):
             self.assertEqual((parse_verdict(text).passed, parse_verdict(text).score), (None, None))
 
-    def test_deliverables_are_read_clipped_and_binary_files_are_only_named(self):
+    def test_deliverables_are_read_whole_and_binary_files_are_only_named(self):
         tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         (tmp / "a.md").write_text("hello")
-        (tmp / "big.txt").write_text("x" * 20000)
+        (tmp / "long.html").write_text("<p>" + "x" * 42000 + "</p>")          # as long as the longest deck so far
         (tmp / "pic.png").write_bytes(b"\x89PNG")
         got = read_deliverables(tmp)
         self.assertEqual(got["a.md"], "hello")
-        self.assertTrue(got["big.txt"].endswith("…(cut)") and len(got["big.txt"]) < 8100)
+        self.assertEqual(got["long.html"], "<p>" + "x" * 42000 + "</p>")      # all of it: nothing is cut
         self.assertEqual(got["pic.png"], "(not a text file)")
         self.assertEqual(read_deliverables(""), {})
         self.assertEqual(read_deliverables(tmp / "missing"), {})
+
+    def test_a_file_too_long_for_one_call_keeps_its_beginning_and_end_and_says_what_was_omitted(self):
+        from mas.eval import judge
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        text = "A" * 50000 + "B" * 50000                                       # 100,000 characters
+        (tmp / "huge.md").write_text(text)
+        shown = read_deliverables(tmp)["huge.md"]
+        self.assertTrue(shown.startswith("A" * 1000) and shown.endswith("B" * 1000))
+        self.assertIn("characters of this file are not shown to you", shown)
+        self.assertIn("the delivered file is complete", shown)
+        omitted = int(shown.split("[... ")[1].split(" ")[0])
+        self.assertEqual(len(shown) - len(shown[shown.index("\n[..."):shown.index("...]\n") + 5]), len(text) - omitted)
+        self.assertLessEqual(len(shown), judge.MAX_FILE_CHARS + 300)
+
+    def test_the_budget_for_all_the_files_is_shared_and_never_hides_a_file_completely(self):
+        from mas.eval import judge
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        for n in range(5):
+            (tmp / f"f{n}.md").write_text(str(n) * 50000)
+        got = read_deliverables(tmp)
+        self.assertEqual(sorted(got), [f"f{n}.md" for n in range(5)])
+        self.assertTrue(all(len(v) >= 400 for v in got.values()))
+        self.assertLessEqual(sum(len(v) for v in got.values()), judge.MAX_FILES_CHARS + 5 * 300)
 
     async def test_the_grader_sees_the_request_the_dialogue_and_the_files(self):
         llm = MockLLM(script=[LLMResponse('{"passed": true, "score": 7, "notes": "ok"}')])
@@ -219,6 +244,18 @@ class JudgeTest(unittest.IsolatedAsyncioTestCase):
         prompt = llm.calls[0][0][1]["content"]
         for piece in ("Make slides", "lead: done", "### deck.html", "<h1>x</h1>"):
             self.assertIn(piece, prompt)
+        system = llm.calls[0][0][0]["content"]
+        self.assertIn("never mark a requirement as not met, or a file as truncated", system)   # an omission is the reader's
+
+    async def test_a_dialogue_longer_than_the_limit_keeps_its_end_and_says_so(self):
+        from mas.eval import judge
+        llm = MockLLM(script=[LLMResponse('{"passed": true, "score": 7, "notes": "ok"}')])
+        long = "START " + "x" * (judge.MAX_DIALOGUE_CHARS + 100) + " END"
+        await judge_task(llm, "r", long, {})
+        prompt = llm.calls[0][0][1]["content"]
+        self.assertIn("(earlier part of the conversation not shown)", prompt)
+        self.assertIn(" END", prompt)
+        self.assertNotIn("START ", prompt)
 
     async def test_a_failing_grader_gives_no_verdict_instead_of_an_error(self):
         def broken(messages, tools):

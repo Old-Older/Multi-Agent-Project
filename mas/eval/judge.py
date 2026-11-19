@@ -17,9 +17,11 @@ from mas.llm.base import LLMClient
 
 log = logging.getLogger(__name__)
 
-MAX_DIALOGUE_CHARS = 20000
-MAX_FILE_CHARS = 8000
-MAX_FILES_CHARS = 30000
+# What the grader is shown. The limits are only there so that one call fits the model's context (a file is about 3 to 4
+# characters a token): every delivered file of the runs so far (the largest is 42,000 characters) is shown whole.
+MAX_DIALOGUE_CHARS = 60000
+MAX_FILE_CHARS = 60000
+MAX_FILES_CHARS = 160000
 _TEXT_SUFFIXES = {".md", ".txt", ".html", ".htm", ".py", ".json", ".csv", ".js", ".css", ".yaml", ".yml", ".toml"}
 
 _SYSTEM = """You are a strict grader of the work of a team of AI agents. You are given the request a human \
@@ -31,7 +33,13 @@ file to back it up is not met, and so is a deliverable that is empty, a placehol
 
 Reply with ONE JSON object and nothing else:
 {"requirements": [{"item": "...", "met": true}], "passed": true, "score": 7, "notes": "two or three sentences"}
-"passed" is true only if all the important requirements are met. "score" is an integer from 1 to 10."""
+"passed" is true only if all the important requirements are met. "score" is an integer from 1 to 10.
+
+A line of the form [... N characters of this file are not shown to you: the reader omitted them to save space ...] (or \
+"(earlier part of the conversation not shown)") means that YOU are not shown that part. It says nothing about the \
+delivered file, which is complete: never mark a requirement as not met, or a file as truncated or unfinished, because of \
+such a line. Judge from what you can see, and say in "notes" if the part you cannot see stopped you from checking \
+something."""
 
 
 @dataclass
@@ -42,8 +50,19 @@ class Verdict:
     requirements: list[dict]
 
 
+def _shown(text: str, limit: int) -> str:
+    """`text` if it fits, else its beginning and its end with a line that says plainly that the middle is not shown to the
+    grader (the file itself is whole)."""
+    if len(text) <= limit:
+        return text
+    head, tail = int(limit * 0.7), max(0, limit - int(limit * 0.7))
+    omitted = len(text) - head - tail
+    return (text[:head] + f"\n[... {omitted} characters of this file are not shown to you: the reader omitted them to save "
+            f"space; the delivered file is complete ...]\n" + (text[-tail:] if tail else ""))
+
+
 def read_deliverables(output_dir: str | Path) -> dict[str, str]:
-    """The text of the delivered files (clipped), by file name. Binary files are only named."""
+    """The text of the delivered files by file name (whole unless very long: see _shown). Binary files are only named."""
     out: dict[str, str] = {}
     folder = Path(output_dir) if output_dir else None
     if folder is None or not folder.is_dir():
@@ -58,9 +77,9 @@ def read_deliverables(output_dir: str | Path) -> dict[str, str]:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
-        shown = text[:min(MAX_FILE_CHARS, max(budget, 0))]
-        budget -= len(shown)
-        out[name] = shown + ("\n…(cut)" if len(shown) < len(text) else "")
+        shown = _shown(text, max(500, min(MAX_FILE_CHARS, budget)))
+        budget -= min(len(text), MAX_FILE_CHARS)
+        out[name] = shown
     return out
 
 
@@ -84,7 +103,8 @@ def parse_verdict(text: str) -> Verdict:
 
 async def judge_task(llm: LLMClient, request: str, dialogue: str, deliverables: dict[str, str]) -> Verdict:
     files = "\n\n".join(f"### {name}\n{text}" for name, text in deliverables.items()) or "(no files were delivered)"
-    dialogue = dialogue if len(dialogue) <= MAX_DIALOGUE_CHARS else "…(earlier part cut)\n" + dialogue[-MAX_DIALOGUE_CHARS:]
+    if len(dialogue) > MAX_DIALOGUE_CHARS:
+        dialogue = "(earlier part of the conversation not shown)\n" + dialogue[-MAX_DIALOGUE_CHARS:]
     try:
         response = await llm.chat([
             {"role": "system", "content": _SYSTEM},

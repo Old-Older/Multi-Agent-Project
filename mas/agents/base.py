@@ -103,7 +103,11 @@ class Agent(ABC):
         # returns later. Do not publish a stale success that changes the board.
         result = self._terminal_result(task) or result
         result.task_id = task.id                      # a result always belongs to its task
-        result.summary = _clip(result.summary, self.settings.result_summary_max_chars)
+        # A teammate's report is kept short for the member that reads it; the reply to a request the human made (a task
+        # with no parent) is what the human reads, and is allowed to be longer.
+        limit = (self.settings.lead_summary_max_chars if task.parent_id is None
+                 else self.settings.result_summary_max_chars)
+        result.summary = _clip(result.summary, limit)
         if not result.duration:
             result.duration = time.perf_counter() - started
         await self.bus.publish(Message(
