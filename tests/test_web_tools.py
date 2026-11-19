@@ -67,29 +67,8 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
     async def search(self, **kwargs):
         return await WebSearch("test-token").run(self.sandbox, **kwargs)
 
-    async def test_search_sends_provider_parameters_and_returns_original_source_urls(self):
-        payload = {"web": {"results": [
-            {"title": "Unsafe", "url": "file:///example"},
-            {"title": "来源 &amp; evidence", "url": "https://one.example/article#detail",
-             "description": "A &amp; B"},
-            {"title": "Extra", "url": "https://two.example"},
-        ]}}
-        self.responses.append(response(json.dumps(payload).encode(), content_type="application/json"))
-        result = await self.search(query=" 最近 新闻 ", count=1, freshness="pw")
-        self.assertTrue(result.ok, result.output)
-        self.assertEqual(json.loads(result.output), [
-            {"title": "来源 & evidence", "url": "https://one.example/article#detail", "description": "A & B"}])
-        request, = self.requests
-        self.assertEqual(request.url.host, "api.search.brave.com")
-        self.assertEqual(request.url.path, "/res/v1/web/search")
-        self.assertEqual(dict(request.url.params), {"q": "最近 新闻", "count": "1",
-                                                   "freshness": "pw", "text_decorations": "false"})
-        self.assertEqual(request.headers["x-subscription-token"], "test-token")
-        self.assertNotIn("test-token", str(request.url))
-
     async def test_search_empty_or_malformed_response(self):
-        for payload, valid in (({"type": "search"}, True), ({"web": {"results": []}}, True),
-                               ({"web": {"results": "wrong"}}, False), ([], False), ({}, False)):
+        for payload, valid in (({"results": []}, True), ({"results": "wrong"}, False), ([], False), ({}, False)):
             with self.subTest(payload=payload):
                 self.responses.append(response(json.dumps(payload).encode()))
                 result = await self.search(query="topic")
@@ -109,7 +88,7 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
         self.keyless.assert_not_called()
 
     async def test_gzip_search_and_html_page(self):
-        payload = {"web": {"results": [{"title": "News", "url": "https://one.example/story"}]}}
+        payload = {"results": [{"title": "News", "url": "https://one.example/story"}]}
         self.responses.append(response(gzip.compress(json.dumps(payload).encode()),
                                        content_type="application/json", **{"Content-Encoding": "gzip"}))
         result = await self.search(query="news")
@@ -167,9 +146,9 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(result.ok)
             self.assertIn(expected, logs.output[0])
             self.assertNotIn("test-token", result.output + "".join(logs.output))
-        self.assertEqual([r.url.host for r in self.requests], ["api.search.brave.com"] * 3)
+        self.assertEqual([r.url.host for r in self.requests], ["api.deepseek.com"] * 3)
 
-    async def test_when_brave_cannot_answer_the_keyless_search_does(self):
+    async def test_when_deepseek_cannot_answer_the_keyless_search_does(self):
         self.keyless.side_effect = None
         self.keyless.return_value = [{"title": "Found &amp; kept", "url": "https://one.example/a", "description": "d"},
                                      {"title": "Unsafe", "url": "file:///etc/passwd", "description": ""}]
@@ -183,7 +162,7 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
         self.keyless.assert_called_with("q2", 3, "pw")
 
     async def test_a_repeated_search_is_answered_from_the_cache(self):
-        payload = {"web": {"results": [{"title": "A", "url": "https://one.example/a", "description": "d"}]}}
+        payload = {"results": [{"title": "A", "url": "https://one.example/a", "summary": "d"}]}
         self.responses.append(response(json.dumps(payload).encode(), content_type="application/json"))
         first = await self.search(query="  Chip  Outlook ", count=2)
         again = await self.search(query="chip outlook", count=2)               # same words, other spacing and case
@@ -219,7 +198,7 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
         first[0]["title"] = "changed"
         self.assertEqual(json.loads((await WebSearch("").run(self.sandbox, query="same")).output)[0]["title"], "T")
 
-    async def test_a_bad_brave_answer_is_an_error_not_a_reason_to_search_elsewhere(self):
+    async def test_a_bad_deepseek_answer_is_an_error_not_a_reason_to_search_elsewhere(self):
         self.responses.append(response(b"{not json"))
         result = await self.search(query="q")
         self.assertFalse(result.ok)
@@ -232,7 +211,7 @@ class WebToolsTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result.ok, result.output)
         self.assertEqual(json.loads(result.output)[0]["url"], "https://two.example")
         self.keyless.assert_called_once_with("Public records", 2, "")
-        self.assertEqual(self.requests, [])                           # nothing went to Brave
+        self.assertEqual(self.requests, [])                           # nothing went to DeepSeek
 
     async def test_when_no_engine_answers_the_error_says_what_to_do(self):
         result = await WebSearch("").run(self.sandbox, query="q")

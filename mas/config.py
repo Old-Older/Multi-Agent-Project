@@ -84,23 +84,22 @@ class Settings:
 
     # tools
     github_token: str = ""
-    search_api_key: str = ""
-    # Which search backs web_search. "auto": with the DeepSeek model, DeepSeek's own search (same key); with the HKGAI
-    # model, the search key SEARCH_API_KEY (the course's own). "deepseek", "key" (SEARCH_API_KEY only) and "keyless"
-    # force one. Whichever is chosen, a failing search falls back to the keyless one.
+    # Which service web_search and fetch_url may use besides this machine and the keyless search. "auto": DeepSeek's own
+    # search and fetch (same key) while the DeepSeek model is in use, nothing else (the HKGAI model: the course's search
+    # service is not known yet, so only the keyless search). "deepseek" forces DeepSeek's, "keyless" forbids any key.
+    # Whichever is chosen, a search that cannot be answered falls back to the keyless one.
     search_provider: str = "auto"
 
     def __post_init__(self) -> None:
-        if self.search_provider not in ("auto", "deepseek", "key", "keyless"):
-            raise ValueError(f"search_provider must be auto, deepseek, key or keyless, not {self.search_provider!r}")
+        if self.search_provider not in ("auto", "deepseek", "keyless"):
+            raise ValueError(f"search_provider must be auto, deepseek or keyless, not {self.search_provider!r}")
 
-    def search_credentials(self) -> tuple[str, str]:
-        """(DeepSeek key, search key) that web_search may use: each is empty when the setting does not allow it.
-        The DeepSeek key is never used for search while the HKGAI model is the one in use."""
+    def deepseek_search_key(self) -> str:
+        """The DeepSeek key that web_search and fetch_url may use, or "" when the setting does not allow it. It is never
+        used for search while the HKGAI model is the one in use."""
         mode = self.search_provider
-        deepseek = self.deepseek_api_key if mode == "deepseek" or (mode == "auto" and self.llm_provider == "deepseek") else ""
-        key = self.search_api_key if mode in ("auto", "key", "deepseek") else ""
-        return deepseek, key
+        allowed = mode == "deepseek" or (mode == "auto" and self.llm_provider == "deepseek")
+        return self.deepseek_api_key if allowed else ""
 
     @property
     def memory_dir(self) -> Path:
@@ -127,7 +126,6 @@ class Settings:
             "deepseek_model": os.getenv("DEEPSEEK_MODEL"),
             "deepseek_thinking": os.getenv("DEEPSEEK_THINKING"),
             "github_token": os.getenv("GITHUB_TOKEN"),
-            "search_api_key": os.getenv("SEARCH_API_KEY"),
             "search_provider": os.getenv("SEARCH_PROVIDER"),
         }
         values = {k: v for k, v in env.items() if v}

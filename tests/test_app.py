@@ -125,7 +125,8 @@ class WiringTest(TmpDirTest):
     def test_build_tools_builds_every_tool_a_role_names(self):
         configured = {name: list(role.tool_names) for name, role in ROLES.items()}
         with self.assertNoLogs("mas.app", level="WARNING"):
-            tools = {name: build_tools(role, replace(self.settings, search_api_key="key")) for name, role in ROLES.items()}
+            tools = {name: build_tools(role, replace(self.settings, llm_provider="deepseek", deepseek_api_key="key"))
+                     for name, role in ROLES.items()}
         self.assertEqual([t.name for t in tools["coder"]],
                          ["read_file", "write_file", "delete_file", "list_files", "run_python", "git"])
         self.assertEqual([t.name for t in tools["researcher"]],
@@ -134,13 +135,16 @@ class WiringTest(TmpDirTest):
         self.assertEqual({name: role.tool_names for name, role in ROLES.items()}, configured)
 
     def test_the_keys_in_the_settings_reach_the_tools_that_need_them(self):
-        settings = replace(self.settings, search_api_key="brave-key", github_token="gh-token")
-        role = replace(ROLES["coder"], tool_names=["web_search", "git", "run_python"])
-        search, git, python = build_tools(role, settings)
-        self.assertEqual(search._api_key, "brave-key")
+        settings = replace(self.settings, llm_provider="deepseek", deepseek_api_key="ds-key", github_token="gh-token")
+        role = replace(ROLES["coder"], tool_names=["web_search", "fetch_url", "git", "run_python"])
+        search, fetch, git, python = build_tools(role, settings)
+        self.assertEqual((search._deepseek_key, fetch._deepseek_key), ("ds-key", "ds-key"))
         self.assertEqual(git._github_token, "gh-token")
         self.assertTrue(git.requires_approval)                      # a push waits for the human
         self.assertFalse(python.requires_approval)
+        # With the HKGAI model the DeepSeek key is not used for search or fetch, even if it is configured.
+        search, fetch, _, _ = build_tools(role, replace(settings, llm_provider="hkgai"))
+        self.assertEqual((search._deepseek_key, fetch._deepseek_key), ("", ""))
 
     def test_the_early_stop_nudges_default_to_on_and_the_environment_can_turn_them_off(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -155,7 +159,7 @@ class WiringTest(TmpDirTest):
         role = replace(ROLES["researcher"], tool_names=["fetch_url", "web_search"])
         with self.assertNoLogs("mas.app", level="WARNING"):
             with self.assertLogs("mas.app", level="INFO") as logs:
-                tools = build_tools(role, replace(self.settings, search_api_key=""))
+                tools = build_tools(role, self.settings)
         self.assertEqual([t.name for t in tools], ["fetch_url", "web_search"])
         self.assertEqual(len(logs.records), 1)
         self.assertIn("keyless", logs.output[0])

@@ -275,7 +275,7 @@ its workspace mounted) is the planned stronger isolation and is not implemented.
 | `read_file`, `write_file`, `list_files` | read, create or overwrite, list | relative paths inside the workspace |
 | `delete_file` | delete a file | needs the human's approval |
 | `run_python` | run a script or a module (`unittest`, `pytest`) in the workspace | timeout (default 60 s), output returned with the exit code |
-| `web_search` | titles, URLs and snippets | Brave Search if a key is set; otherwise, or if Brave refuses or is down, a keyless stop-gap (`ddgs`, one call): 12 s deadline, and after 3 failures in a row it stands down for 30 s and tells the member to carry on without it. A real search API replaces it |
+| `web_search` | titles, URLs and snippets | DeepSeek's search API when the DeepSeek model is used (same key; `freshness` becomes an `after:` operator, an English query gets `lang:en`, the query is cut to 128 characters); otherwise, or if DeepSeek cannot answer (401, 402, 429, server or network trouble), a keyless stop-gap (`ddgs`, one call): 12 s deadline, and after 3 failures in a row it stands down for 30 s and tells the member to carry on without it. A real search API replaces it |
 | `fetch_url` | the text of a public web page | public HTTP(S) only: private and mixed addresses are refused on every redirect hop, 20 s and 1 MiB limits, text, HTML, JSON and XML |
 | `git` | `init`, `clone`, `status`, `diff`, `add`, `commit`, `log`, `push` | every call needs the human's approval; the GitHub token is sent only to github.com over HTTPS and kept out of the output |
 
@@ -344,6 +344,6 @@ data/mas.log               the log (stack traces of internal errors)
   but not the earlier requests of the conversation.
 - The unattended `AutoResponder` answers every question with a fixed default, so it cannot stand in for a
   human who has real preferences (for example an investor's risk tolerance).
-- Keyless web search is a stop-gap: it depends on third-party engines that rate-limit or change, so some searches fail (about 2 in 8 in a test on one network). It is built so that a failing search costs seconds, not a run; a real search API (`SEARCH_API_KEY`) is the way to make research reliable.
+- Keyless web search is a stop-gap: it depends on third-party engines that rate-limit or change, so some searches fail (about 2 in 8 in a test on one network). It is built so that a failing search costs seconds, not a run; DeepSeek's search API (with the DeepSeek model) is the way to make research reliable. With the HKGAI model the course's search service is not known yet, so only the keyless search is used.
 - Recall is keyword-based, and lessons are only learned from failures.
 - No end-to-end evaluation on a test set has been run with a real model yet (see the report).

@@ -50,7 +50,7 @@
 - **记忆。** 每个 agent 有一份 JSONL 记录，保存任务和失败后总结的教训。类似的任务开始时会召回相关教训；
   决定把活交给谁的 agent 还能看到每位队友的近期表现简介。
 - **隔离。** 每个 agent 有自己的工作区目录（`workspaces/<agent>/`），文件只能通过 Router 在 agent 之间流转。
-- **工具。** `read_file`、`write_file`、`delete_file`、`list_files`、`run_python`、`web_search`（给了 key 就用 Brave Search，否则用无需 key 的应急搜索）、
+- **工具。** `read_file`、`write_file`、`delete_file`、`list_files`、`run_python`、`web_search`（用 DeepSeek 模型时走 DeepSeek 自己的搜索，否则用无需 key 的应急搜索）、
   `fetch_url`、`git`（clone、add、commit、push，每次调用都需要你批准）。
 - **LLM。** 课程的 HKGAI 网关（默认）或 DeepSeek，这是课程允许的两种，都是兼容 OpenAI 接口的对话服务。
   课程禁止使用 OpenAI 和 Anthropic 的 API。
@@ -103,7 +103,7 @@
 - Python **3.10 或更高**
 - `git` 在 `PATH` 里（仅当 agent 使用 git 工具时需要）
 - 课程发放的 **HKGAI API key**，或你自己的 **DeepSeek API key**（真实运行需要；演示模式不需要）
-- 可选：[Brave Search](https://brave.com/search/api/) 的 API key（让 `web_search` 结果更好，不配也能搜索），以及推送代码用的 GitHub token
+- 用 DeepSeek 模型时，`web_search` 和 `fetch_url` 用同一把 key 走 DeepSeek 的搜索和抓取接口（每 1000 次约 5 元），不用另外配置；推送代码用的 GitHub token
 
 ```bash
 git clone https://github.com/Old-Older/Multi-Agent-Project.git
@@ -126,7 +126,7 @@ cp .env.example .env                # 然后编辑 .env
 | `DEEPSEEK_API_KEY` | 使用 `deepseek` 的真实运行 | 你的 DeepSeek key |
 | `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` | 可选 | 默认 `https://api.deepseek.com` 和 `deepseek-chat` |
 | `DEEPSEEK_THINKING` | 可选 | `off`（默认）要求 DeepSeek 不先思考再回答：更快，而且 agent 每一步都在调用工具；`default` 交给服务自己决定 |
-| `SEARCH_API_KEY` | 可选 | Brave Search 令牌。没有它 `web_search` 用无 key 的应急搜索（通过 `ddgs` 走 DuckDuckGo 等：不需要 key 和账号，但更慢也不可靠，有些搜索会失败，agent 会绕过继续做）；有它就优先用 Brave，Brave 拒绝或不可用时自动改用无 key 搜索 |
+| `SEARCH_PROVIDER` | 可选 | `auto`（默认）：用 DeepSeek 模型时，`web_search` 走 DeepSeek 的搜索接口，`fetch_url` 在网站拒绝本机时（403、429 等）改走 DeepSeek 的抓取接口，都用 `DEEPSEEK_API_KEY`；用 HKGAI 模型时只用无 key 的应急搜索（通过 `ddgs` 走 DuckDuckGo 等：不需要 key 和账号，但更慢也不可靠，有些搜索会失败，agent 会绕过继续做）。`deepseek`：即使用 HKGAI 模型也用 DeepSeek 的；`keyless`：不使用任何 key。DeepSeek 答不了的搜索自动改用无 key 搜索 |
 | `GITHUB_TOKEN` | `git push` 到 GitHub | 只会通过 HTTPS 发给 github.com |
 
 ## 如何启动

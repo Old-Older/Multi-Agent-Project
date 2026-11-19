@@ -1,4 +1,5 @@
-"""Which search web_search uses (DeepSeek's own with the DeepSeek model, the course's key with HKGAI) and how."""
+"""What web_search and fetch_url may use besides this machine: DeepSeek's own search and fetch with the DeepSeek model,
+nothing keyed with the HKGAI model; and how they are used."""
 from __future__ import annotations
 
 import asyncio
@@ -11,16 +12,15 @@ from unittest.mock import Mock, patch
 
 import httpx
 
-from mas.app import build_tools
 from mas.agents.roles import RoleConfig
+from mas.app import build_tools
 from mas.config import Settings
 from mas.sandbox.base import Sandbox
 from mas.tools import web
-from mas.tools.web import WebSearch
+from mas.tools.web import FetchURL, WebSearch
 from tests.test_web_tools import response
 
 DS = "ds-secret-key"
-BRAVE = "brave-secret-key"
 
 
 def result_row(**fields):
@@ -31,31 +31,25 @@ def result_row(**fields):
 
 
 class WhichKeyTest(unittest.TestCase):
-    def creds(self, llm, provider="auto", deepseek=DS, search=BRAVE):
-        return Settings(llm_provider=llm, search_provider=provider, deepseek_api_key=deepseek,
-                        search_api_key=search).search_credentials()
+    def key(self, llm, provider="auto", deepseek=DS):
+        return Settings(llm_provider=llm, search_provider=provider, deepseek_api_key=deepseek).deepseek_search_key()
 
-    def test_with_the_deepseek_model_the_search_is_deepseeks_own(self):
-        self.assertEqual(self.creds("deepseek"), (DS, BRAVE))                 # the search key stays as the fallback
-        self.assertEqual(self.creds("deepseek", search=""), (DS, ""))
+    def test_with_the_deepseek_model_search_and_fetch_may_use_deepseeks_own(self):
+        self.assertEqual(self.key("deepseek"), DS)
+        self.assertEqual(self.key("deepseek", deepseek=""), "")
 
-    def test_with_the_hkgai_model_it_is_the_course_search_key_and_never_the_deepseek_key(self):
-        self.assertEqual(self.creds("hkgai"), ("", BRAVE))
-        self.assertEqual(self.creds("hkgai", search=""), ("", ""))             # nothing: the keyless search
-        self.assertEqual(self.creds("hkgai", deepseek=""), ("", BRAVE))
-
-    def test_without_a_deepseek_key_there_is_nothing_to_use(self):
-        self.assertEqual(self.creds("deepseek", deepseek="", search=""), ("", ""))
+    def test_with_the_hkgai_model_the_deepseek_key_is_never_used(self):
+        self.assertEqual(self.key("hkgai"), "")
 
     def test_the_setting_can_force_one(self):
-        self.assertEqual(self.creds("hkgai", "deepseek"), (DS, BRAVE))
-        self.assertEqual(self.creds("deepseek", "key"), ("", BRAVE))
-        self.assertEqual(self.creds("deepseek", "keyless"), ("", ""))
-        self.assertEqual(self.creds("hkgai", "keyless"), ("", ""))
+        self.assertEqual(self.key("hkgai", "deepseek"), DS)
+        self.assertEqual(self.key("deepseek", "keyless"), "")
+        self.assertEqual(self.key("hkgai", "keyless"), "")
 
     def test_a_setting_that_makes_no_sense_is_refused(self):
-        with self.assertRaises(ValueError):
-            Settings(search_provider="google")
+        for bad in ("google", "key", "brave"):
+            with self.assertRaises(ValueError):
+                Settings(search_provider=bad)
 
     def test_the_environment_can_choose(self):
         with patch.dict(os.environ, {"SEARCH_PROVIDER": "keyless"}, clear=True):
@@ -63,13 +57,11 @@ class WhichKeyTest(unittest.TestCase):
         with patch.dict(os.environ, {}, clear=True):
             self.assertEqual(Settings.from_env().search_provider, "auto")
 
-    def test_the_tool_is_built_with_the_keys_the_rule_allows(self):
-        role = RoleConfig("r", "R", "researches", "", ["web_search"])
-        for llm, expected in (("deepseek", {"api_key": BRAVE, "deepseek_key": DS}),
-                              ("hkgai", {"api_key": BRAVE, "deepseek_key": ""})):
-            with patch.object(WebSearch, "__init__", return_value=None) as construct:
-                build_tools(role, Settings(llm_provider=llm, deepseek_api_key=DS, search_api_key=BRAVE))
-            construct.assert_called_once_with(**expected)
+    def test_the_tools_are_built_with_the_key_the_rule_allows(self):
+        role = RoleConfig("r", "R", "researches", "", ["web_search", "fetch_url"])
+        for llm, expected in (("deepseek", DS), ("hkgai", "")):
+            search, fetch = build_tools(role, Settings(llm_provider=llm, deepseek_api_key=DS))
+            self.assertEqual((search._deepseek_key, fetch._deepseek_key), (expected, expected), llm)
 
 
 class DeepSeekSearchTest(unittest.IsolatedAsyncioTestCase):
@@ -100,8 +92,8 @@ class DeepSeekSearchTest(unittest.IsolatedAsyncioTestCase):
         self.responses.append(response(json.dumps({"results": list(rows)}).encode(), status=status,
                                        content_type="application/json"))
 
-    async def search(self, deepseek=DS, brave="", **kwargs):
-        return await WebSearch(api_key=brave, deepseek_key=deepseek).run(self.sandbox, **kwargs)
+    async def search(self, deepseek=DS, **kwargs):
+        return await WebSearch(deepseek_key=deepseek).run(self.sandbox, **kwargs)
 
     async def test_the_request_goes_to_deepseek_only_with_the_key_in_a_header(self):
         self.answer(result_row())
@@ -152,28 +144,18 @@ class DeepSeekSearchTest(unittest.IsolatedAsyncioTestCase):
             await self.search(query=text)
             self.assertEqual(json.loads(self.requests[-1].content)["query"], sent)
 
-    async def test_when_deepseek_cannot_answer_the_next_search_does_and_the_key_goes_nowhere_else(self):
-        brave_answer = {"web": {"results": [{"title": "From Brave", "url": "https://two.example/b", "description": "d"}]}}
+    async def test_when_deepseek_cannot_answer_the_keyless_search_does_and_the_key_is_not_disclosed(self):
+        self.keyless.side_effect = None
+        self.keyless.return_value = [{"title": "Keyless", "url": "https://one.example/k", "description": "d"}]
         for n, failure in enumerate((response(status=401), response(status=402), response(status=429),
                                      response(status=500), httpx.ConnectError("down"))):
             self.responses.append(failure)
-            self.responses.append(response(json.dumps(brave_answer).encode(), content_type="application/json"))
             with self.assertLogs("mas.tools.web", level="WARNING") as logs:
-                result = await self.search(query=f"q{n}", brave=BRAVE)
-            self.assertEqual(json.loads(result.output)[0]["title"], "From Brave", result.output)
+                result = await self.search(query=f"q{n}")
+            self.assertEqual(json.loads(result.output)[0]["title"], "Keyless", result.output)
             self.assertNotIn(DS, "".join(logs.output) + result.output)
-            self.assertEqual([r.url.host for r in self.requests[-2:]], ["api.deepseek.com", "api.search.brave.com"])
-            self.assertNotIn(DS, str(self.requests[-1].headers) + str(self.requests[-1].url))
-            self.assertNotIn(BRAVE, str(self.requests[-2].headers) + str(self.requests[-2].url))
-
-    async def test_without_a_search_key_it_falls_to_the_keyless_search(self):
-        self.keyless.side_effect = None
-        self.keyless.return_value = [{"title": "Keyless", "url": "https://one.example/k", "description": "d"}]
-        self.responses.append(response(status=429))
-        with self.assertLogs("mas.tools.web", level="WARNING"):
-            result = await self.search(query="q")
-        self.assertEqual(json.loads(result.output)[0]["title"], "Keyless")
-        self.keyless.assert_called_once()
+            self.assertEqual(self.requests[-1].url.host, "api.deepseek.com")
+        self.assertEqual(self.keyless.call_count, 5)
 
     async def test_an_empty_answer_is_an_answer_and_a_bad_one_is_an_error(self):
         self.answer()
@@ -205,6 +187,135 @@ class DeepSeekSearchTest(unittest.IsolatedAsyncioTestCase):
         result = await self.search(deepseek="", query="q")
         self.assertTrue(result.ok)
         self.assertEqual(self.requests, [])
+
+
+class DeepSeekFetchTest(unittest.IsolatedAsyncioTestCase):
+    """fetch_url reads the page from this machine; a site that refuses it is tried through DeepSeek's fetch API."""
+
+    PAGE = "https://one.example/report"
+
+    async def asyncSetUp(self):
+        self.sandbox = Mock(spec=Sandbox)
+        self.requests, self.responses = [], []
+        self.records = {"one.example": ["1.1.1.1"], "private.example": ["10.0.0.5"]}
+        client_class = httpx.AsyncClient
+
+        def serve(request):
+            self.requests.append(request)
+            item = self.responses.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        def make_client(**kwargs):
+            return client_class(transport=httpx.MockTransport(serve), **kwargs)
+
+        async def resolve(host, port, **kwargs):
+            return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", (ip, port)) for ip in self.records[host]]
+
+        web._FETCH_CACHE.clear()
+        self.addCleanup(web._FETCH_CACHE.clear)
+        for patcher in (patch("mas.tools.web.httpx.AsyncClient", side_effect=make_client),
+                        patch.object(asyncio.get_running_loop(), "getaddrinfo", side_effect=resolve)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def deepseek_page(self, content="# Valuation\n\nForward P/E 12.1x", title="Key statistics", status=200):
+        body = json.dumps({"title": title, "content": content}).encode()
+        self.responses.append(response(body, status=status, content_type="application/json"))
+
+    async def fetch(self, key=DS, **kwargs):
+        return await FetchURL(deepseek_key=key).run(self.sandbox, url=kwargs.pop("url", self.PAGE), **kwargs)
+
+    def hosts(self):
+        return [r.headers.get("host") or r.url.host for r in self.requests]
+
+    async def test_a_page_that_loads_here_is_not_sent_to_deepseek(self):
+        self.responses.append(response(b"<title>T</title><p>text</p>"))
+        result = await self.fetch()
+        self.assertTrue(result.ok, result.output)
+        self.assertEqual(json.loads(result.output)["text"], "text")
+        self.assertEqual(len(self.requests), 1)
+        self.assertNotIn("api.deepseek.com", str(self.requests[0].headers.get("host")))
+
+    async def test_a_page_the_site_refuses_is_read_through_deepseek(self):
+        self.responses.append(response(status=403))
+        self.deepseek_page()
+        result = await self.fetch()
+        self.assertTrue(result.ok, result.output)
+        self.assertEqual(json.loads(result.output), {"url": self.PAGE, "title": "Key statistics",
+                                                    "text": "# Valuation\n\nForward P/E 12.1x",
+                                                    "truncated": False, "via": "deepseek"})
+        request = self.requests[1]
+        self.assertEqual((request.url.host, request.url.path, request.method), ("api.deepseek.com", "/v1/tools/fetch", "POST"))
+        self.assertEqual(request.headers["authorization"], f"Bearer {DS}")
+        self.assertEqual(json.loads(request.content), {"url": self.PAGE})
+        self.assertNotIn(DS, result.output)
+
+    async def test_which_refusals_are_retried_through_deepseek(self):
+        for code in (401, 403, 406, 429, 451, 500, 503):
+            web._FETCH_CACHE.clear()
+            self.responses.append(response(status=code))
+            self.deepseek_page(content=f"page after {code}")
+            result = await self.fetch()
+            self.assertTrue(result.ok, f"{code}: {result.output}")
+            self.assertEqual(json.loads(result.output)["via"], "deepseek")
+        for code in (404, 410, 400):
+            web._FETCH_CACHE.clear()
+            before = len(self.requests)
+            self.responses.append(response(status=code))
+            result = await self.fetch()
+            self.assertFalse(result.ok)
+            self.assertIn(f"HTTP {code}", result.output)
+            self.assertEqual(len(self.requests), before + 1)                    # not tried through DeepSeek: it is not there
+
+    async def test_when_deepseek_cannot_read_it_either_the_first_answer_stands(self):
+        for failure in (response(b'{"error": {"message": "failed to fetch"}}', status=404), response(status=401),
+                        response(status=402), response(status=429), response(status=500), httpx.ConnectError("down"),
+                        response(b"not json"), response(b'{"title": "t", "content": "  "}'), response(b"[]")):
+            web._FETCH_CACHE.clear()
+            self.responses.extend([response(status=403), failure])
+            result = await self.fetch()
+            self.assertFalse(result.ok)
+            self.assertIn("page returned HTTP 403", result.output)
+            self.assertNotIn(DS, result.output)
+
+    async def test_without_a_key_nothing_goes_to_deepseek(self):
+        self.responses.append(response(status=403))
+        result = await self.fetch(key="")
+        self.assertFalse(result.ok)
+        self.assertIn("HTTP 403", result.output)
+        self.assertEqual(len(self.requests), 1)
+
+    async def test_other_failures_are_not_sent_to_deepseek(self):
+        result = await self.fetch(url="https://private.example/x")                  # an address this machine refuses
+        self.assertFalse(result.ok)
+        self.assertEqual(self.requests, [])
+        self.responses.append(response(b"%PDF", content_type="application/pdf"))
+        result = await self.fetch(url="https://one.example/file.pdf")               # not a text page
+        self.assertFalse(result.ok)
+        self.assertEqual(len(self.requests), 1)
+
+    async def test_the_page_is_cut_to_max_chars_and_cached(self):
+        self.responses.append(response(status=403))
+        self.deepseek_page(content="x" * 500)
+        result = await self.fetch(max_chars=100)
+        page = json.loads(result.output)
+        self.assertEqual((len(page["text"]), page["truncated"]), (100, True))
+        again = await self.fetch(max_chars=100)
+        self.assertEqual(again.output, result.output)
+        self.assertEqual(len(self.requests), 2)                                     # one try here, one through DeepSeek
+
+    async def test_a_bad_key_is_refused_before_anything_is_sent_to_deepseek(self):
+        self.responses.append(response(status=403))
+        result = await self.fetch(key="bad key")
+        self.assertFalse(result.ok)
+        self.assertIn("invalid DEEPSEEK_API_KEY", result.output)
+        self.assertEqual(len(self.requests), 1)
+
+    def test_a_fetch_that_may_go_through_deepseek_is_given_the_time_for_it(self):
+        self.assertEqual(FetchURL().timeout, web._TIMEOUT)
+        self.assertEqual(FetchURL(deepseek_key=DS).timeout, web._FETCH_WITH_FALLBACK_TIMEOUT)
 
 
 if __name__ == "__main__":

@@ -58,7 +58,7 @@ its own workspace and its own memory.
 - **Isolation.** Every agent has its own workspace directory (`workspaces/<agent>/`); files only move
   between agents through the Router.
 - **Tools.** `read_file`, `write_file`, `delete_file`, `list_files`, `run_python`, `web_search`
-  (Brave Search when you give it a key, otherwise a keyless stop-gap search), `fetch_url`, `git` (clone, add, commit, push; each call needs your approval).
+  (DeepSeek's own search when the DeepSeek model is used, otherwise a keyless stop-gap search), `fetch_url` (reads the page here; a site that refuses it is read through DeepSeek's fetch API), `git` (clone, add, commit, push; each call needs your approval).
 - **LLM.** The course HKGAI gateway (default) or DeepSeek, the two the course allows; both are
   OpenAI-compatible chat endpoints. OpenAI and Anthropic APIs are not allowed.
 
@@ -110,7 +110,7 @@ output, transcripts, log). Both are git-ignored.
 - Python **3.10 or newer**
 - `git` on your `PATH` (only if agents use the git tool)
 - An **HKGAI API key** from the course, or a **DeepSeek API key** (for real runs; the demo needs none)
-- Optional: a [Brave Search](https://brave.com/search/api/) API key for better `web_search` results
+- With the DeepSeek model, `web_search` and `fetch_url` use DeepSeek's search and fetch APIs with the same key (about 5 yuan per 1000 requests); nothing else to set up
   (search works without one), and a GitHub token for pushing
 
 ```bash
@@ -134,7 +134,7 @@ cp .env.example .env                # then edit .env
 | `DEEPSEEK_API_KEY` | real runs with `deepseek` | your DeepSeek key |
 | `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL` | optional | default `https://api.deepseek.com` and `deepseek-chat` |
 | `DEEPSEEK_THINKING` | optional | `off` (default) asks DeepSeek not to think before answering: faster, and the agents call tools at every step; `default` leaves it to the service |
-| `SEARCH_API_KEY` | optional | Brave Search token. Without it `web_search` uses a keyless stop-gap (DuckDuckGo and others via `ddgs`: no key or account, but slower and unreliable, so some searches fail and the agents carry on without them); with it Brave is used first, and the stop-gap takes over if Brave refuses or is down |
+| `SEARCH_PROVIDER` | optional | `auto` (default): with the DeepSeek model, `web_search` uses DeepSeek's search API and `fetch_url` falls back to DeepSeek's fetch API for pages a site refuses (403, 429, ...), both with `DEEPSEEK_API_KEY`; with the HKGAI model only a keyless stop-gap search (DuckDuckGo and others via `ddgs`: no key or account, but slower and unreliable, so some searches fail and the agents carry on without them). `deepseek` uses DeepSeek's even with the HKGAI model; `keyless` never uses a key. A search DeepSeek cannot answer falls back to the keyless one |
 | `GITHUB_TOKEN` | `git push` to GitHub | sent only to github.com over HTTPS |
 
 ## Running it
