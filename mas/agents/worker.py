@@ -93,7 +93,10 @@ The explicit requirements of the request (quantities, lengths, formats, what mus
 when there are any. Give each teammate the ones that concern its part. Before you hand in, check every one against the FINAL
 files yourself (read them; count with run_python when it can be counted; do not trust a number a teammate printed) and report
 each as {"id", "status": "met" | "not_met" | "unverified", "evidence"} in `requirements` of your final JSON. Fix what is not
-met, and say plainly what is not: it is shown to the human. Also check any size or count you asked a teammate to meet
+met, and say plainly what is not: it is shown to the human. A requirement that begins "Consult the requester about" is met by
+ONE question to the human (ask_human) before you hand any work out: put every topic in that one question and say what you would
+otherwise assume (your defaults), so that a short answer is enough; do not ask again about the same things. The system
+records whether you asked; you need not report it. Also check any size or count you asked a teammate to meet
 (a length, a number of items): add an entry of your own for it, with id "OWN1", "OWN2", ... and a "requirement" text. A
 size or count you set yourself is a goal, not a requirement: if two edits have not brought a file within it, stop, report the
 real number as not met, and go on; do not keep trimming.
@@ -140,6 +143,9 @@ class _Run:
     by_tool: dict[str, list[float]] = field(default_factory=dict)      # tool -> [calls, seconds]
     seen: dict[str, int] = field(default_factory=dict)                  # successful research call -> its step
     research_calls: int = 0
+    questions_asked: int = 0          # questions this member put to the human
+    first_question: str = ""
+    consult_gate_step: int = 0        # the step in which the first delegation was held back until the human was asked
     human_qa: list[tuple[str, str]] = field(default_factory=list)      # what the human was asked and answered or added
     req_pushes: int = 0               # how often the lead was sent back to check the requirements
     req_refreshed: bool = False       # the list was extended with what the human said
@@ -237,6 +243,7 @@ class WorkerAgent(Agent):
         result.duration = time.perf_counter() - started
         result.metrics = run.metrics()
         if self._leads(task):
+            self._settle_consult(task, run, result)
             self._add_unmet_requirements(task, result)
         result.summary = _clip(result.summary, self.settings.lead_summary_max_chars if self._leads(task)
                                else self.settings.result_summary_max_chars)
@@ -588,9 +595,11 @@ class WorkerAgent(Agent):
                    "Write each requirement as one short, checkable sentence in the language of the request: quantities and "
                    "sizes (counts, lengths, number of items), formats and file types, the audience, what must be covered or "
                    "included, constraints and exclusions. Take them only from the text: do not invent any and do not restate "
-                   "the goal in general terms, and leave out what is only permitted or optional (for example 'you can ask me') and how "
-                   "to go about the work. At most {n}. Reply with a JSON array of strings and nothing else; [] if the "
-                   "request states none.")
+                   "the goal in general terms, and leave out how to go about the work. If the request invites the requester to be "
+                   "consulted ('you can ask me', 'you can discuss X with me', 'if you need ..., ask me'), write ONE "
+                   "requirement for all such invitations, starting with the words 'Consult the requester about' and naming "
+                   "the topics: asking the requester once meets it. At most {n}. Reply with a JSON array of strings and "
+                   "nothing else; [] if the request states none.")
 
     async def _extract_requirements(self, task: Task, run: _Run, extra: list[tuple[str, str]] | None = None) -> list[str]:
         """One model call: what the request explicitly requires (and, with `extra`, what the human said when asked).
@@ -678,8 +687,9 @@ class WorkerAgent(Agent):
         if not items:
             return None
         reported = {e["id"]: e for e in parsed.requirements}
-        missing = [k for k in items if k not in reported]
-        unmet = [k for k in items if reported.get(k, {}).get("status") == "not_met"]
+        consult = set(self._consult_ids(task))                     # settled by the system: asking the human is what meets it
+        missing = [k for k in items if k not in reported and k not in consult]
+        unmet = [k for k in items if reported.get(k, {}).get("status") == "not_met" and k not in consult]
         if not missing and not unmet:
             return None
         run.req_pushes += 1
@@ -691,6 +701,45 @@ class WorkerAgent(Agent):
                 f"{listing}\nFix what is not met (have a teammate redo a part if needed), then return the final result JSON "
                 'again with `requirements`: [{"id": "REQ1", "status": "met" | "not_met" | "unverified", "evidence": "..."}] '
                 "for every requirement. What cannot be met is shown to the human, so say so plainly.")
+
+    _CONSULT = "consult the requester"
+
+    def _consult_ids(self, task: Task) -> list[str]:
+        """The requirements that invite the requester to be consulted (the extraction writes them as one item)."""
+        return [k for k, text in self._requirements_dict(task).items() if text.lower().startswith(self._CONSULT)]
+
+    def _human_asked(self, task: Task, run: _Run) -> str:
+        """The first question put to the human in this request by this member or any teammate, or "" when none was."""
+        if run.questions_asked:
+            return run.first_question
+        for entry in self.router.board(task.session_id).hitl.values():
+            if entry.root_id == task.root_id:
+                return " ".join(entry.question.split())[:160]
+        return ""
+
+    def _consult_gate(self, task: Task, run: _Run) -> str:
+        """The lead is invited to consult the human and has not: its first delegation is held back, once, so that it asks ONE
+        question before the work is shaped by assumptions. Every call of that reply is held; the next reply is not."""
+        if not self._leads(task) or run.consult_gate_step not in (0, run.steps) or self._human_asked(task, run):
+            return ""
+        ids = self._consult_ids(task)
+        if not ids:
+            return ""
+        run.consult_gate_step = run.steps
+        topics = self._requirements_dict(task)[ids[0]]
+        return (f"Not yet. The request invites you to consult the human ({topics}). Before you hand out work, ask ONE question "
+                "now with ask_human that covers every topic, and give your own default for each so that a short answer is "
+                "enough; do not ask again about the same things. Then hand the work out.")
+
+    def _settle_consult(self, task: Task, run: _Run, result: TaskResult) -> None:
+        """The system, not the lead, says whether the invitation to consult was taken up: it was if the human was asked."""
+        ids = self._consult_ids(task)
+        if not ids or not result.success:
+            return
+        asked = self._human_asked(task, run)
+        result.requirements = [e for e in result.requirements if e["id"] not in ids] + [
+            {"id": k, "status": "met" if asked else "not_met", "requirement": "",
+             "evidence": f"the human was asked: {asked}" if asked else "the human was not asked anything"} for k in ids]
 
     def _add_unmet_requirements(self, task: Task, result: TaskResult) -> None:
         """What the lead reported as not met or unverified goes into the reply the human reads, and into open_issues."""
@@ -846,6 +895,8 @@ class WorkerAgent(Agent):
         if answer == CANCELLED_ANSWER or self.is_cancelled(task):
             return {"cancelled": True}
         run.human_qa.append((question.strip(), answer))
+        run.questions_asked += 1
+        run.first_question = run.first_question or " ".join(question.split())[:160]
         return {"ok": True, "output": answer}
 
     @staticmethod
@@ -913,6 +964,9 @@ class WorkerAgent(Agent):
         context = args.get("context") or ""
         if not isinstance(goal, str) or not goal.strip():
             return {"ok": False, "output": "missing argument goal"}
+        held = self._consult_gate(task, run)
+        if held:
+            return {"ok": False, "output": held}
         if not isinstance(files, list) or not isinstance(context, str):
             return {"ok": False, "output": "files must be an array and context a string"}
         left = self.router.time_left(task.root_id)
