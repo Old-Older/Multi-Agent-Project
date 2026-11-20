@@ -258,11 +258,30 @@ class LocalFileHandoffTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.sandboxes["coder"].read_text("inbox/data.json"), "{}")
         self.assertEqual(self.sandboxes["researcher"].read_text("brief.md"), "调研：中文内容\n第二行\n")   # the original stays
 
-    async def test_scripts_are_not_copied_back(self):
-        result = await self.ask_researcher({"brief.md": "b", "check.py": "print(1)", "run.sh": "ls", "tool.PY": "x"})
-        self.assertEqual(self.router.copy_back("coder", result), ["brief.md"])
-        self.assertFalse(self.sandboxes["coder"].exists("inbox/check.py"))
-        self.assertFalse(self.sandboxes["coder"].exists("inbox/tool.PY"))
+    async def test_code_is_copied_back_like_any_other_file(self):
+        """On the course test set the developer's app.py never reached the lead, which reported that nothing was built."""
+        result = await self.ask_researcher({"notes.md": "n", "app.py": "print(1)", "run.sh": "ls", "tool.PY": "x"},
+                                           artifacts=["notes.md", "app.py", "run.sh", "tool.PY", "__pycache__/app.pyc"])
+        self.sandboxes["researcher"].write_text("__pycache__/app.pyc", "compiled")
+        self.assertEqual(self.router.copy_back("coder", result), ["notes.md", "app.py", "run.sh", "tool.PY"])
+        self.assertEqual(self.sandboxes["coder"].read_text("inbox/app.py"), "print(1)")
+        self.assertFalse(self.sandboxes["coder"].exists("inbox/app.pyc"))
+
+    async def test_when_too_many_files_were_reported_the_teammates_own_helper_scripts_stay_behind_first(self):
+        files = {"app.py": "new", "check1.py": "c", "check2.py": "c", "notes.md": "n", "check3.py": "c", "test_app.py": "t"}
+        self.sandboxes["coder"].write_text("app.py", "old")
+
+        def build(task):
+            for name, text in files.items():
+                self.sandboxes["researcher"].write_text(name, text)
+            return TaskResult(task.id, True, "done", artifacts=list(files))
+        self.start_worker("researcher", build)
+        result = await self.dispatch("researcher", requester="coder", goal="Extend app.py and write test_app.py",
+                                     files=["app.py"])
+        # app.py was handed over and test_app.py is named in the goal: they come back before the scripts nobody asked for
+        self.assertEqual(self.router.copy_back("coder", result, limit=4), ["app.py", "notes.md", "check3.py", "test_app.py"])
+        self.assertEqual(self.sandboxes["coder"].read_text("inbox/app.py"), "new")
+        self.assertEqual(len(self.router.copy_back("coder", result)), 6)          # room for all of them
 
     async def test_only_the_last_files_are_copied_when_there_are_many(self):
         files = {f"part{n}.md": str(n) for n in range(1, 10)}

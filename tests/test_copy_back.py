@@ -78,10 +78,9 @@ class CopyBackTest(unittest.IsolatedAsyncioTestCase):
         sandbox = lead_box["sandbox"]
         self.assertTrue(sandbox.read_text("inbox/report.md").startswith("# Report"))
         self.assertEqual(len(sandbox.read_text("inbox/report.md")), len("# Report\n" + "long text " * 400))   # whole
-        self.assertFalse(sandbox.exists("inbox/check.py"))                    # the script stays with its author
+        self.assertEqual(sandbox.read_text("inbox/check.py"), "print('scratch')")     # code arrives too: it may be the result
         note = seen[0]["note"]
-        self.assertIn("now in your inbox/: report.md", note)
-        self.assertNotIn("check.py", note)
+        self.assertIn("now in your inbox/: report.md, check.py", note)
 
 
 if __name__ == "__main__":

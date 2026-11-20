@@ -51,7 +51,7 @@ _REVIEW_VERB = re.compile(
     r"^\W*(?!(?:write|draft|produce|create|build|prepare|compile|update|add|fix|revise|rewrite|make|generate|research|find"
     r"|summari[sz]e|analy[sz]e|apply|implement)\b)(?:\w+\W+){0,4}?(?:review|re-?check|check|verify|confirm|audit|sign-?off|approve)",
     re.IGNORECASE)
-_SCRIPT_SUFFIXES = (".py", ".sh", ".pyc")                   # a teammate's tools, not something to hand back
+_SCRIPT_SUFFIXES = (".py", ".sh", ".pyc")                   # code: needs no reviewer; a helper stays behind first
 _FILE_NAME = re.compile(r"(?<![\w/.-])[\w][\w.-]*\.(?:md|txt|py|json|html?|csv|tsv|pdf|docx?|xlsx?|pptx?|js|css|ipynb|ya?ml)\b",
                         re.IGNORECASE)
 
@@ -288,21 +288,35 @@ class Router:
         """Put the files a teammate reported into the inbox of whoever asked for the work, so that it can read them.
 
         Workspaces are private and a reply is cut after `result_summary_max_chars`: without this the requester sees
-        only the first lines of a long file and, to get more, has to ask the teammate to paste it. Scripts are left
-        out (they are the teammate's tools), as are files that are too large; at most `limit` files, the last ones
-        reported. A copy of the same name already in the inbox is replaced. Best effort: it never fails the call.
-        Returns the names now in the inbox."""
+        only the first lines of a long file and, to get more, has to ask the teammate to paste it. Code is copied like
+        any other file: where the team builds software the script is the result, and a lead that never receives it
+        can only report that nothing was built. Files that are too large are left out, and so are compiled files; at
+        most `limit` files. When more were reported, the scripts the task neither named nor handed over (the checks
+        and helpers a teammate writes for itself) stay behind first, then the earliest reported. A copy of the same
+        name already in the inbox is replaced. Best effort: it never fails the call. Returns the names now in the
+        inbox."""
         try:
-            assignee = self.state.get(result.task_id).assignee
+            task = self.state.get(result.task_id)
         except KeyError:
             return []
-        mine, theirs = self.sandboxes.get(requester), self.sandboxes.get(assignee)
+        mine, theirs = self.sandboxes.get(requester), self.sandboxes.get(task.assignee)
         if mine is None or theirs is None or mine is theirs or result.declined:
             return []
         names = [n for n in dict.fromkeys(result.artifacts)
-                 if not n.lower().endswith(_SCRIPT_SUFFIXES) and not n.startswith(f"{INBOX}/")]
+                 if not n.lower().endswith(".pyc") and not n.startswith(f"{INBOX}/")]
+        if len(names) > limit:
+            asked, given = f"{task.goal}\n{task.context}", {Path(f).name for f in task.files}
+
+            def helper(name: str) -> bool:
+                base = Path(name).name
+                return name.lower().endswith(_SCRIPT_SUFFIXES) and base not in given and base not in asked
+
+            keep = [n for n in names if not helper(n)][-limit:]
+            if len(keep) < limit:
+                keep += [n for n in names if helper(n)][len(keep) - limit:]
+            names = [n for n in names if n in keep]
         copied: list[str] = []
-        for name in names[-limit:]:
+        for name in names:
             try:
                 src = theirs.resolve(name)
                 if not src.is_file() or src.stat().st_size > max_bytes:
@@ -310,7 +324,7 @@ class Router:
                 self._hand_over(mine, src, Path(name).name)
                 copied.append(Path(name).name)
             except Exception:
-                log.warning("could not copy %s from %s to %s", name, assignee, requester, exc_info=True)
+                log.warning("could not copy %s from %s to %s", name, task.assignee, requester, exc_info=True)
         return copied
 
     @staticmethod

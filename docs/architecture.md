@@ -243,8 +243,8 @@ asked at most `max_review_rounds` (3) times to review the same file. A gate need
 
 **Files.** Besides the files listed in a call, the `Router` hands over the files the goal names that exist in the requester's
 workspace, and replaces an older copy of the same name in the teammate's inbox (`import_file` itself never overwrites). The files
-a teammate reports (scripts left out, at most 6) are copied back into the requester's inbox, because a reply is cut at 1500
-characters.
+a teammate reports (code included, at most 6; when there are more, the helper scripts the task neither named nor handed over
+stay behind first) are copied back into the requester's inbox, because a reply is cut at 1500 characters.
 
 **Closing check.** Before a lead's final answer is accepted: failed tasks, open issues, "could not read the file" reports,
 uncleared reviews and out-of-date work are put to it, with one more step to put them right (`closing_check`).
