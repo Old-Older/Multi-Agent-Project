@@ -512,6 +512,37 @@ class WorkerAgent(Agent):
         return answer
 
     async def _tool(self, task: Task, call: ToolCall, run: _Run) -> dict:
+        started = time.perf_counter()
+        observation = await self._run_call(task, call, run)
+        self._trace(task, call, run, observation, time.perf_counter() - started)
+        return observation
+
+    def _trace(self, task: Task, call: ToolCall, run: _Run, observation: dict, seconds: float) -> None:
+        """One line per call in <data_dir>/tool_calls.jsonl: what was called with what, and what came back.
+
+        The transcript holds what the members said to each other, not what each did in its own workspace, so a
+        request that failed inside one member's steps could not be explained afterwards. Long values are cut. It is
+        a record for people only: no member and no grader reads it. Never raises."""
+        def short(value: object, limit: int) -> object:
+            text = value if isinstance(value, str) else json.dumps(value, ensure_ascii=False, default=str)
+            return value if len(text) <= limit else f"{text[:limit]}… ({len(text)} characters)"
+
+        try:
+            arguments = call.arguments if isinstance(call.arguments, dict) else {}
+            result = observation.get("output") or observation.get("summary") or observation.get("error") or ""
+            record = {"time": time.strftime("%H:%M:%S"), "agent": self.agent_id, "root": task.root_id, "task": task.id,
+                      "step": run.steps, "tool": call.name, "arguments": {k: short(v, 400) for k, v in arguments.items()},
+                      "ok": observation.get("ok"), "seconds": round(seconds, 2), "result": short(result, 600)}
+            if call.malformed:
+                record["unreadable_arguments"] = len(call.raw_arguments)
+            path = Path(self.settings.data_dir) / "tool_calls.jsonl"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        except Exception:
+            log.debug("Could not record a tool call", exc_info=True)
+
+    async def _run_call(self, task: Task, call: ToolCall, run: _Run) -> dict:
         self._ensure_running(task)
         if call.malformed:
             observation = self._unreadable_call(call, run)

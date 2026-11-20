@@ -311,6 +311,20 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent[4][0], [])                                      # the last step: no tools, so it must answer
         self.assertIn("last step", sent[4][1])
 
+    async def test_every_tool_call_is_recorded_with_its_arguments_and_outcome(self):
+        tool = ScriptedTool("run_python", [ToolResult(False, "exit 1: boom"), ToolResult(True, "ok")])
+        worker, _ = self.worker([call(tool.name, "c1", value="x" * 900), call(tool.name, "c2", value="short"), final()],
+                                [tool])
+        task = self.task()
+        self.assertTrue((await asyncio.wait_for(worker.handle_task(task), 2)).success)
+        lines = (self.settings.data_dir / "tool_calls.jsonl").read_text(encoding="utf-8").splitlines()
+        first, second = (json.loads(line) for line in lines)
+        self.assertEqual((first["agent"], first["root"], first["task"], first["step"], first["tool"], first["ok"]),
+                         ("worker", task.root_id, task.id, 1, "run_python", False))
+        self.assertEqual(first["result"], "exit 1: boom")
+        self.assertTrue(first["arguments"]["value"].endswith("… (900 characters)"))           # long values are cut
+        self.assertEqual((second["step"], second["ok"], second["arguments"]), (2, True, {"value": "short"}))
+
     async def test_a_call_cut_off_at_the_output_limit_is_not_run_and_the_model_is_told_to_write_in_parts(self):
         """On the course test set a 26 000-character write_file ended at the output limit. Its arguments became {},
         the tool answered 'missing required argument: path', and the member repeated the call until its time was up."""

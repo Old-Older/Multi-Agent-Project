@@ -243,6 +243,7 @@ in a fenced block.
 | `data/output/<request>-<time>/` | the deliverables of each request, collected from the agents' workspaces |
 | `data/memory/<agent>.jsonl` | each agent's memory |
 | `workspaces/<agent>/` | each agent's private files |
+| `data/tool_calls.jsonl` | one line per tool call of every agent: time, agent, task, step, tool, arguments, whether it worked, the answer (long values cut). For working out afterwards what a member did in its own workspace; no agent and no grader reads it |
 | `data/mas.log` | log, with stack traces of internal errors |
 
 ## Configuration
