@@ -311,6 +311,34 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent[4][0], [])                                      # the last step: no tools, so it must answer
         self.assertIn("last step", sent[4][1])
 
+    async def test_a_call_cut_off_at_the_output_limit_is_not_run_and_the_model_is_told_to_write_in_parts(self):
+        """On the course test set a 26 000-character write_file ended at the output limit. Its arguments became {},
+        the tool answered 'missing required argument: path', and the member repeated the call until its time was up."""
+        tool = ScriptedTool()
+        cut = LLMResponse("", [ToolCall("c1", tool.name, {}, '{"path": "deck.html", "content": "<html', malformed=True)],
+                          finish_reason="length")
+        worker, llm = self.worker([cut, call(tool.name, "c2", value="part 1"), final()], [tool])
+        result = await asyncio.wait_for(worker.handle_task(self.task()), 2)
+        self.assertTrue(result.success)
+        self.assertEqual([kwargs for _, kwargs in tool.calls], [{"value": "part 1"}])     # the cut call never ran
+        observation = json.loads([m for m in llm.calls[1][0] if m["role"] == "tool"][0]["content"])
+        self.assertFalse(observation["ok"])
+        self.assertIn("cut off", observation["output"])
+        self.assertIn("append set to true", observation["output"])
+        self.assertNotIn("missing required argument", observation["output"])
+
+    async def test_arguments_that_are_not_json_are_called_that_and_twice_in_a_row_gets_the_usual_hint(self):
+        tool = ScriptedTool()
+        broken = [LLMResponse("", [ToolCall(f"c{n}", tool.name, {}, "{'value': oops", malformed=True)]) for n in (1, 2)]
+        worker, llm = self.worker([*broken, final()], [tool])
+        self.assertTrue((await asyncio.wait_for(worker.handle_task(self.task()), 2)).success)
+        self.assertEqual(tool.calls, [])
+        first, second = [json.loads(m["content"]) for m in llm.calls[2][0] if m["role"] == "tool"]
+        self.assertIn("not a valid JSON object", first["output"])
+        self.assertNotIn("cut off", first["output"])
+        self.assertNotIn("hint", first)
+        self.assertIn("failed twice in a row", second["hint"])
+
     async def test_a_repeated_search_runs_again_and_says_it_is_a_repeat_but_a_failed_one_is_simply_retried(self):
         search = ScriptedTool("web_search", [ToolResult(False, "no engine answered"), ToolResult(True, "found"),
                                              ToolResult(True, "found")])

@@ -29,6 +29,7 @@ from mas.llm.base import ChatMessage, FunctionSpec, LLMClient, LLMError, ToolCal
 from mas.memory.base import Experience, Memory, tags_for_tools
 from mas.sandbox.base import INBOX, Sandbox
 from mas.tools.base import Tool, ToolResult
+from mas.tools.files import WRITE_PART_CHARS
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -136,6 +137,7 @@ class _Run:
     tools_used: list[str] = field(default_factory=list)
     failed_tool: str = ""
     failures: int = 0
+    reply_cut: bool = False           # the model's latest reply ended at its output limit
     llm_s: float = 0.0                # time spent waiting for the model, and how many calls
     llm_calls: int = 0
     delegation_s: float = 0.0         # time spent waiting for teammates' results
@@ -366,6 +368,7 @@ class WorkerAgent(Agent):
             finally:
                 run.llm_s += time.perf_counter() - asked_at
                 run.llm_calls += 1
+            run.reply_cut = response.finish_reason == "length"
             if not response.tool_calls:
                 messages.append({"role": "assistant", "content": response.text})
                 try:
@@ -510,6 +513,10 @@ class WorkerAgent(Agent):
 
     async def _tool(self, task: Task, call: ToolCall, run: _Run) -> dict:
         self._ensure_running(task)
+        if call.malformed:
+            observation = self._unreadable_call(call, run)
+            self._track_failures(call.name, False, run, observation)
+            return observation
         args = call.arguments
         if not isinstance(args, dict):
             return {"ok": False, "output": "Tool arguments must be a JSON object"}
@@ -576,18 +583,42 @@ class WorkerAgent(Agent):
             if notes:
                 observation["note"] = " ".join(notes)
         self._ensure_running(task)
-        if result.ok:
+        self._track_failures(call.name, result.ok, run, observation)
+        return observation
+
+    @staticmethod
+    def _track_failures(name: str, ok: bool, run: _Run, observation: dict) -> None:
+        if ok:
             run.failed_tool, run.failures = "", 0
         else:
-            run.failures = run.failures + 1 if run.failed_tool == call.name else 1
-            run.failed_tool = call.name
+            run.failures = run.failures + 1 if run.failed_tool == name else 1
+            run.failed_tool = name
             if run.failures == 2:
                 # A tool that keeps failing is the worker's problem to work around, not a question for the
                 # human (who cannot fix a rate limit or a bad URL): say so and let it choose another way.
-                observation["hint"] = (f"{call.name} has failed twice in a row. Do not repeat the same call: try a "
+                observation["hint"] = (f"{name} has failed twice in a row. Do not repeat the same call: try a "
                                        "different approach or tool, or finish with what you have and say what is missing.")
                 run.failures = 0
-        return observation
+
+    def _unreadable_call(self, call: ToolCall, run: _Run) -> dict:
+        """The answer to a call whose arguments could not be read; the tool is not run.
+
+        Its parsed arguments are {}: run with them, write_file answers 'missing required argument: path', the model
+        takes that for a slip of its own and sends the same call again. A reply that ended at the output limit is cut
+        at the same place every time, so one member spent its whole task repeating a write that could never arrive."""
+        size = len(call.raw_arguments)
+        if run.reply_cut:
+            output = (f"{call.name} was NOT run: your reply reached the model's output limit and was cut off inside this "
+                      f"call's arguments ({size} characters arrived, incomplete), so nothing was written or changed. The "
+                      "same call would be cut off again: send less in one call.")
+            if "write_file" in self.tools:
+                output += (f" Write a long file in parts of at most about {WRITE_PART_CHARS} characters: write_file with "
+                           "the first part, then write_file with append set to true for each further part.")
+        else:
+            output = (f"{call.name} was NOT run: its arguments were not a valid JSON object ({size} characters arrived), "
+                      "so nothing was written or changed. Send the call again with all arguments in one JSON object, "
+                      "with quotes and line breaks inside strings escaped.")
+        return {"ok": False, "output": output}
 
     # ---- the request's requirements -------------------------------------------------------
 

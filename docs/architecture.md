@@ -317,7 +317,7 @@ its workspace mounted) is the planned stronger isolation and is not implemented.
 
 | Tool | Does | Notes |
 |---|---|---|
-| `read_file`, `write_file`, `list_files` | read, create or overwrite, list | relative paths inside the workspace |
+| `read_file`, `write_file`, `list_files` | read, create or overwrite, list | relative paths inside the workspace; `write_file` takes `append: true` to add to the end of a file, so a long file is written in parts (one reply ends at the model's output limit, and a call cut off there is not run: the member is told so and how to continue) |
 | `edit_file` | change a file by exact replacement | `{old, new}` pairs (or one `old`/`new`), applied in order all or nothing; a failure says which edit and why, with the closest line; success confirms the new size. Members are told to use it instead of rewriting a file or patching it with a script |
 | `delete_file` | delete a file | needs the human's approval |
 | `run_python` | run a script or a module (`unittest`, `pytest`) in the workspace | timeout (default 60 s), output returned with the exit code |

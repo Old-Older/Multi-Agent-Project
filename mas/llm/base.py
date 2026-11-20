@@ -33,6 +33,7 @@ class ToolCall:
     name: str
     arguments: dict[str, Any]         # already parsed and repaired; {} if unrecoverable
     raw_arguments: str = ""
+    malformed: bool = False           # raw_arguments was not a JSON object (cut off, or invalid): the call must not run
 
 
 @dataclass

@@ -38,7 +38,7 @@ python -X utf8 -m examples.hkgai_chat
 python -X utf8 -m examples.hkgai_chat --with-tools
 ```
 
-`LLMResponse.text` 可以与多个 `tool_calls` 同时出现。每个调用保留 `id`、`name`、`raw_arguments` 及解析后的 `arguments` 字典。客户端可修复 JSON 代码围栏和尾逗号；无法恢复或顶层不是对象时返回空字典。整数用量计数在 `usage`，停止原因在 `finish_reason`。
+`LLMResponse.text` 可以与多个 `tool_calls` 同时出现。每个调用保留 `id`、`name`、`raw_arguments` 及解析后的 `arguments` 字典。客户端可修复 JSON 代码围栏和尾逗号；无法恢复或顶层不是对象时返回空字典，并把该调用的 `malformed` 置为 `True`（参数为 `""` 或 `"null"` 的无参调用除外）：Worker 不执行这样的调用，而是告诉模型参数没有读到；`finish_reason` 为 `length` 时说明回复在输出上限处被截断，要分段写。整数用量计数在 `usage`，停止原因在 `finish_reason`。
 
 直接构造时可设置 `timeout`（默认每次请求 60 秒）和 `max_retries`（默认首次请求后最多重试 3 次）。连接超时、限流及瞬时服务错误使用有界重试，遇到 `Retry-After` 会遵守服务端要求的等待时间；超过单次超时预算则直接返回错误。请求格式错误、无效密钥或不可用的模型应先检查配置。最终失败抛出 `LLMError`。调用方取消会向上传播。
 

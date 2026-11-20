@@ -26,8 +26,11 @@ def _finite_float(token: str) -> float:
     return value
 
 
-def _arguments(raw: str) -> dict[str, Any]:
-    """Recover fenced JSON and trailing commas; never evaluate model-supplied code."""
+def _arguments(raw: str) -> dict[str, Any] | None:
+    """Recover fenced JSON and trailing commas; never evaluate model-supplied code.
+
+    None when the text is not a JSON object and cannot be repaired, as when a reply
+    ends at the output limit in the middle of an argument string."""
     text = raw.strip()
     if text.startswith("```") and text.endswith("```"):
         first, _, rest = text.partition("\n")
@@ -39,21 +42,21 @@ def _arguments(raw: str) -> dict[str, Any]:
     for _ in range(9):
         try:
             value = json.loads(text, parse_float=_finite_float, parse_constant=_finite_float)
-            return value if isinstance(value, dict) else {}
+            return value if isinstance(value, dict) else None
         except json.JSONDecodeError as error:
             if text[error.pos:error.pos + 1] == ",":
                 # Python 3.14 points at the trailing comma itself; older versions point at the bracket.
                 if text[error.pos + 1:].lstrip()[:1] not in ("}", "]"):
-                    return {}
+                    return None
                 text = text[:error.pos] + text[error.pos + 1:]
                 continue
             prefix = text[:error.pos].rstrip()
             if text[error.pos:error.pos + 1] not in ("}", "]") or not prefix.endswith(","):
-                return {}
+                return None
             text = prefix[:-1] + text[error.pos:]
         except (RecursionError, ValueError):
-            return {}
-    return {}
+            return None
+    return None
 
 
 def _response(completion: Any, label: str = "HKGAI") -> LLMResponse:
@@ -73,7 +76,10 @@ def _response(completion: Any, label: str = "HKGAI") -> LLMResponse:
                     or not isinstance(raw, str)):
                 raise ValueError
             call_ids.add(call_id)
-            calls.append(ToolCall(call_id, name, _arguments(raw), raw))
+            arguments = _arguments(raw)
+            # A call without arguments may arrive as "" or "null"; anything else that is not an object is broken.
+            calls.append(ToolCall(call_id, name, arguments or {}, raw,
+                                  malformed=arguments is None and raw.strip() not in ("", "null")))
         reason = choice.finish_reason
         if not isinstance(reason, str) or (reason == "tool_calls" and not calls):
             raise ValueError
