@@ -353,8 +353,9 @@ class TimingTest(unittest.IsolatedAsyncioTestCase):
         [task] = system.state.by_root("R1")
         m = system.state.result(task.id).metrics
         self.assertEqual((m["llm_calls"], m["by_tool"]["slow_tool"]["calls"]), (3, 2))
-        self.assertGreaterEqual(m["tool_s"], 0.3)
-        self.assertGreaterEqual(m["by_tool"]["slow_tool"]["s"], 0.3)
+        # two sleeps of 0.15 s; on Windows the event loop's clock ticks every 15.6 ms and a sleep can end that much early
+        self.assertGreaterEqual(m["tool_s"], 0.25)
+        self.assertGreaterEqual(m["by_tool"]["slow_tool"]["s"], 0.25)
         self.assertEqual((m["delegation_s"], m["human_s"]), (0.0, 0.0))
 
     def test_the_report_shows_the_time_composition(self):
