@@ -159,6 +159,7 @@ Delegations a member sends together in one reply run in parallel; see [4.5](#45-
 | `max_delegation_depth` | 2 | how deep delegations can nest below the lead |
 | `max_retries_same_goal` | 2 | retries of the same goal on the same agent in one request |
 | `research_max_calls` | 14 | searches and page fetches one task may make; the next one is refused (0: no limit) |
+| `repeat_limit` | 2 | the same call with the same answer and nothing changed in between: after this many it is no longer run (0: no limit) |
 | `max_parallel_per_teammate` | 3 | jobs of one teammate that run at the same time for one requester |
 | `max_review_rounds` | 3 | how often one reviewer is asked to review the same file in one request (0: no limit) |
 | `request_budget_s` | 0 (off) | time budget of one request, see 4.8 |
@@ -183,7 +184,17 @@ researching until the cap. They are suggestions in the conversation, not rules, 
 | progress check, worker | half the steps used and no file written | "write what you have and finish, or say what is missing" |
 | progress check, lead | half the steps used and no file exists anywhere in the request | "make sure the deliverable is being written: assign it now before more research or review" |
 
-A failed call never counts as done, so it can always be retried. The safety net is not switchable: with 3 steps left the
+A failed call never counts as done, so it can always be retried.
+
+**Going round in circles.** The other tools have a rule of their own, and it is not a suggestion: when the same call (same
+arguments) gets the same answer a second time and nothing changed in between, the answer says "same as step N; the next one
+will not be run", and from the third on it is not run: the member is told it was made twice with the same answer, and is
+shown that answer (`repeat_limit`, 0 to switch it off). "Nothing changed" is judged cautiously: any write, any other call
+that is not read-only (another script, say), a teammate's reply and an answer from the human all count as a change, so the
+same check run again after a file was changed is not a repeat, even when it fails in exactly the same way. Tools that need
+the human's approval are left out.
+
+The safety net is not switchable: with 3 steps left the
 member is told so, and its last step has no tools, so it must answer with what it has and say what is missing, instead of
 ending with "step limit reached".
 
@@ -319,7 +330,7 @@ its workspace mounted) is the planned stronger isolation and is not implemented.
 
 | Tool | Does | Notes |
 |---|---|---|
-| `read_file`, `write_file`, `list_files` | read, create or overwrite, list | relative paths inside the workspace; `write_file` takes `append: true` to add to the end of a file, so a long file is written in parts (one reply ends at the model's output limit, and a call cut off there is not run: the member is told so and how to continue) |
+| `read_file`, `write_file`, `list_files` | read, create or overwrite, list | relative paths inside the workspace; `write_file` takes `append: true` to add to the end of a file, so a long file is written in parts. One reply ends at the model's output limit: of a `write_file` cut off there, the part that arrived is kept when it is a new file (or an append to an existing one), cut back to its last whole line, and the member is told which line the file now ends with and to go on from there with append; when it would replace an existing file nothing is written, and the member is told why and how to write in parts. The answers of `write_file` and `edit_file` give the size of the whole file in characters, words and lines (a word is a run of letters or digits, or one CJK character), so nobody has to write a script to count |
 | `edit_file` | change a file by exact replacement | `{old, new}` pairs (or one `old`/`new`), applied in order all or nothing; a failure says which edit and why, with the closest line; success confirms the new size. Members are told to use it instead of rewriting a file or patching it with a script |
 | `delete_file` | delete a file | needs the human's approval |
 | `run_python` | run a script or a module (`unittest`, `pytest`) in the workspace | timeout (default 60 s), output returned with the exit code |
