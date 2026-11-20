@@ -18,8 +18,19 @@ READ_WINDOW = 3500
 # DeepSeek, about 26 000 characters of arguments); a call that is cut off there cannot be parsed and is lost whole.
 WRITE_PART_CHARS = 12_000
 
+# A word: a run of letters or digits (with inner apostrophes or hyphens), or one CJK character.
+_WORD = re.compile(r"[^\W_]+(?:['’\-][^\W_]+)*", re.UNICODE)
+_CJK = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]")
 _CUT_PATH = re.compile(r'"path"\s*:\s*"((?:[^"\\]|\\.)*)"')
 _CUT_CONTENT = re.compile(r'"content"\s*:\s*"')
+
+
+def text_size(text: str) -> str:
+    """'N characters, W words, L lines' of a whole file, so that nobody has to write a script to count them."""
+    words = 0
+    for run in _WORD.findall(text):
+        words += len(_CJK.findall(run)) + sum(1 for part in _CJK.split(run) if part)
+    return f"{len(text)} characters, {words} words, {len(text.splitlines())} lines"
 
 
 def cut_write(raw: str) -> tuple[str, str, bool] | None:
@@ -129,9 +140,10 @@ class WriteFile(_FileTool):
     name = "write_file"
     description = ("Create or overwrite a UTF-8 text file, creating parent directories as needed. One reply can carry only "
                    f"so much: write a file longer than about {WRITE_PART_CHARS} characters in parts, the first part with a "
-                   "plain call and each further part with `append` set to true (the answer says how long the file is "
-                   "now). Of a call that is cut off at the output limit, at most the part that arrived is kept, and only "
-                   "for a new file.")
+                   "plain call and each further part with `append` set to true. The answer gives the size of the whole "
+                   "file in characters, words and lines (a word is a run of letters or digits, or one CJK character), so "
+                   "there is no need for a script to count them. Of a call that is cut off at the output limit, at most "
+                   "the part that arrived is kept, and only for a new file.")
     parameters = _parameters(content=True)
     parameters["properties"] = {**parameters["properties"], "append": {
         "type": "boolean", "default": False,
@@ -141,13 +153,13 @@ class WriteFile(_FileTool):
         relative = sandbox.resolve(path).relative_to(sandbox.resolve(".")).as_posix()
         if not append:
             sandbox.write_text(path, content)
-            return ToolResult(True, f"Wrote {relative}", files_written=[relative])
+            return ToolResult(True, f"Wrote {relative} ({text_size(content)})", files_written=[relative])
         if not sandbox.exists(path):
             raise ValueError(f"cannot append: {relative} does not exist yet; write its first part without append")
         text = sandbox.read_text(path) + content
         sandbox.write_text(path, text)
-        return ToolResult(True, f"Appended {len(content)} characters to {relative}: it now has {len(text)} characters, "
-                                f"{len(text.splitlines())} lines.", files_written=[relative])
+        return ToolResult(True, f"Appended {len(content)} characters to {relative}: it now has {text_size(text)}.",
+                          files_written=[relative])
 
 
 class EditFile(Tool):
@@ -239,7 +251,7 @@ class EditFile(Tool):
         if sandbox.read_text(path) != text:                    # the answer must be true: say so if the write did not hold
             return ToolResult(False, f"{self.name}: {relative} does not hold the edited text after writing it")
         return ToolResult(True, f"Applied {len(edits)} edit{'s' if len(edits) != 1 else ''} to {relative}: "
-                                f"{len(before)} -> {len(text)} characters, {len(text.splitlines())} lines.",
+                                f"{len(before)} characters before, now {text_size(text)}.",
                           files_written=[relative])
 
 

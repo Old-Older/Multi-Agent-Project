@@ -28,7 +28,8 @@ class EditFileTest(unittest.IsolatedAsyncioTestCase):
         result = await self.edit(old="## Risks", new="## Key risks")
         self.assertTrue(result.ok, result.output)
         self.assertEqual(self.text(), DOC.replace("## Risks", "## Key risks"))
-        self.assertEqual(result.output, f"Applied 1 edit to doc.md: {len(DOC)} -> {len(DOC) + 4} characters, 8 lines.")
+        self.assertEqual(result.output, f"Applied 1 edit to doc.md: {len(DOC)} characters before, now {len(DOC) + 4} "
+                                        "characters, 18 words, 8 lines.")
         self.assertEqual(result.files_written, ["doc.md"])
 
     async def test_several_edits_are_applied_in_order_and_a_later_one_sees_an_earlier_one(self):
