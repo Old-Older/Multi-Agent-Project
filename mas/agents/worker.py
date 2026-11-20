@@ -29,7 +29,7 @@ from mas.llm.base import ChatMessage, FunctionSpec, LLMClient, LLMError, ToolCal
 from mas.memory.base import Experience, Memory, tags_for_tools
 from mas.sandbox.base import INBOX, Sandbox
 from mas.tools.base import Tool, ToolResult
-from mas.tools.files import WRITE_PART_CHARS
+from mas.tools.files import WRITE_PART_CHARS, cut_write
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -112,6 +112,9 @@ FINAL files said so; if a reviewer could not read or got an old version of a fil
 # Calls that look things up outside the workspace. A long run of them gets a reminder to stop: a worker that never
 # feels it has enough keeps researching until its steps run out. The thresholds are in Settings.
 _RESEARCH_TOOLS = ("web_search", "fetch_url")
+# Calls that change nothing. Any other call that works may have changed the workspace, so the same check after it is
+# not a repeat (a test run again after a fix script is new information, even when it fails the same way).
+_READ_ONLY_TOOLS = ("read_file", "list_files")
 
 # What a teammate's report says when a file did not reach it or it worked on the wrong version.
 _TROUBLE = re.compile(
@@ -138,6 +141,9 @@ class _Run:
     failed_tool: str = ""
     failures: int = 0
     reply_cut: bool = False           # the model's latest reply ended at its output limit
+    cuts: int = 0                     # calls in a row that arrived cut off at the output limit
+    changes: int = 0                  # goes up whenever something may have changed (a write, a script, a teammate's answer)
+    repeats: dict[str, list] = field(default_factory=dict)             # call -> [changes then, its answer, its step, times]
     llm_s: float = 0.0                # time spent waiting for the model, and how many calls
     llm_calls: int = 0
     delegation_s: float = 0.0         # time spent waiting for teammates' results
@@ -545,9 +551,10 @@ class WorkerAgent(Agent):
     async def _run_call(self, task: Task, call: ToolCall, run: _Run) -> dict:
         self._ensure_running(task)
         if call.malformed:
-            observation = self._unreadable_call(call, run)
-            self._track_failures(call.name, False, run, observation)
+            observation = await self._unreadable_call(call, run)
+            self._track_failures(call.name, bool(observation.get("partial")), run, observation)
             return observation
+        run.cuts = 0
         args = call.arguments
         if not isinstance(args, dict):
             return {"ok": False, "output": "Tool arguments must be a JSON object"}
@@ -561,10 +568,16 @@ class WorkerAgent(Agent):
             text = "\n".join(f"{m.sender}: {m.content}" for m in history if m.content)
             return {"ok": True, "output": _clip(text, self.settings.tool_output_max_chars)}
         if call.name == ASK_HUMAN and self.peers is not None:
-            return await self._tool_ask_human(task, run, args)
+            try:
+                return await self._tool_ask_human(task, run, args)
+            finally:
+                run.changes += 1                    # the human's answer is new
         target = target_of(call.name)
         if target is not None and self.peers is not None and call.name not in self.tools:
-            return await self._tool_call_peer(task, run, target, args)
+            try:
+                return await self._tool_call_peer(task, run, target, args)
+            finally:
+                run.changes += 1                    # a teammate's files may have arrived in the inbox
         tool = self.tools.get(call.name)
         if tool is None:
             return {"ok": False, "output": f"Unknown tool: {call.name}"}
@@ -573,6 +586,18 @@ class WorkerAgent(Agent):
             return {"ok": False, "limit": True, "output": (
                 f"Research limit reached: {cap} searches and page fetches are the most one task may make. Do not search "
                 "or fetch again. Write what you have into a file now and finish; say what is still missing.")}
+        # The research tools have their own reminder, and a call the human must approve is the human's to refuse.
+        tracked = self.settings.repeat_limit > 0 and call.name not in _RESEARCH_TOOLS and not tool.requires_approval
+        repeat = call.name + json.dumps(args, sort_keys=True, ensure_ascii=False, default=str) if tracked else ""
+        earlier = run.repeats.get(repeat) if repeat else None
+        if earlier is not None and earlier[0] == run.changes and earlier[3] >= self.settings.repeat_limit:
+            observation = {"ok": False, "repeat": True, "output": (
+                f"Not run: this exact {call.name} call has been made {earlier[3]} times since anything changed (first "
+                f"at step {earlier[2]}) and answered the same every time: {_clip(earlier[1][1], 300)!r}. It would answer "
+                "the same again. Do the next thing instead: change the file (edit_file or write_file), check something "
+                "else, or finish and say what is unresolved.")}
+            self._track_failures(call.name, False, run, observation)
+            return observation
         if tool.requires_approval and not self._deletes_own_file(call.name, args, run):
             answer = await self._ask(task, run,
                                      f"Run {call.name} with arguments {json.dumps(args, ensure_ascii=False)}?",
@@ -613,6 +638,20 @@ class WorkerAgent(Agent):
                 run.seen.setdefault(key, run.steps)         # a failed call may be retried: only successes count as done
             if notes:
                 observation["note"] = " ".join(notes)
+        if repeat:
+            answer = (result.ok, observation["output"])
+            if earlier is not None and earlier[0] == run.changes and earlier[1] == answer:
+                earlier[3] += 1
+                observation["note"] = (
+                    f"This is the same {call.name} call as step {earlier[2]}, with the same answer, and nothing has "
+                    "changed in between. Asking again will not change it and the next identical call will not be run: "
+                    "act on the answer you have.")
+            else:
+                if result.files_written or call.name not in _READ_ONLY_TOOLS:
+                    run.changes += 1
+                run.repeats[repeat] = [run.changes, answer, run.steps, 1]
+        elif call.name not in _RESEARCH_TOOLS:
+            run.changes += 1
         self._ensure_running(task)
         self._track_failures(call.name, result.ok, run, observation)
         return observation
@@ -631,25 +670,61 @@ class WorkerAgent(Agent):
                                        "different approach or tool, or finish with what you have and say what is missing.")
                 run.failures = 0
 
-    def _unreadable_call(self, call: ToolCall, run: _Run) -> dict:
-        """The answer to a call whose arguments could not be read; the tool is not run.
+    async def _unreadable_call(self, call: ToolCall, run: _Run) -> dict:
+        """The answer to a call whose arguments could not be read; the tool is not run as it was sent.
 
         Its parsed arguments are {}: run with them, write_file answers 'missing required argument: path', the model
         takes that for a slip of its own and sends the same call again. A reply that ended at the output limit is cut
         at the same place every time, so one member spent its whole task repeating a write that could never arrive."""
         size = len(call.raw_arguments)
         if run.reply_cut:
+            run.cuts += 1
+            kept = await self._keep_cut_write(call, run)
+            if kept is not None:
+                return kept
+            again = (f"This is reply number {run.cuts} in a row that was cut off: do NOT send that content in one call "
+                     "again. ") if run.cuts > 1 else ""
             output = (f"{call.name} was NOT run: your reply reached the model's output limit and was cut off inside this "
-                      f"call's arguments ({size} characters arrived, incomplete), so nothing was written or changed. The "
-                      "same call would be cut off again: send less in one call.")
+                      f"call's arguments ({size} characters arrived, incomplete), so nothing was written or changed. "
+                      f"{again}The same call would be cut off again: send less in one call.")
             if "write_file" in self.tools:
                 output += (f" Write a long file in parts of at most about {WRITE_PART_CHARS} characters: write_file with "
-                           "the first part, then write_file with append set to true for each further part.")
+                           "the first part (for an existing file this replaces it), then write_file with append set to "
+                           "true for each further part.")
         else:
             output = (f"{call.name} was NOT run: its arguments were not a valid JSON object ({size} characters arrived), "
                       "so nothing was written or changed. Send the call again with all arguments in one JSON object, "
                       "with quotes and line breaks inside strings escaped.")
         return {"ok": False, "output": output}
+
+    async def _keep_cut_write(self, call: ToolCall, run: _Run) -> dict | None:
+        """Keep what arrived of a write_file call that was cut off, instead of throwing a whole reply away.
+
+        Told only that the call was cut off, one member wrote its 25 000-character file from the start three times in
+        a row, each time to the same limit, and lost a third of the request's time. The part that arrived is written
+        when that cannot destroy anything: a file that does not exist yet, or an append to one that does. An existing
+        file is never replaced by a part of its new version. None when nothing was kept."""
+        tool, cut = self.tools.get("write_file"), cut_write(call.raw_arguments)
+        if call.name != "write_file" or tool is None or cut is None:
+            return None
+        path, content, append = cut
+        try:
+            if self.sandbox.exists(path) != append:
+                return None
+        except Exception:
+            return None
+        result = await self._invoke_tool(tool, {"path": path, "content": content, **({"append": True} if append else {})})
+        if not result.ok:
+            return None
+        run.artifacts.extend(result.files_written)
+        run.changes += 1
+        last = content.rstrip().rsplit("\n", 1)[-1].strip()
+        return {"ok": False, "partial": True, "files_written": result.files_written, "output": (
+            f"Your reply reached the model's output limit, so this write_file call arrived cut off. The part that arrived "
+            f"was kept: {len(content)} characters were {'appended to' if append else 'written to'} {path} "
+            f"({_clip(result.output, 200)}), and the file now ends with: {_clip(last, 160)!r}. The file is NOT complete. "
+            "Continue it now with write_file and append set to true, sending ONLY what comes after that (nothing that is "
+            f"already in the file), in parts of at most about {WRITE_PART_CHARS} characters.")}
 
     # ---- the request's requirements -------------------------------------------------------
 

@@ -329,17 +329,84 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         """On the course test set a 26 000-character write_file ended at the output limit. Its arguments became {},
         the tool answered 'missing required argument: path', and the member repeated the call until its time was up."""
         tool = ScriptedTool()
-        cut = LLMResponse("", [ToolCall("c1", tool.name, {}, '{"path": "deck.html", "content": "<html', malformed=True)],
-                          finish_reason="length")
-        worker, llm = self.worker([cut, call(tool.name, "c2", value="part 1"), final()], [tool])
+        self.sandbox.write_text("deck.html", "the version that is there")
+        cut = [LLMResponse("", [ToolCall(f"c{n}", tool.name, {}, '{"path": "deck.html", "content": "<html>\\n<bo',
+                                         malformed=True)], finish_reason="length") for n in (1, 2)]
+        worker, llm = self.worker([*cut, call(tool.name, "c3", value="part 1"), final()], [tool])
         result = await asyncio.wait_for(worker.handle_task(self.task()), 2)
         self.assertTrue(result.success)
-        self.assertEqual([kwargs for _, kwargs in tool.calls], [{"value": "part 1"}])     # the cut call never ran
+        self.assertEqual([kwargs for _, kwargs in tool.calls], [{"value": "part 1"}])     # the cut calls never ran
+        self.assertEqual(self.sandbox.read_text("deck.html"), "the version that is there")    # and replaced nothing
+        first, second = [json.loads(m["content"]) for m in llm.calls[2][0] if m["role"] == "tool"]
+        self.assertFalse(first["ok"])
+        self.assertIn("cut off", first["output"])
+        self.assertIn("append set to true", first["output"])
+        self.assertNotIn("missing required argument", first["output"])
+        self.assertNotIn("in a row", first["output"])
+        self.assertIn("reply number 2 in a row that was cut off: do NOT send that content in one call again",
+                      second["output"])
+
+    async def test_what_arrived_of_a_cut_off_write_of_a_new_file_is_kept_and_the_member_continues_from_there(self):
+        """Round 15: told only that its call was cut off, a lead wrote a 25 000-character deck from the start three
+        times in a row, each time to the same limit."""
+        tool = ScriptedTool(results=[ToolResult(True, "Wrote deck.html", files_written=["deck.html"])])
+        raw = '{"path": "deck.html", "content": "<html>\\n<body>\\n<h1>Outlook</h1>\\n<p>The first half of a sen'
+        cut = LLMResponse("", [ToolCall("c1", tool.name, {}, raw, malformed=True)], finish_reason="length")
+        worker, llm = self.worker([cut, final()], [tool])
+        result = await asyncio.wait_for(worker.handle_task(self.task()), 2)
+        self.assertEqual([kwargs for _, kwargs in tool.calls],
+                         [{"path": "deck.html", "content": "<html>\n<body>\n<h1>Outlook</h1>\n"}])    # whole lines only
+        self.assertEqual(result.artifacts, ["deck.html"])
         observation = json.loads([m for m in llm.calls[1][0] if m["role"] == "tool"][0]["content"])
-        self.assertFalse(observation["ok"])
-        self.assertIn("cut off", observation["output"])
+        self.assertEqual((observation["ok"], observation["partial"]), (False, True))
+        self.assertIn("31 characters were written to deck.html", observation["output"])
+        self.assertIn("the file now ends with: '<h1>Outlook</h1>'", observation["output"])
+        self.assertIn("NOT complete", observation["output"])
         self.assertIn("append set to true", observation["output"])
-        self.assertNotIn("missing required argument", observation["output"])
+        self.assertNotIn("hint", observation)                                 # it made progress: not a failed call
+
+    async def test_the_same_call_with_the_same_answer_is_noted_and_then_no_longer_run(self):
+        """Round 15: a lead ran one word count 37 times in a row and got 974 every time, until its steps were gone."""
+        count = ScriptedTool("run_python", [ToolResult(True, "974")] * 9)
+        edit = ScriptedTool("edit_file", [ToolResult(True, "ok", files_written=["report.md"])])
+        same = [call("run_python", f"c{n}", value="count.py") for n in range(1, 5)]
+        worker, llm = self.worker([*same, call("edit_file", "e1", value="trim"), call("run_python", "c9", value="count.py"),
+                                   final()], [count, edit])
+        self.assertTrue((await asyncio.wait_for(worker.handle_task(self.task()), 2)).success)
+        self.assertEqual(len(count.calls), 3)                                 # twice, then once more after the edit
+        seen = [json.loads(m["content"]) for m in llm.calls[-1][0] if m["role"] == "tool"]
+        first, second, third, fourth, _, after_edit = seen
+        self.assertNotIn("note", first)
+        self.assertIn("same run_python call as step 1, with the same answer", second["note"])
+        self.assertEqual((third["ok"], third["repeat"]), (False, True))
+        self.assertIn("has been made 2 times since anything changed (first at step 1)", third["output"])
+        self.assertIn("'974'", third["output"])
+        self.assertIn("failed twice in a row", fourth["hint"])                # refused again: the usual escalation
+        self.assertEqual((after_edit["ok"], after_edit["output"]), (True, "974"))
+        self.assertNotIn("note", after_edit)                                  # the file changed: counting again is new
+
+    async def test_a_check_that_fails_the_same_way_after_another_script_ran_is_not_a_repeat(self):
+        python = ScriptedTool("run_python", [ToolResult(False, "exit code 1: 2 tests fail"), ToolResult(True, "patched"),
+                                             ToolResult(False, "exit code 1: 2 tests fail"), ToolResult(True, "patched"),
+                                             ToolResult(False, "exit code 1: 2 tests fail")])
+        script = [call("run_python", f"c{n}", value=name) for n, name in enumerate(["test.py", "fix.py"] * 2 + ["test.py"])]
+        worker, llm = self.worker([*script, final()], [python])
+        self.assertTrue((await asyncio.wait_for(worker.handle_task(self.task()), 2)).success)
+        self.assertEqual(len(python.calls), 5)                                # every one of them ran
+        seen = [json.loads(m["content"]) for m in llm.calls[-1][0] if m["role"] == "tool"]
+        self.assertTrue(all("note" not in observation and "repeat" not in observation for observation in seen))
+
+    async def test_reading_the_same_file_again_is_a_repeat_only_while_nothing_was_written(self):
+        read = ScriptedTool("read_file", [ToolResult(True, "the text")] * 9)
+        write = ScriptedTool("write_file", [ToolResult(True, "ok", files_written=["a.md"])])
+        script = [call("read_file", "r1", value="a.md"), call("read_file", "r2", value="a.md"),
+                  call("write_file", "w1", value="new"), call("read_file", "r3", value="a.md")]
+        self.settings.repeat_limit = 1
+        worker, llm = self.worker([*script, call("read_file", "r4", value="a.md"), final()], [read, write])
+        self.assertTrue((await asyncio.wait_for(worker.handle_task(self.task()), 2)).success)
+        seen = [json.loads(m["content"]) for m in llm.calls[-1][0] if m["role"] == "tool"]
+        self.assertEqual([observation.get("repeat", False) for observation in seen], [False, True, False, False, True])
+        self.assertEqual(len(read.calls), 2)                                  # with a limit of 1 the second is refused
 
     async def test_arguments_that_are_not_json_are_called_that_and_twice_in_a_row_gets_the_usual_hint(self):
         tool = ScriptedTool()

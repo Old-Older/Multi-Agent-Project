@@ -259,7 +259,7 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 - `ToolResult.files_written` 和 `refs` 会被汇总进 `TaskResult`，所以写文件、git 提交的工具必须填写。
 - `spec()` 已实现，返回 `FunctionSpec`。
 - 角色配置里用到的工具名：`web_search`、`fetch_url`、`read_file`、`write_file`、`delete_file`、`list_files`、`run_python`、`git`。
-- 已实现文件工具在 `mas/tools/files.py`，也从 `mas.tools` 导出。参数为非空字符串 `path`；`write_file` 另需字符串 `content`，可选布尔 `append`（追加到已有文件末尾，文件不存在时报错），`list_files.path` 默认 `.`。拒绝额外参数；`delete_file.requires_approval=True`，授权由 Worker 负责。
+- 已实现文件工具在 `mas/tools/files.py`，也从 `mas.tools` 导出。参数为非空字符串 `path`；`write_file` 另需字符串 `content`，可选布尔 `append`（追加到已有文件末尾，文件不存在时报错），`list_files.path` 默认 `.`。`write_file` 的回答是 `Wrote <路径> (N characters, W words, L lines)`，追加和 `edit_file` 的回答同样带整个文件的字符数、词数、行数。拒绝额外参数；`delete_file.requires_approval=True`，授权由 Worker 负责。
 - `write_file.files_written` 是实际目标的规范 workspace 相对路径（`/` 分隔）；失败为空。`list_files.output` 为直接子项名称的 JSON 数组。完整 schema、错误策略和示例见 [第一阶段交接](sandbox_tools_handoff.md)。
 
 ### 3.12 沙箱 `mas/sandbox/base.py`

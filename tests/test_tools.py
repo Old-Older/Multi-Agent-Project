@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from mas.sandbox.base import LocalSandbox
 from mas.tools import DeleteFile, ListFiles, ReadFile, Tool, ToolResult, WriteFile
+from mas.tools.files import cut_write, text_size
 
 
 class FileToolsTest(unittest.IsolatedAsyncioTestCase):
@@ -123,13 +124,13 @@ class FileToolsTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_long_file_is_written_in_parts_with_append(self):
         first, second = "<html>\n第一部分\n", "第二部分\n</html>\n"
-        self.assertEqual((await WriteFile().run(self.sandbox, path="deck.html", content=first)).output, "Wrote deck.html")
+        self.assertEqual((await WriteFile().run(self.sandbox, path="deck.html", content=first)).output,
+                         "Wrote deck.html (12 characters, 5 words, 2 lines)")
         result = await WriteFile().run(self.sandbox, path="deck.html", content=second, append=True)
         self.assertTrue(result.ok, result.output)
         self.assertEqual(result.files_written, ["deck.html"])
         self.assertEqual(self.sandbox.read_text("deck.html"), first + second)
-        self.assertEqual(result.output, f"Appended {len(second)} characters to deck.html: it now has "
-                                        f"{len(first + second)} characters, 4 lines.")
+        self.assertEqual(result.output, "Appended 13 characters to deck.html: it now has 25 characters, 10 words, 4 lines.")
         self.assertTrue((await WriteFile().run(self.sandbox, path="deck.html", content="x", append=False)).ok)
         self.assertEqual(self.sandbox.read_text("deck.html"), "x")            # without append the file is replaced
 
@@ -144,6 +145,26 @@ class FileToolsTest(unittest.IsolatedAsyncioTestCase):
         schema = WriteFile().spec().to_openai()["function"]["parameters"]
         self.assertEqual(schema["properties"]["append"]["type"], "boolean")
         self.assertEqual(schema["required"], ["path", "content"])
+
+    def test_the_size_counts_words_so_that_nobody_needs_a_script_for_it(self):
+        self.assertEqual(text_size(""), "0 characters, 0 words, 0 lines")
+        self.assertEqual(text_size("One two-three, don't.\n## 中文四字 and 2 more_words\n"),
+                         "47 characters, 11 words, 2 lines")        # a hyphenated word is one, a CJK character is one
+
+    def test_what_arrived_of_a_write_that_was_cut_off(self):
+        cut = '{"path": "notes/deck.html", "content": "<html>\\n<body>\\n<h1>T\\u4e2d \\"q\\"</h1>\\n<p>half a li'
+        self.assertEqual(cut_write(cut), ("notes/deck.html", '<html>\n<body>\n<h1>T中 "q"</h1>\n', False))
+        self.assertEqual(cut_write('{"path": "a.md", "append": true, "content": "one\\ntwo\\nthr'),
+                         ("a.md", "one\ntwo\n", True))
+        self.assertEqual(cut_write('{"path": "a.md", "content": "a long first line without a break\\'),
+                         ("a.md", "a long first line without a break", False))      # nothing to cut back to
+        self.assertEqual(cut_write('{"path": "a.md", "content": "ends in half an escape \\u4e'),
+                         ("a.md", "ends in half an escape ", False))
+        for other in ('{"path": "a.md", "content": "whole"}',                     # not cut: the string is closed
+                      '{"content": "the path comes after the content and never arr',
+                      '{"path": "a.md", "content": "',                            # nothing arrived
+                      '{"path": "a.md", "conte', "", "not json at all"):
+            self.assertIsNone(cut_write(other), other)
 
     def test_names_and_approval_contract(self):
         tools = [ReadFile(), WriteFile(), DeleteFile(), ListFiles()]

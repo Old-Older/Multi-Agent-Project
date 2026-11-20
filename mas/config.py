@@ -42,6 +42,9 @@ class Settings:
     research_note_after: int = 6              # searches and page fetches in one task before the first note...
     research_note_every: int = 2              # ...and between the notes after that
     research_max_calls: int = 14              # a hard stop: the 15th search or page fetch of one task is refused (0: no limit)
+    # The same call with the same answer, nothing changed in between: after this many it is refused instead of run
+    # again (0: never). One lead spent 37 steps running one word count that answered 974 every time.
+    repeat_limit: int = 2
     max_retries_same_goal: int = 2
 
     # leading a request (design D18): the lead's own budget, delegated work included

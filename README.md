@@ -259,6 +259,7 @@ Every limit is a field of `Settings` in `mas/config.py`. The ones you may want t
 | `max_delegation_depth`, `max_delegations_per_task`, `max_retries_same_goal` | 2, 2, 2 | guards against runaway delegation (a worker re-delegating one task, same goal retried) |
 | `request_budget_s` | 270 | time budget of one request in seconds, human waiting not counted (0: none). **This is the default "fast" configuration**, see [Reproducing the evaluation](#reproducing-the-evaluation) |
 | `research_max_calls` | 14 | searches and page fetches one task may make (0: no limit) |
+| `repeat_limit` | 2 | the same call with the same answer and nothing changed in between is run this many times, then refused (0: no limit) |
 | `finish_not_before` | 0.5 | share of the budget a lead must have used before it may hand in (0: off) |
 | `max_lead_delegations` | 16 | how many times the lead of a request may delegate |
 | `early_stop_nudges`, `research_note_after`, `research_note_every` | on, 12, 6 | reminders that help a member stop once it has enough; `EARLY_STOP_NUDGES=0` turns them off |
@@ -292,7 +293,7 @@ python3 -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\activate
 python -m pip install -e .
 cp .env.example .env                # fill in DEEPSEEK_API_KEY (and HKGAI_API_KEY if you use it)
-python -m unittest                  # optional: 632 tests, no key needed
+python -m unittest                  # optional: 638 tests, no key needed
 ```
 
 **2. Run the test set with the default (fast) configuration**

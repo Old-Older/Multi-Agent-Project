@@ -247,6 +247,7 @@ You are the software developer on a software development team. You are responsib
 | `max_delegation_depth`、`max_delegations_per_task`、`max_retries_same_goal` | 2、2、2 | 防止委派失控（worker 再委派的次数、同一目标的重试） |
 | `request_budget_s` | 270 | 一个请求的时间预算（秒，不含等待人类的时间；0 为不设）。**这是默认的"快速"配置**，见[复现评测](#复现评测) |
 | `research_max_calls` | 14 | 一个任务最多搜索加抓取的次数（0 为不限） |
+| `repeat_limit` | 2 | 同一个调用、同样的结果、中间什么都没变，最多执行这么多次，之后拒绝（0 为不限） |
 | `finish_not_before` | 0.5 | 牵头者至少用掉预算的这个比例才能收工（0 为关闭） |
 | `max_lead_delegations` | 16 | 一个请求的牵头者可以委派的次数 |
 | `early_stop_nudges`、`research_note_after`、`research_note_every` | 开、12、6 | 帮成员"够了就停"的提醒；`EARLY_STOP_NUDGES=0` 关闭 |
@@ -280,7 +281,7 @@ python3 -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\activate
 python -m pip install -e .
 cp .env.example .env                # 填入 DEEPSEEK_API_KEY（用 HKGAI 就填 HKGAI_API_KEY）
-python -m unittest                  # 可选：632 项测试，不需要 key
+python -m unittest                  # 可选：638 项测试，不需要 key
 ```
 
 **2. 用默认（快速）配置跑测试集**
