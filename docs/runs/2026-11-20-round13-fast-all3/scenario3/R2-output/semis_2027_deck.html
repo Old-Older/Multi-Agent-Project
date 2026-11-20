@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Semiconductors 2027 — Fund Team Deck (end-2026 view)</title>
+<style>
+:root{--bg:#0b1020;--fg:#e8ecf5;--mut:#93a0b8;--acc:#4da3ff;--warn:#ffb020;--bad:#ff5c6c;--good:#3ddc97;--line:#22304d}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font-family:-apple-system,"Segoe UI",Inter,Helvetica,Arial,sans-serif}
+.deck{height:100%;display:flex;align-items:center;justify-content:center}
+.slide{display:none;width:min(1180px,94vw);height:min(680px,88vh);padding:34px 44px;background:linear-gradient(160deg,#101830,#0b1020);border:1px solid var(--line);border-radius:14px;overflow:auto}
+.slide.on{display:block}
+h1{font-size:34px;margin:0 0 6px;line-height:1.15}
+h2{font-size:26px;margin:0 0 14px;color:#fff;border-bottom:2px solid var(--acc);padding-bottom:8px}
+h3{font-size:16px;margin:14px 0 6px;color:var(--acc);text-transform:uppercase;letter-spacing:.06em}
+p,li{font-size:15.5px;line-height:1.45}
+ul{margin:6px 0 6px 18px;padding:0}
+li{margin:4px 0}
+.sub{color:var(--mut);font-size:15px}
+.kicker{color:var(--acc);font-size:13px;letter-spacing:.14em;text-transform:uppercase;margin-bottom:10px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+.card{background:#131c33;border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.card b{color:#fff}
+.num{font-size:26px;font-weight:700;color:var(--acc);display:block}
+table{width:100%;border-collapse:collapse;font-size:13.5px;margin-top:6px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--acc);font-weight:600}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:9px;border:1px solid var(--line);color:var(--mut);margin-left:6px}
+.bad{color:var(--bad)}.good{color:var(--good)}.warn{color:var(--warn)}
+.foot{position:absolute;bottom:10px;right:22px;color:var(--mut);font-size:12px}
+.slide{position:relative}
+.src{color:var(--mut);font-size:11.5px;margin-top:10px;line-height:1.35}
+.bar{position:fixed;left:0;bottom:0;height:3px;background:var(--acc);transition:width .2s}
+.hint{position:fixed;bottom:8px;left:14px;color:var(--mut);font-size:12px}
+</style></head><body>
+<div class="deck">
+<section class="slide on">
+<div class="kicker">Fund team · internal · December 2026</div>
+<h1>Semiconductors in 2027: the boom is real, the price is the problem</h1>
+<p class="sub">An end-of-2026 view of the industry, our investment implications and the risks that would break the thesis.</p>
+<div class="grid" style="margin-top:22px">
+<div class="card"><span class="num">$1.51tn</span>WSTS 2026 global chip market forecast, +90% YoY — but memory is ~half of it</div>
+<div class="card"><span class="num">~$730bn</span>2026 hyperscaler capex (4 names), +78% YoY; 2027 guided "up"</div>
+<div class="card"><span class="num">13.0x</span>SOX forward P/E after the Nov-2026 selloff — below the S&amp;P 500</div>
+<div class="card"><span class="num">−38.5%</span>SOX drawdown from its 22 Jun 2026 peak</div>
+</div>
+<p class="src">Sources: WSTS (2 Jun 2026); hyperscaler Q3-26 calls via Trefis (4 Nov 2026); Morningstar/MarketWatch (5 Nov 2026); BofA via Benzinga (6 Nov 2026). All figures are search-snippet sourced and flagged in the appendix.</p>
+<div class="foot">1 / 14</div>
+</section>
+
+<section class="slide">
+<h2>What we are being asked to decide</h2>
+<div class="grid">
+<div>
+<h3>The question</h3>
+<p>After a year in which the chip index rose ~86% to June, then fell ~38%, is 2027 a year to add semiconductor risk, hold it, or take it down?</p>
+<h3>Our answer in one line</h3>
+<p><b>Own the bottleneck, not the beta.</b> The demand is contracted and the supply is physically constrained; the risk has migrated from valuation to <i>financing and memory pricing</i>. We recommend a benchmark-weight, quality-tilted position with explicit memory and AI-capex hedges.</p>
+</div>
+<div>
+<h3>How this deck is built</h3>
+<ul>
+<li><b>Demand</b> — AI capex, accelerators, memory (slides 3–5)</li>
+<li><b>Supply &amp; policy</b> — foundry, packaging, China, tariffs (6–8)</li>
+<li><b>Valuation &amp; positioning</b> (9–10)</li>
+<li><b>Judgments, portfolio, risks</b> (11–13)</li>
+<li><b>Sources &amp; confidence</b> (14)</li>
+</ul>
+<p class="src">Perspective: end-2026. Latest datapoint used: NVIDIA Q3 FY2027 (17 Nov 2026), TrendForce NAND note (18 Nov 2026).</p>
+</div>
+</div>
+<div class="foot">2 / 14</div>
+</section>
+
+<section class="slide">
+<h2>Demand: the capex is contracted, and it is still accelerating</h2>
+<div class="grid3">
+<div class="card"><span class="num">$410bn</span>2025 capex, MSFT/AMZN/GOOGL/META (actual)</div>
+<div class="card"><span class="num">$720–745bn</span>2026 guidance, +78% YoY</div>
+<div class="card"><span class="num">$870bn</span>2027 sell-side estimate (Jefferies, 4 names)</div>
+</div>
+<table>
+<tr><th>Company</th><th>2026 capex guide</th><th>Q3-26 capex (YoY)</th><th>Capex ÷ operating cash flow</th></tr>
+<tr><td>Amazon</td><td>~$220bn</td><td>$77.3bn (+120%)</td><td class="bad">1.82x</td></tr>
+<tr><td>Alphabet</td><td>$195–205bn</td><td>$51.4bn (+114%)</td><td class="warn">1.21x</td></tr>
+<tr><td>Microsoft</td><td>~$170bn</td><td>$39.4bn (+103%)</td><td class="good">0.68x</td></tr>
+<tr><td>Meta</td><td>$135–145bn</td><td>$33.9bn</td><td>n/a</td></tr>
+</table>
+<p><b>Judgment:</b> demand visibility into 2027 is the best it has ever been — but two of four buyers now spend more than they generate. The marginal dollar of AI demand is <b>debt- and lease-financed</b>. That is the change versus 2024–25, and it is where the cycle will break if it breaks.</p>
+<p class="src">Sources: Q3-26 calls via Trefis (4 Nov 2026); 10-Q compilation via i10x (15 Nov 2026); Jefferies via Businessworld (24 Jul 2026).</p>
+<div class="foot">3 / 14</div>
+</section>
+
+<section class="slide">
+<h2>Accelerators: a boom with a share shift inside it</h2>
+<div class="grid">
+<div>
+<h3>Merchant (NVIDIA)</h3>
+<ul>
+<li>Q3 FY27 revenue <b>$115.8bn</b> (+103% YoY); data center <b>$107.6bn</b> (+110%)</li>
+<li>Annualised data-center run-rate ≈ <b>$430bn</b></li>
+<li>Vera Rubin: <b>~$20bn in its first quarter</b> — fastest ramp in company history</li>
+<li>Forward P/E ~14x vs 1-yr mean 22.5x</li>
+</ul>
+<h3>Custom ASIC (Broadcom, Google TPU)</h3>
+<ul>
+<li>Broadcom AI semis <b>$16.7bn</b> in Q3 FY26, +221% YoY; FY26 $56–58bn</li>
+<li>TPU compute shipments <b>doubled QoQ</b> to ~2m H100-equivalents (Epoch AI estimate)</li>
+<li>AMD data center <b>$8.55bn</b> (+97%), Q4 guide $17bn total</li>
+</ul>
+</div>
+<div class="card">
+<h3>Why this matters for the portfolio</h3>
+<p>Custom silicon is growing roughly <b>twice as fast</b> as merchant off a ~$60bn base. That is share shift <i>inside</i> a boom, not a demand problem — but it changes who captures the margin.</p>
+<p>It also concentrates customer risk: Broadcom's next leg depends on Anthropic (largest XPU customer next year) and OpenAI (second by FY2028).</p>
+<p class="warn"><b>Implication:</b> own the accelerator complex through the <b>foundry and packaging layer</b>, which is paid by merchant and custom alike, rather than betting on which architecture wins.</p>
+</div>
+</div>
+<p class="src">Sources: NVIDIA Q3 FY27 release (17 Nov 2026); AMD Q3-26 (3 Nov 2026); Broadcom via KuCoin/Barchart (Sep–Oct 2026); Epoch AI (3 Nov 2026).</p>
+<div class="foot">4 / 14</div>
+</section>
+
+<section class="slide">
+<h2>Memory: the 2026 market was a price event, not a unit event</h2>
+<div class="grid">
+<div>
+<ul>
+<li>WSTS: 2026 market <b>$1.51tn (+90%)</b>, of which memory ≈ <b>+250% to &gt;$800bn</b> — memory is over half the market vs ~30% historically</li>
+<li>H1-2026 actual <b>$702bn (+102%)</b>; 2027 forecast <b>~$1.9tn (+27%)</b></li>
+<li>4Q26 contract prices: DRAM <b>+10–15% QoQ</b>, NAND <b>+15–20% QoQ</b>; market "undersupplied"</li>
+<li>HBM ASP forecast to <b>more than double</b> in 2027 (TrendForce, 18 Nov 2026); HBM4 shipping at all three suppliers for Vera Rubin</li>
+<li>HBM share Q2-26: SK hynix 50%, Samsung 33%, Micron third</li>
+</ul>
+</div>
+<div class="card">
+<h3>The mechanism</h3>
+<p>HBM consumes ≈<b>22% of top-3 DRAM wafer starts for ~9% of bits</b>. The shortage is a <i>wafer-allocation</i> shortage, which is why conventional DRAM is squeezed and prices compound.</p>
+<p>Supply relief is 2027–28 at the earliest: SK hynix pulled Yongin completion forward to 2034–35; Samsung + SK hynix plan <b>$518bn</b> of multi-year Korean memory capacity.</p>
+<p class="bad"><b>But:</b> TrendForce and GF Securities both see <b>NAND in surplus in 2027</b>. Memory is the most cyclical part of this thesis.</p>
+</div>
+</div>
+<p class="src">Sources: WSTS (2 Jun 2026, Aug 2026); TrendForce (30 Sep 2026, 18 Nov 2026); Counterpoint via Businesskorea (2 Sep 2026); Forbes (12 Jul 2026). HBM market size (~$58bn) is single-sourced — see appendix.</p>
+<div class="foot">5 / 14</div>
+</section>
+
+<section class="slide">
+<h2>Supply: the constraint moved from wafers to packaging</h2>
+<div class="grid">
+<div>
+<ul>
+<li>TSMC 3Q26 revenue <b>NT$1,494bn (+41% YoY in US$)</b>; FY26 growth guided <b>~44%</b>; "demand remained above available supply"</li>
+<li>Capex <b>$60–64bn/yr for 2026–28</b>; broker 2028 estimates up to $105bn</li>
+<li><b>CoWoS booking windows 52–78 weeks</b>; 100% of chips still packaged in Taiwan even when front-end runs in Arizona</li>
+<li>Pricing power: <b>+3–6% wafer hikes from 2027</b> (steepest on N2/N3); <b>5–20% "location premium"</b> on US-made wafers</li>
+<li>Arizona commitment raised to <b>$265bn</b>; overseas fabs dilute gross margin ~3–4pp</li>
+</ul>
+</div>
+<div>
+<h3>Second sources are arriving — slowly</h3>
+<ul>
+<li>Samsung Taylor 2nm <b>fully booked before mass production</b> (Tesla, Broadcom, Arm); Tesla AI5 in trial production</li>
+<li>Intel: external foundry revenue only <b>$174m</b> in Q1-26, but a <b>first outside 18A customer</b> signed in Nov-26 at ~70% yield</li>
+<li>Equipment: SEMI 2026 sales revised up to <b>$167bn</b> (+23%), 2027 <b>$156bn</b></li>
+</ul>
+<p class="good"><b>Implication:</b> pricing power sits with the bottleneck — foundry, advanced packaging, HBM and the equipment that enables them. That is where we want the exposure.</p>
+</div>
+</div>
+<p class="src">Sources: TSMC 3Q26 via Quartr (13 Nov 2026); TrendForce (16 Oct 2026); AInvest (1 Oct 2026); East Asia Brief (27 Sep 2026); TrendForce (9 Sep 2026); Yahoo Finance (18 Nov 2026); SEMI via ET (14 Jul 2026).</p>
+<div class="foot">6 / 14</div>
+</section>
+
+<section class="slide">
+<h2>Policy: the rules changed twice in 2026 — and both times toward complexity</h2>
+<table>
+<tr><th>Channel</th><th>What happened</th><th>Investment read</th></tr>
+<tr><td>US export controls</td><td><b>AI Diffusion Rule rescinded</b> (effective 19 Nov 2026); replaced by licensing for chips used in data centres serving China, <b>including remote cloud access</b></td><td>Removes the worst-case global licence regime; keeps China revenue capped</td></tr>
+<tr><td>Tariffs</td><td><b>Section 232: 25%</b> on certain advanced chips &amp; equipment from 15 Jan 2026; a <b>100% chip tariff</b> was announced in Nov 2026 (details unverified)</td><td>Favours US-manufacturing capacity; raises cost for importers</td></tr>
+<tr><td>China</td><td>NVIDIA's China AI-chip share fell to <b>34% in H1-26</b>; homegrown immersion DUV ~5 units in 2026, ~20 in 2027</td><td>China revenue is a call option, not a base case</td></tr>
+<tr><td>Critical minerals</td><td>China's gallium/germanium/rare-earth suspensions had a paper expiry around <b>10–late Nov 2026</b>; status fluid</td><td>Tail risk to materials and equipment supply</td></tr>
+</table>
+<p><b>Judgment:</b> policy is no longer a single binary event (ban / no ban). It is a permanent, moving tax on cross-border supply chains. We underwrite <b>zero China upside</b> and treat any easing as free optionality.</p>
+<p class="src">Sources: Wilson Sonsini (19 Nov 2026); Global Sanctions (18 Nov 2026); HK TID circular 67/2026 (14 Jan 2026); Inside U.S. Trade (12 Nov 2026); IDC via Economic Times (10 Nov 2026); Global SMT (27 Jul 2026); EAI Global (1 Nov 2026).</p>
+<div class="foot">7 / 14</div>
+</section>
+
+<section class="slide">
+<h2>Valuation: the de-rating was earnings-led, not price-led</h2>
+<div class="grid3">
+<div class="card"><span class="num">14,655</span>SOX peak, 22 Jun 2026</div>
+<div class="card"><span class="num">−12.2%</span>single day, 5 Nov 2026 — worst since Mar 2020</div>
+<div class="card"><span class="num">13.0x</span>SOX forward P/E — lowest since Jan 2019</div>
+</div>
+<ul style="margin-top:14px">
+<li>Rolling 12-month EPS estimates rose <b>+155% from end-2025</b> while the multiple compressed to ~13x. The market stopped paying for AI growth; it did not deny it.</li>
+<li>For the first time in the AI boom the SOX trades at a <b>discount to the S&amp;P 500</b> (13.7x vs 18.3x NTM, BofA/FactSet; Morningstar puts the SOX at 13.0x — two providers, same direction).</li>
+<li>Concentration risk sits in the <b>benchmark</b>, not the chip index: top-10 = ~38–43% of the S&amp;P 500, NVDA alone ~7.7–9.4% of the capped SOX.</li>
+</ul>
+<p class="warn"><b>Judgment:</b> valuation is no longer the risk — <b>the forecast is</b>. At 13x, the market is already discounting a 2027 disappointment. That is an asymmetric setup, but only if the earnings estimate holds.</p>
+<p class="src">Sources: Morningstar/MarketWatch (5 Nov 2026); BofA via Benzinga (6 Nov 2026); AInvest citing FactSet (15 Nov 2026); FTSites (11 Nov 2026); FinanceCharts (4 Nov 2026). SOX 10-yr average forward P/E not verified.</p>
+<div class="foot">8 / 14</div>
+</section>
+
+<section class="slide">
+<h2>Our five judgments for 2027</h2>
+<table>
+<tr><th>#</th><th>Judgment</th><th>Confidence</th></tr>
+<tr><td>1</td><td><b>Demand is contracted, not speculative.</b> 2027 capex is guided up by all four hyperscalers; NVIDIA's data-center run-rate is ~$430bn annualised. A demand air-pocket requires a financing event, not a change of mind.</td><td class="good">High</td></tr>
+<tr><td>2</td><td><b>2027 growth decelerates sharply from 2026.</b> WSTS has +27% for 2027 vs +90% for 2026, and the 2026 number is a memory-price artefact. Expect "growth scares" all year even in a healthy market.</td><td class="good">High</td></tr>
+<tr><td>3</td><td><b>Memory splits in two.</b> HBM stays tight into 2027 (ASP to more than double); commodity NAND/DRAM moves to surplus. Own HBM, avoid commodity memory beta.</td><td class="warn">Medium</td></tr>
+<tr><td>4</td><td><b>The bottleneck is packaging, not lithography.</b> CoWoS and HBM allocation, not wafer capacity, set the pace — and they are the most defensible margins in the chain.</td><td class="warn">Medium</td></tr>
+<tr><td>5</td><td><b>Valuation is a tailwind, financing is the headwind.</b> At ~13x the multiple has room; the risk is that AI capex is increasingly debt-financed (AMZN 1.82x, GOOGL 1.21x of operating cash flow).</td><td class="warn">Medium</td></tr>
+</table>
+<p class="src">Judgments are the fund manager's synthesis of the sourced facts in this deck; confidence labels are our own assessment, not a sourced rating.</p>
+<div class="foot">9 / 14</div>
+</section>
+
+<section class="slide">
+<h2>Investment implications: what we would own and why</h2>
+<div class="grid">
+<div>
+<h3>Overweight</h3>
+<ul>
+<li><b>Foundry &amp; advanced packaging</b> — paid by merchant and custom alike; pricing power (+3–6% 2027 hikes, US location premium)</li>
+<li><b>HBM / memory with HBM mix</b> — ASP to more than double in 2027; supply relief only 2027–28</li>
+<li><b>Semicap</b> — 2026 equipment sales revised up to $167bn (+23%); note SEMI's 2027 forecast falls to $156bn, so this is a 2026–early-2027 trade, not a multi-year one</li>
+<li><b>Custom-ASIC enablers</b> — growing ~2x faster than merchant</li>
+</ul>
+</div>
+<div>
+<h3>Neutral / underweight</h3>
+<ul>
+<li><b>Commodity NAND &amp; DRAM</b> — 2027 surplus risk (TrendForce, GF Securities)</li>
+<li><b>China-exposed revenue</b> — underwrite zero; NVIDIA China share already 34%</li>
+<li><b>Single-customer AI names</b> — Anthropic/OpenAI concentration at Broadcom</li>
+<li><b>Levered AI-infrastructure plays</b> — neoclouds, GPU-rental models</li>
+</ul>
+<h3>Portfolio construction</h3>
+<p>Benchmark weight overall, quality tilt within. Size the position so a repeat of the <b>−38.5%</b> drawdown is survivable — i.e. a position whose loss at −40% stays inside the fund's risk budget (to be set with risk). Use the capped SOX rather than the concentrated S&amp;P 500 as the expression of the theme. The AI-capex hedge is explicit: no levered AI-infrastructure or neocloud exposure, and a cap on any single customer-concentrated name.</p>
+</div>
+</div>
+<p class="src">This is an analytical view for internal discussion, not a trade instruction. Position sizing must be set against the fund's mandate and risk budget.</p>
+<div class="foot">10 / 14</div>
+</section>
+
+<section class="slide">
+<h2>Key risks — and what would tell us we are wrong</h2>
+<table>
+<tr><th>Risk</th><th>Evidence today</th><th>Trigger to act</th></tr>
+<tr><td><b>AI financing / circularity</b></td><td>AMZN capex 1.82x OCF, GOOGL 1.21x; $20bn+ NVIDIA-backed loans to neoclouds; NVIDIA discloses $390bn supply commitments and $102bn of leases</td><td>Hyperscaler capex guided flat or down; credit spreads on AI debt widen</td></tr>
+<tr><td><b>Memory cyclicality</b></td><td>NAND surplus in 2027 (TrendForce, GF); Micron's 2026 surge driven by 60%+ price hikes, not volume</td><td>Contract prices turn negative QoQ</td></tr>
+<tr><td><b>Earnings deceleration</b></td><td>Global corporate profit growth forecast to halve 33.5% → 16% in 2027 (Edaily, 17 Nov 2026; universe not specified — treat as directional)</td><td>SOX EPS revisions turn negative</td></tr>
+<tr><td><b>Policy / geopolitics</b></td><td>Section 232 25% tariff; announced 100% chip tariff; mineral export leverage; Taiwan concentration</td><td>Taiwan Strait escalation; tariff scope widened to HS 8542</td></tr>
+<tr><td><b>Taiwan concentration</b></td><td>100% of advanced packaging and most leading-edge wafers still in Taiwan (slide 6); we are overweight that layer</td><td>Any cross-Strait escalation; mitigation: cap single-country exposure, prefer names with US/Japan capacity</td></tr>
+<tr><td><b>Valuation / estimate risk</b></td><td>13.0x forward P/E is snippet-only; 10-yr average and consensus EPS growth unverified; a 13x multiple is only cheap if the estimate holds</td><td>SOX EPS revisions turn negative</td></tr>
+<tr><td><b>Concentration</b></td><td>Top-10 ≈ 38–43% of S&amp;P 500; NVDA larger than energy + utilities + real estate combined</td><td>Passive outflows; index rebalancing</td></tr>
+</table>
+<p class="src">Sources: Trefis (4 Nov 2026); AInvest (16–18 Oct 2026); 36Kr from NVIDIA Q3 call (17 Nov 2026); TrendForce (18 Nov 2026); Edaily (17 Nov 2026); HK TID (14 Jan 2026); FTSites (11 Nov 2026).</p>
+<div class="foot">11 / 14</div>
+</section>
+
+<section class="slide">
+<h2>What we would do next</h2>
+<div class="grid">
+<div>
+<h3>Decisions requested today</h3>
+<ul>
+<li>Approve a <b>benchmark-weight, quality-tilted</b> semiconductor position with an explicit HBM/foundry overweight and commodity-memory underweight</li>
+<li>Approve a <b>risk budget</b> sized to a −40% drawdown scenario</li>
+<li>Approve <b>quarterly review</b> against the five triggers on the previous slide</li>
+</ul>
+</div>
+<div>
+<h3>Open questions for the team</h3>
+<ul>
+<li>Do we express the theme through the capped SOX or through single names? (Concentration differs materially.)</li>
+<li>What is our maximum China revenue exposure tolerance?</li>
+<li>Do we hedge the memory leg separately, given the 2027 NAND surplus call?</li>
+</ul>
+<p class="warn"><b>Bottom line:</b> the industry's 2027 problem is not demand. It is whether the buyers can keep financing it — and whether memory prices hold. We want to be paid for the bottleneck, not for the beta.</p>
+</div>
+</div>
+<div class="foot">12 / 14</div>
+</section>
+
+<section class="slide">
+<h2>Sources &amp; confidence</h2>
+<div class="grid">
+<div>
+<h3>Primary / near-primary</h3>
+<ul style="font-size:13.5px">
+<li>WSTS market releases (2 Jun 2026; Aug 2026)</li>
+<li>NVIDIA Q3 FY2027 results (17 Nov 2026); AMD Q3-26 (3 Nov 2026)</li>
+<li>TSMC 3Q26 (13 Nov 2026); SEMI equipment forecast (16 Dec 2025; 14 Jul 2026)</li>
+<li>TrendForce price notes (30 Sep, 18 Nov 2026); Counterpoint HBM share (2 Sep 2026)</li>
+<li>BIS rule summaries via Wilson Sonsini / Global Sanctions (18–19 Nov 2026); HK TID Section 232 circular (14 Jan 2026)</li>
+</ul>
+</div>
+<div>
+<h3>Confidence caveats</h3>
+<ul style="font-size:13.5px">
+<li>All figures were gathered from <b>search snippets</b>; primary documents were located but not opened in full. Treat as <b>snippet-verified, not document-verified</b>.</li>
+<li><b>Unverified / single-sourced:</b> HBM market size (~$58bn); SOX 10-year average forward P/E; consensus 2026–27 EPS growth by company; the announced 100% chip tariff; China's homegrown DUV volumes; the reported NVIDIA CEO change (excluded from this deck).</li>
+<li>WSTS 2026/27 forecasts are the <b>Spring-2026 vintage</b>; no Autumn-2026 update was found.</li>
+<li>2025 market size: $791.7bn (SIA) vs $795.6bn (later summary) — we use SIA.</li>
+</ul>
+</div>
+</div>
+<div class="foot">13 / 14</div>
+</section>
+
+<section class="slide">
+<h2>Appendix: the numbers behind the deck</h2>
+<table style="font-size:12.5px">
+<tr><th>Metric</th><th>Value</th><th>Source · date</th></tr>
+<tr><td>Global semi sales 2024 / 2025</td><td>$630.5bn / $791.7bn (+25.6%)</td><td>SIA · 6 Feb 2026</td></tr>
+<tr><td>2026 / 2027 market</td><td>$1.51tn (+90%) / ~$1.9tn (+27%)</td><td>WSTS · 2 Jun 2026</td></tr>
+<tr><td>H1-2026 actual</td><td>$702bn (+102%)</td><td>WSTS · Aug 2026</td></tr>
+<tr><td>Hyperscaler capex 2025 / 2026</td><td>~$410bn / $720–745bn</td><td>10-Q compilation · Nov 2026</td></tr>
+<tr><td>NVIDIA Q3 FY27 revenue / DC</td><td>$115.8bn / $107.6bn (+110%)</td><td>NVIDIA · 17 Nov 2026</td></tr>
+<tr><td>Broadcom AI semis Q3 FY26</td><td>$16.7bn (+221%)</td><td>Broadcom · 2 Sep 2026</td></tr>
+<tr><td>TSMC 3Q26 revenue</td><td>NT$1,494bn (+41% US$)</td><td>TSMC · 13 Nov 2026</td></tr>
+<tr><td>SOX peak / drawdown / fwd P/E</td><td>14,655 / −38.5% / 13.0x</td><td>Morningstar · 5 Nov 2026</td></tr>
+<tr><td>Equipment 2026 / 2027</td><td>$167bn / $156bn</td><td>SEMI · 14 Jul 2026</td></tr>
+</table>
+<div class="foot">14 / 14</div>
+</section>
+</div>
+<div class="bar" id="bar" style="width:7%"></div>
+<div class="hint">← → / space to navigate · F for fullscreen · O for overview</div>
+<script>
+(function(){
+  var s=[].slice.call(document.querySelectorAll('.slide')),i=0,bar=document.getElementById('bar');
+  function show(n){i=Math.max(0,Math.min(s.length-1,n));s.forEach(function(e,k){e.classList.toggle('on',k===i)});bar.style.width=((i+1)/s.length*100)+'%';location.hash=i+1;}
+  document.addEventListener('keydown',function(e){
+    if(['ArrowRight','ArrowDown','PageDown',' '].indexOf(e.key)>-1){e.preventDefault();show(i+1);}
+    else if(['ArrowLeft','ArrowUp','PageUp'].indexOf(e.key)>-1){e.preventDefault();show(i-1);}
+    else if(e.key==='Home'){show(0);} else if(e.key==='End'){show(s.length-1);}
+    else if(e.key==='f'||e.key==='F'){if(!document.fullscreenElement){document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();}else{document.exitFullscreen&&document.exitFullscreen();}}
+    else if(e.key==='o'||e.key==='O'){document.body.classList.toggle('ov');}
+  });
+  document.addEventListener('click',function(e){if(e.clientX>window.innerWidth*0.6)show(i+1);else if(e.clientX<window.innerWidth*0.4)show(i-1);});
+  var h=parseInt((location.hash||'').replace('#',''),10);show(isNaN(h)?0:h-1);
+})();
+</script>
+</body></html>
