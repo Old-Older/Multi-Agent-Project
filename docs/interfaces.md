@@ -247,7 +247,7 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
   - 其他消息：开新 root（`Router.new_root_id`），`LeadSelector.choose` 选牵头者，`Router.dispatch(requester="orchestrator", target=牵头者, goal=人类原话, timeout=lead_timeout_s)`，等结果，收集交付物，发最终回复。
 - `LeadSelector.choose(session, request)`：一次 LLM 调用（工具 `choose_lead`），看各角色的职责选人；结果**按会话缓存**，同一会话的后续请求沿用；调用失败、没选出有效角色就**退回角色表第一个**，且不缓存。只有一个角色时不调用 LLM。
 - 牵头者是普通 `WorkerAgent`：任务没有父任务（`parent_id is None`，`chain == ["orchestrator"]`）时它就是牵头者，步数和时间预算用 `max_lead_steps`、`lead_timeout_s`，并拿到队友的 `call_<队友>` 和 `ask_human`。它自己拆任务、委派、检查、汇报；最终 JSON 里的 `summary` 就是老师读到的话，`artifacts` 列出整个请求的交付物。
-- **交付物**：牵头者列出的文件，只有这些（牵头者自己顺手写的脚本和草稿不会自动加进去；牵头者最终 JSON 里的 `artifacts` 以它写的为准，队友写的文件也可以列）；一个都没列才是这个 root 里所有成功任务写的文件。每个文件从写它的 agent 的 workspace 拷到 `data/output/<root_id>-<启动时间>/`，重名时加 `<agent>_` 前缀。
+- **交付物**：牵头者列出的文件，只有这些（牵头者自己顺手写的脚本和草稿不会自动加进去；牵头者最终 JSON 里的 `artifacts` 以它写的为准，队友写的文件也可以列）；一个都没列才是这个 root 里所有成功任务写的文件。每个文件从写它的 agent 的 workspace 拷到 `data/output/<root_id>-<启动时间>/`，重名时加 `<agent>_` 前缀。牵头者和队友都有的同名文件由 `Router.delivery_owner` 决定取谁的：取最后修订的那一份（牵头者的副本比队友的晚写就取牵头者的，除非它与当初交给该队友的那份逐字节相同）。
 - **最终回复**是一条 `CHAT`，`sender` 是牵头者，`receiver` 是 human，文字是 `@human <summary>` 加交付物清单；`payload`：`{"final": True, "root_id", "success", "rounds", "failure_mode", "deliverables", "output_dir", "lead", "duration"}`。取消的请求不发最终回复。
 - `RequestTracker.outcomes[root_id]`：`RootOutcome(root_id, success, rounds, failure_mode, summary, deliverables, output_dir, duration, lead)`，评测框架直接读；`success` 来自牵头者的结果，结果对不对由检查器判断。
 - 请求层与牵头者之间的 `TASK_ASSIGN`、`TASK_RESULT`（一端是 `orchestrator`）是内部消息，命令行不显示，对话导出也不重复。
@@ -259,7 +259,7 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 - `ToolResult.files_written` 和 `refs` 会被汇总进 `TaskResult`，所以写文件、git 提交的工具必须填写。
 - `spec()` 已实现，返回 `FunctionSpec`。
 - 角色配置里用到的工具名：`web_search`、`fetch_url`、`read_file`、`write_file`、`delete_file`、`list_files`、`run_python`、`git`。
-- 已实现文件工具在 `mas/tools/files.py`，也从 `mas.tools` 导出。参数为非空字符串 `path`；`write_file` 另需字符串 `content`，`list_files.path` 默认 `.`。拒绝额外参数；`delete_file.requires_approval=True`，授权由 Worker 负责。
+- 已实现文件工具在 `mas/tools/files.py`，也从 `mas.tools` 导出。参数为非空字符串 `path`；`write_file` 另需字符串 `content`，可选布尔 `append`（追加到已有文件末尾，文件不存在时报错），`list_files.path` 默认 `.`。拒绝额外参数；`delete_file.requires_approval=True`，授权由 Worker 负责。
 - `write_file.files_written` 是实际目标的规范 workspace 相对路径（`/` 分隔）；失败为空。`list_files.output` 为直接子项名称的 JSON 数组。完整 schema、错误策略和示例见 [第一阶段交接](sandbox_tools_handoff.md)。
 
 ### 3.12 沙箱 `mas/sandbox/base.py`

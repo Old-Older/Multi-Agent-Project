@@ -193,7 +193,9 @@ When the lead's task returns, the `RequestTracker`:
 
 - copies the deliverables (the files the lead listed, and only those: its helper scripts and drafts are not added behind
   its back; if it listed nothing, every file the successful tasks of the root wrote) from the writing agents' workspaces to `data/output/<root>-<time>/` (name clashes get an
-  `<agent>_` prefix; a listed file that does not exist is reported, not hidden);
+  `<agent>_` prefix; a listed file that does not exist is reported, not hidden). A listed file that both the lead and a
+  teammate have is taken from whoever revised it last: the lead's copy if it was written after the teammate's, unless it is
+  exactly what that teammate was handed to work on (`Router.delivery_owner`);
 - records a `RootOutcome` (success, failure mode, duration, lead, deliverables, output directory);
 - posts the final reply **in the lead's name**, with a payload evaluation can read:
   `{"final": true, "root_id", "success", "failure_mode", "rounds", "duration", "lead", "deliverables", "output_dir"}`.
@@ -243,8 +245,8 @@ asked at most `max_review_rounds` (3) times to review the same file. A gate need
 
 **Files.** Besides the files listed in a call, the `Router` hands over the files the goal names that exist in the requester's
 workspace, and replaces an older copy of the same name in the teammate's inbox (`import_file` itself never overwrites). The files
-a teammate reports (scripts left out, at most 6) are copied back into the requester's inbox, because a reply is cut at 1500
-characters.
+a teammate reports (code included, at most 6; when there are more, the helper scripts the task neither named nor handed over
+stay behind first) are copied back into the requester's inbox, because a reply is cut at 1500 characters.
 
 **Closing check.** Before a lead's final answer is accepted: failed tasks, open issues, "could not read the file" reports,
 uncleared reviews and out-of-date work are put to it, with one more step to put them right (`closing_check`).
@@ -317,7 +319,7 @@ its workspace mounted) is the planned stronger isolation and is not implemented.
 
 | Tool | Does | Notes |
 |---|---|---|
-| `read_file`, `write_file`, `list_files` | read, create or overwrite, list | relative paths inside the workspace |
+| `read_file`, `write_file`, `list_files` | read, create or overwrite, list | relative paths inside the workspace; `write_file` takes `append: true` to add to the end of a file, so a long file is written in parts (one reply ends at the model's output limit, and a call cut off there is not run: the member is told so and how to continue) |
 | `edit_file` | change a file by exact replacement | `{old, new}` pairs (or one `old`/`new`), applied in order all or nothing; a failure says which edit and why, with the closest line; success confirms the new size. Members are told to use it instead of rewriting a file or patching it with a script |
 | `delete_file` | delete a file | needs the human's approval |
 | `run_python` | run a script or a module (`unittest`, `pytest`) in the workspace | timeout (default 60 s), output returned with the exit code |

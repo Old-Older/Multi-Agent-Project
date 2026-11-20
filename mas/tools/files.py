@@ -13,6 +13,10 @@ from mas.tools.base import Tool, ToolResult
 # and a cut that loses the "keep reading" note would leave the model guessing, so the window is smaller.
 READ_WINDOW = 3500
 
+# What one write_file call should carry at most. A reply ends at the model's output limit (8192 tokens with
+# DeepSeek, about 26 000 characters of arguments); a call that is cut off there cannot be parsed and is lost whole.
+WRITE_PART_CHARS = 12_000
+
 
 def _parameters(*, content: bool = False, optional_path: bool = False) -> dict[str, Any]:
     path: dict[str, Any] = {
@@ -43,6 +47,10 @@ class _FileTool(Tool):
                 if name == "offset":
                     if type(value) is not int or value < 0:
                         raise ValueError("offset must be a non-negative integer")
+                    continue
+                if name == "append":
+                    if type(value) is not bool:
+                        raise ValueError("append must be true or false")
                     continue
                 if not isinstance(value, str):
                     raise TypeError(f"{name} must be a string")
@@ -83,13 +91,26 @@ class ReadFile(_FileTool):
 
 class WriteFile(_FileTool):
     name = "write_file"
-    description = "Create or overwrite a UTF-8 text file, creating parent directories as needed."
+    description = ("Create or overwrite a UTF-8 text file, creating parent directories as needed. One reply can carry only "
+                   f"so much: write a file longer than about {WRITE_PART_CHARS} characters in parts, the first part with a "
+                   "plain call and each further part with `append` set to true (the answer says how long the file is "
+                   "now). A call that is cut off at the output limit writes nothing.")
     parameters = _parameters(content=True)
+    parameters["properties"] = {**parameters["properties"], "append": {
+        "type": "boolean", "default": False,
+        "description": "Add `content` to the end of the existing file instead of replacing the file."}}
 
-    def _run(self, sandbox: Sandbox, *, path: str, content: str) -> ToolResult:
+    def _run(self, sandbox: Sandbox, *, path: str, content: str, append: bool = False) -> ToolResult:
         relative = sandbox.resolve(path).relative_to(sandbox.resolve(".")).as_posix()
-        sandbox.write_text(path, content)
-        return ToolResult(True, f"Wrote {relative}", files_written=[relative])
+        if not append:
+            sandbox.write_text(path, content)
+            return ToolResult(True, f"Wrote {relative}", files_written=[relative])
+        if not sandbox.exists(path):
+            raise ValueError(f"cannot append: {relative} does not exist yet; write its first part without append")
+        text = sandbox.read_text(path) + content
+        sandbox.write_text(path, text)
+        return ToolResult(True, f"Appended {len(content)} characters to {relative}: it now has {len(text)} characters, "
+                                f"{len(text.splitlines())} lines.", files_written=[relative])
 
 
 class EditFile(Tool):

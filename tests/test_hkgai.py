@@ -90,6 +90,19 @@ class HKGAITests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.text, "")
         self.assertEqual([c.arguments for c in response.tool_calls], [{} for _ in invalid])
         self.assertEqual([c.raw_arguments for c in response.tool_calls], invalid)
+        # a call without arguments may arrive as "" or "null"; the others are broken and must not run as {}
+        self.assertEqual([c.malformed for c in response.tool_calls], [raw not in ("", "null") for raw in invalid])
+
+    async def test_a_call_cut_off_at_the_output_limit_is_marked_as_malformed(self):
+        raw = '{"path": "deck.html", "content": "<html>\\n<body>'             # the reply ended inside the string
+        body = completion(None, [tool_call("first", '{"query": "ok"}'), tool_call("second", raw)])
+        body["choices"][0]["finish_reason"] = "length"
+        client, _, _ = self.transport(lambda request: httpx.Response(200, json=body))
+        response = await client.chat(self.messages)
+        self.assertEqual(response.finish_reason, "length")
+        self.assertEqual([(c.arguments, c.malformed) for c in response.tool_calls],
+                         [({"query": "ok"}, False), ({}, True)])
+        self.assertEqual(response.tool_calls[1].raw_arguments, raw)
 
     async def test_connection_timeout_rate_limit_and_server_error_recover(self):
         errors = iter([httpx.ConnectError("private details"), httpx.ReadTimeout("private details"),

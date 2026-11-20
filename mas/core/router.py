@@ -51,7 +51,7 @@ _REVIEW_VERB = re.compile(
     r"^\W*(?!(?:write|draft|produce|create|build|prepare|compile|update|add|fix|revise|rewrite|make|generate|research|find"
     r"|summari[sz]e|analy[sz]e|apply|implement)\b)(?:\w+\W+){0,4}?(?:review|re-?check|check|verify|confirm|audit|sign-?off|approve)",
     re.IGNORECASE)
-_SCRIPT_SUFFIXES = (".py", ".sh", ".pyc")                   # a teammate's tools, not something to hand back
+_SCRIPT_SUFFIXES = (".py", ".sh", ".pyc")                   # code: needs no reviewer; a helper stays behind first
 _FILE_NAME = re.compile(r"(?<![\w/.-])[\w][\w.-]*\.(?:md|txt|py|json|html?|csv|tsv|pdf|docx?|xlsx?|pptx?|js|css|ipynb|ya?ml)\b",
                         re.IGNORECASE)
 
@@ -288,21 +288,35 @@ class Router:
         """Put the files a teammate reported into the inbox of whoever asked for the work, so that it can read them.
 
         Workspaces are private and a reply is cut after `result_summary_max_chars`: without this the requester sees
-        only the first lines of a long file and, to get more, has to ask the teammate to paste it. Scripts are left
-        out (they are the teammate's tools), as are files that are too large; at most `limit` files, the last ones
-        reported. A copy of the same name already in the inbox is replaced. Best effort: it never fails the call.
-        Returns the names now in the inbox."""
+        only the first lines of a long file and, to get more, has to ask the teammate to paste it. Code is copied like
+        any other file: where the team builds software the script is the result, and a lead that never receives it
+        can only report that nothing was built. Files that are too large are left out, and so are compiled files; at
+        most `limit` files. When more were reported, the scripts the task neither named nor handed over (the checks
+        and helpers a teammate writes for itself) stay behind first, then the earliest reported. A copy of the same
+        name already in the inbox is replaced. Best effort: it never fails the call. Returns the names now in the
+        inbox."""
         try:
-            assignee = self.state.get(result.task_id).assignee
+            task = self.state.get(result.task_id)
         except KeyError:
             return []
-        mine, theirs = self.sandboxes.get(requester), self.sandboxes.get(assignee)
+        mine, theirs = self.sandboxes.get(requester), self.sandboxes.get(task.assignee)
         if mine is None or theirs is None or mine is theirs or result.declined:
             return []
         names = [n for n in dict.fromkeys(result.artifacts)
-                 if not n.lower().endswith(_SCRIPT_SUFFIXES) and not n.startswith(f"{INBOX}/")]
+                 if not n.lower().endswith(".pyc") and not n.startswith(f"{INBOX}/")]
+        if len(names) > limit:
+            asked, given = f"{task.goal}\n{task.context}", {Path(f).name for f in task.files}
+
+            def helper(name: str) -> bool:
+                base = Path(name).name
+                return name.lower().endswith(_SCRIPT_SUFFIXES) and base not in given and base not in asked
+
+            keep = [n for n in names if not helper(n)][-limit:]
+            if len(keep) < limit:
+                keep += [n for n in names if helper(n)][len(keep) - limit:]
+            names = [n for n in names if n in keep]
         copied: list[str] = []
-        for name in names[-limit:]:
+        for name in names:
             try:
                 src = theirs.resolve(name)
                 if not src.is_file() or src.stat().st_size > max_bytes:
@@ -310,7 +324,7 @@ class Router:
                 self._hand_over(mine, src, Path(name).name)
                 copied.append(Path(name).name)
             except Exception:
-                log.warning("could not copy %s from %s to %s", name, assignee, requester, exc_info=True)
+                log.warning("could not copy %s from %s to %s", name, task.assignee, requester, exc_info=True)
         return copied
 
     @staticmethod
@@ -389,6 +403,42 @@ class Router:
                 for name in r.artifacts:
                     seen.setdefault((t.assignee, name), None)
         return list(seen)
+
+    def delivery_owner(self, root_id: str, lead: str, name: str) -> str:
+        """Whose copy of a file the lead listed is handed to the human: the lead's own or a teammate's.
+
+        A file no teammate reported in this request is the lead's. One a teammate wrote that the lead does not have, or
+        has unchanged, is the teammate's (the newest task that reported it). When both have it and the two differ, the
+        latest revision is taken: the lead's if it was written after the teammate's, unless it is byte for byte what
+        that teammate was handed to work on (then the teammate's file is the revision and the lead's copy the text it
+        started from). The teammate's copy used to win always, so a lead that revised a teammate's draft through two
+        review rounds handed in the first draft."""
+        writer = None
+        for task in self.state.by_root(root_id):
+            result = self.state.result(task.id)
+            if task.assignee != lead and result and result.success and not result.declined and name in result.artifacts:
+                writer = task
+        if writer is None:
+            return lead
+        mine, theirs = self.sandboxes.get(lead), self.sandboxes.get(writer.assignee)
+        if mine is None or theirs is None:
+            return writer.assignee
+        try:
+            own, other = mine.resolve(name), theirs.resolve(name)
+            if not own.is_file():
+                return writer.assignee
+            if not other.is_file():
+                return lead
+            text = _digest(own)
+            if text is None or text == _digest(other):
+                return writer.assignee
+            started_from = {digest for handed, (_, digest) in self._handed.get(writer.id, {}).items()
+                            if Path(handed).name == Path(name).name}
+            if text in started_from:
+                return writer.assignee
+            return lead if own.stat().st_mtime_ns > other.stat().st_mtime_ns else writer.assignee
+        except (OSError, ValueError):
+            return writer.assignee
 
     def _refuse(self, task: Task, reason: str) -> TaskResult:
         """Record a refused call as a FAILED task (for /status and debugging) and return

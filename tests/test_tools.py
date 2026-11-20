@@ -121,6 +121,30 @@ class FileToolsTest(unittest.IsolatedAsyncioTestCase):
             self.assertFailure(await WriteFile().run(self.sandbox, path="file.txt", content="x"), "access denied")
         self.assertFalse(self.sandbox.exists("file.txt"))
 
+    async def test_a_long_file_is_written_in_parts_with_append(self):
+        first, second = "<html>\n第一部分\n", "第二部分\n</html>\n"
+        self.assertEqual((await WriteFile().run(self.sandbox, path="deck.html", content=first)).output, "Wrote deck.html")
+        result = await WriteFile().run(self.sandbox, path="deck.html", content=second, append=True)
+        self.assertTrue(result.ok, result.output)
+        self.assertEqual(result.files_written, ["deck.html"])
+        self.assertEqual(self.sandbox.read_text("deck.html"), first + second)
+        self.assertEqual(result.output, f"Appended {len(second)} characters to deck.html: it now has "
+                                        f"{len(first + second)} characters, 4 lines.")
+        self.assertTrue((await WriteFile().run(self.sandbox, path="deck.html", content="x", append=False)).ok)
+        self.assertEqual(self.sandbox.read_text("deck.html"), "x")            # without append the file is replaced
+
+    async def test_append_needs_an_existing_file_and_a_boolean(self):
+        self.assertFailure(await WriteFile().run(self.sandbox, path="new.txt", content="x", append=True), "does not exist")
+        self.assertFalse(self.sandbox.exists("new.txt"))
+        for value in (None, 1, "true", []):
+            self.assertFailure(await WriteFile().run(self.sandbox, path="new.txt", content="x", append=value),
+                               "append must be true or false")
+        self.assertFalse(self.sandbox.exists("new.txt"))
+        self.assertFailure(await ReadFile().run(self.sandbox, path="new.txt", append=True), "unknown arguments")
+        schema = WriteFile().spec().to_openai()["function"]["parameters"]
+        self.assertEqual(schema["properties"]["append"]["type"], "boolean")
+        self.assertEqual(schema["required"], ["path", "content"])
+
     def test_names_and_approval_contract(self):
         tools = [ReadFile(), WriteFile(), DeleteFile(), ListFiles()]
         self.assertEqual([tool.name for tool in tools], ["read_file", "write_file", "delete_file", "list_files"])

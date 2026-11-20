@@ -231,6 +231,7 @@ You are the software developer on a software development team. You are responsib
 | `data/output/<请求>-<时间>/` | 每个请求的交付物，从各 agent 的工作区收集而来 |
 | `data/memory/<agent>.jsonl` | 每个 agent 的记忆 |
 | `workspaces/<agent>/` | 每个 agent 的私有文件 |
+| `data/tool_calls.jsonl` | 每个 agent 的每次工具调用一行：时间、agent、任务、第几步、工具、参数、是否成功、返回内容（长的值会截短）。用来事后查清某个成员在自己工作区里做了什么；agent 和评分员都不读它 |
 | `data/mas.log` | 日志，内部错误的堆栈在这里 |
 
 ## 配置
@@ -279,7 +280,7 @@ python3 -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\activate
 python -m pip install -e .
 cp .env.example .env                # 填入 DEEPSEEK_API_KEY（用 HKGAI 就填 HKGAI_API_KEY）
-python -m unittest                  # 可选：622 项测试，不需要 key
+python -m unittest                  # 可选：632 项测试，不需要 key
 ```
 
 **2. 用默认（快速）配置跑测试集**

@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 import shutil
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -87,6 +89,12 @@ class TrackerTestBase(unittest.IsolatedAsyncioTestCase):
             worker.router.sandboxes[worker.agent_id].write_text(file, content)
             return TaskResult(task.id, True, summary, artifacts=[file])
         return h
+
+    @staticmethod
+    def written(sandbox, name, seconds):
+        """Set when a file was written, relative to now: two writes of one test can fall on the same clock tick."""
+        when = time.time() + seconds
+        os.utime(sandbox.resolve(name), (when, when))
 
     async def say(self, text, channel=GROUP_MAIN, **kw):
         await self.bus.publish(Message(MsgType.CHAT, HUMAN, channel, text, **kw))
@@ -173,6 +181,48 @@ class RequestTest(TrackerTestBase):
         await self.say("do it")
         final = await self.final()
         self.assertEqual(final.payload["deliverables"], ["final.md"])
+
+    async def delivered(self, handlers, *requests):
+        """The text of report.md as the human received it for the last of `requests`."""
+        self.start(handlers)
+        for n, text in enumerate(requests, 1):
+            await self.say(text)
+            final = await self.final(n)
+        return (Path(final.payload["output_dir"]) / "report.md").read_text()
+
+    async def test_the_leads_revision_of_a_teammates_draft_is_what_is_delivered(self):
+        """On the course test set an editor wrote the draft, the lead revised its own copy through two review rounds,
+        and the human received the first draft: a teammate's file of the same name always won."""
+        async def lead(worker, task):
+            await worker.call_agent(task, "writer", "draft the report")
+            self.sandboxes["coder"].write_text("report.md", "revised after the reviews")
+            self.written(self.sandboxes["coder"], "report.md", 60)
+            await worker.call_agent(task, "researcher", "Review the revised report", files=["report.md"])
+            return TaskResult(task.id, True, "ready", artifacts=["report.md"])
+        text = await self.delivered({"coder": lead, "writer": self.writes("report.md", "first draft")}, "write the report")
+        self.assertEqual(text, "revised after the reviews")
+        self.assertEqual(self.sandboxes["researcher"].read_text("inbox/report.md"), text)    # what was reviewed
+
+    async def test_the_text_a_teammate_was_given_to_revise_is_not_newer_than_its_revision(self):
+        async def lead(worker, task):
+            self.sandboxes["coder"].write_text("report.md", "the lead's outline")
+            await worker.call_agent(task, "writer", "turn report.md into the full report", files=["report.md"])
+            self.written(self.sandboxes["coder"], "report.md", 60)      # copied again later: still the old text
+            return TaskResult(task.id, True, "ready", artifacts=["report.md"])
+        text = await self.delivered({"coder": lead, "writer": self.writes("report.md", "the full report")}, "write it")
+        self.assertEqual(text, "the full report")
+
+    async def test_an_older_copy_of_the_lead_does_not_hide_what_a_teammate_wrote_since(self):
+        async def lead(worker, task):
+            if task.root_id == "R1":
+                self.sandboxes["coder"].write_text("report.md", "last week's report")
+                self.written(self.sandboxes["coder"], "report.md", -60)
+            else:
+                await worker.call_agent(task, "writer", "write this week's report")
+            return TaskResult(task.id, True, "ready", artifacts=["report.md"])
+        text = await self.delivered({"coder": lead, "writer": self.writes("report.md", "this week's report")},
+                                    "write the report", "now this week's")
+        self.assertEqual(text, "this week's report")
 
     async def test_a_missing_deliverable_is_reported(self):
         self.start({"coder": self.ok("done", artifacts=["ghost.md"])})

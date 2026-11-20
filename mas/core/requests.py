@@ -64,7 +64,7 @@ class _RootRun:
     root_id: str
     session_id: str
     channel: str
-    started: float = field(default_factory=time.monotonic)
+    started: float = field(default_factory=time.perf_counter)   # monotonic() ticks every 15.6 ms on Windows
     stamp: str = field(default_factory=lambda: time.strftime("%Y%m%d-%H%M%S"))   # start time, names the output dir
     task: asyncio.Task | None = None                          # the asyncio task running run_request
     rounds: int = 0
@@ -207,7 +207,7 @@ class RequestTracker:
                deliverables: list[str], output_dir: str = "") -> RootOutcome:
         """Record how the root ended and close it on the board."""
         outcome = RootOutcome(run.root_id, success, run.rounds, failure, summary, deliverables,
-                              output_dir, time.monotonic() - run.started, run.lead)
+                              output_dir, time.perf_counter() - run.started, run.lead)
         self.outcomes[run.root_id] = outcome
         self.router.board(run.session_id).finish_root(run.root_id, summary, deliverables)
         return outcome
@@ -237,14 +237,13 @@ class RequestTracker:
     def _collect(self, run: _RootRun, result: TaskResult, out_dir: Path) -> tuple[list[str], list[str]]:
         """Copy the deliverables into out_dir. They are the files the lead listed; if it listed
         none, every file the successful tasks of the root wrote. Each file comes from the
-        workspace of the agent that wrote it (the newest one if several did)."""
-        written = self.router.root_artifacts(run.root_id)                      # (agent, file)
+        workspace of the agent that wrote it; a listed file that the lead and a teammate both
+        have comes from whoever revised it last (Router.delivery_owner)."""
         listed = list(dict.fromkeys(result.artifacts))
         if listed:
-            pairs = [next(((a, n) for a, n in reversed(written) if n == name), None) or (run.lead, name)
-                     for name in listed]
+            pairs = [(self.router.delivery_owner(run.root_id, run.lead, name), name) for name in listed]
         else:
-            pairs = written
+            pairs = self.router.root_artifacts(run.root_id)                    # (agent, file)
         copied, missing, used = [], [], set()
         for agent, name in pairs:
             sandbox = self.router.sandboxes.get(agent)
