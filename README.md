@@ -292,7 +292,7 @@ python3 -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\activate
 python -m pip install -e .
 cp .env.example .env                # fill in DEEPSEEK_API_KEY (and HKGAI_API_KEY if you use it)
-python -m unittest                  # optional: 622 tests, no key needed
+python -m unittest                  # optional: 632 tests, no key needed
 ```
 
 **2. Run the test set with the default (fast) configuration**

@@ -280,7 +280,7 @@ python3 -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\activate
 python -m pip install -e .
 cp .env.example .env                # 填入 DEEPSEEK_API_KEY（用 HKGAI 就填 HKGAI_API_KEY）
-python -m unittest                  # 可选：622 项测试，不需要 key
+python -m unittest                  # 可选：632 项测试，不需要 key
 ```
 
 **2. 用默认（快速）配置跑测试集**
