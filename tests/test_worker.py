@@ -341,6 +341,49 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("append set to true", observation["output"])
         self.assertNotIn("missing required argument", observation["output"])
 
+    async def test_the_same_call_with_the_same_answer_is_noted_and_then_no_longer_run(self):
+        """Round 15: a lead ran one word count 37 times in a row and got 974 every time, until its steps were gone."""
+        count = ScriptedTool("run_python", [ToolResult(True, "974")] * 9)
+        edit = ScriptedTool("edit_file", [ToolResult(True, "ok", files_written=["report.md"])])
+        same = [call("run_python", f"c{n}", value="count.py") for n in range(1, 5)]
+        worker, llm = self.worker([*same, call("edit_file", "e1", value="trim"), call("run_python", "c9", value="count.py"),
+                                   final()], [count, edit])
+        self.assertTrue((await asyncio.wait_for(worker.handle_task(self.task()), 2)).success)
+        self.assertEqual(len(count.calls), 3)                                 # twice, then once more after the edit
+        seen = [json.loads(m["content"]) for m in llm.calls[-1][0] if m["role"] == "tool"]
+        first, second, third, fourth, _, after_edit = seen
+        self.assertNotIn("note", first)
+        self.assertIn("same run_python call as step 1, with the same answer", second["note"])
+        self.assertEqual((third["ok"], third["repeat"]), (False, True))
+        self.assertIn("has been made 2 times since anything changed (first at step 1)", third["output"])
+        self.assertIn("'974'", third["output"])
+        self.assertIn("failed twice in a row", fourth["hint"])                # refused again: the usual escalation
+        self.assertEqual((after_edit["ok"], after_edit["output"]), (True, "974"))
+        self.assertNotIn("note", after_edit)                                  # the file changed: counting again is new
+
+    async def test_a_check_that_fails_the_same_way_after_another_script_ran_is_not_a_repeat(self):
+        python = ScriptedTool("run_python", [ToolResult(False, "exit code 1: 2 tests fail"), ToolResult(True, "patched"),
+                                             ToolResult(False, "exit code 1: 2 tests fail"), ToolResult(True, "patched"),
+                                             ToolResult(False, "exit code 1: 2 tests fail")])
+        script = [call("run_python", f"c{n}", value=name) for n, name in enumerate(["test.py", "fix.py"] * 2 + ["test.py"])]
+        worker, llm = self.worker([*script, final()], [python])
+        self.assertTrue((await asyncio.wait_for(worker.handle_task(self.task()), 2)).success)
+        self.assertEqual(len(python.calls), 5)                                # every one of them ran
+        seen = [json.loads(m["content"]) for m in llm.calls[-1][0] if m["role"] == "tool"]
+        self.assertTrue(all("note" not in observation and "repeat" not in observation for observation in seen))
+
+    async def test_reading_the_same_file_again_is_a_repeat_only_while_nothing_was_written(self):
+        read = ScriptedTool("read_file", [ToolResult(True, "the text")] * 9)
+        write = ScriptedTool("write_file", [ToolResult(True, "ok", files_written=["a.md"])])
+        script = [call("read_file", "r1", value="a.md"), call("read_file", "r2", value="a.md"),
+                  call("write_file", "w1", value="new"), call("read_file", "r3", value="a.md")]
+        self.settings.repeat_limit = 1
+        worker, llm = self.worker([*script, call("read_file", "r4", value="a.md"), final()], [read, write])
+        self.assertTrue((await asyncio.wait_for(worker.handle_task(self.task()), 2)).success)
+        seen = [json.loads(m["content"]) for m in llm.calls[-1][0] if m["role"] == "tool"]
+        self.assertEqual([observation.get("repeat", False) for observation in seen], [False, True, False, False, True])
+        self.assertEqual(len(read.calls), 2)                                  # with a limit of 1 the second is refused
+
     async def test_arguments_that_are_not_json_are_called_that_and_twice_in_a_row_gets_the_usual_hint(self):
         tool = ScriptedTool()
         broken = [LLMResponse("", [ToolCall(f"c{n}", tool.name, {}, "{'value': oops", malformed=True)]) for n in (1, 2)]

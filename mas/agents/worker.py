@@ -112,6 +112,9 @@ FINAL files said so; if a reviewer could not read or got an old version of a fil
 # Calls that look things up outside the workspace. A long run of them gets a reminder to stop: a worker that never
 # feels it has enough keeps researching until its steps run out. The thresholds are in Settings.
 _RESEARCH_TOOLS = ("web_search", "fetch_url")
+# Calls that change nothing. Any other call that works may have changed the workspace, so the same check after it is
+# not a repeat (a test run again after a fix script is new information, even when it fails the same way).
+_READ_ONLY_TOOLS = ("read_file", "list_files")
 
 # What a teammate's report says when a file did not reach it or it worked on the wrong version.
 _TROUBLE = re.compile(
@@ -138,6 +141,8 @@ class _Run:
     failed_tool: str = ""
     failures: int = 0
     reply_cut: bool = False           # the model's latest reply ended at its output limit
+    changes: int = 0                  # goes up whenever something may have changed (a write, a script, a teammate's answer)
+    repeats: dict[str, list] = field(default_factory=dict)             # call -> [changes then, its answer, its step, times]
     llm_s: float = 0.0                # time spent waiting for the model, and how many calls
     llm_calls: int = 0
     delegation_s: float = 0.0         # time spent waiting for teammates' results
@@ -561,10 +566,16 @@ class WorkerAgent(Agent):
             text = "\n".join(f"{m.sender}: {m.content}" for m in history if m.content)
             return {"ok": True, "output": _clip(text, self.settings.tool_output_max_chars)}
         if call.name == ASK_HUMAN and self.peers is not None:
-            return await self._tool_ask_human(task, run, args)
+            try:
+                return await self._tool_ask_human(task, run, args)
+            finally:
+                run.changes += 1                    # the human's answer is new
         target = target_of(call.name)
         if target is not None and self.peers is not None and call.name not in self.tools:
-            return await self._tool_call_peer(task, run, target, args)
+            try:
+                return await self._tool_call_peer(task, run, target, args)
+            finally:
+                run.changes += 1                    # a teammate's files may have arrived in the inbox
         tool = self.tools.get(call.name)
         if tool is None:
             return {"ok": False, "output": f"Unknown tool: {call.name}"}
@@ -573,6 +584,18 @@ class WorkerAgent(Agent):
             return {"ok": False, "limit": True, "output": (
                 f"Research limit reached: {cap} searches and page fetches are the most one task may make. Do not search "
                 "or fetch again. Write what you have into a file now and finish; say what is still missing.")}
+        # The research tools have their own reminder, and a call the human must approve is the human's to refuse.
+        tracked = self.settings.repeat_limit > 0 and call.name not in _RESEARCH_TOOLS and not tool.requires_approval
+        repeat = call.name + json.dumps(args, sort_keys=True, ensure_ascii=False, default=str) if tracked else ""
+        earlier = run.repeats.get(repeat) if repeat else None
+        if earlier is not None and earlier[0] == run.changes and earlier[3] >= self.settings.repeat_limit:
+            observation = {"ok": False, "repeat": True, "output": (
+                f"Not run: this exact {call.name} call has been made {earlier[3]} times since anything changed (first "
+                f"at step {earlier[2]}) and answered the same every time: {_clip(earlier[1][1], 300)!r}. It would answer "
+                "the same again. Do the next thing instead: change the file (edit_file or write_file), check something "
+                "else, or finish and say what is unresolved.")}
+            self._track_failures(call.name, False, run, observation)
+            return observation
         if tool.requires_approval and not self._deletes_own_file(call.name, args, run):
             answer = await self._ask(task, run,
                                      f"Run {call.name} with arguments {json.dumps(args, ensure_ascii=False)}?",
@@ -613,6 +636,20 @@ class WorkerAgent(Agent):
                 run.seen.setdefault(key, run.steps)         # a failed call may be retried: only successes count as done
             if notes:
                 observation["note"] = " ".join(notes)
+        if repeat:
+            answer = (result.ok, observation["output"])
+            if earlier is not None and earlier[0] == run.changes and earlier[1] == answer:
+                earlier[3] += 1
+                observation["note"] = (
+                    f"This is the same {call.name} call as step {earlier[2]}, with the same answer, and nothing has "
+                    "changed in between. Asking again will not change it and the next identical call will not be run: "
+                    "act on the answer you have.")
+            else:
+                if result.files_written or call.name not in _READ_ONLY_TOOLS:
+                    run.changes += 1
+                run.repeats[repeat] = [run.changes, answer, run.steps, 1]
+        elif call.name not in _RESEARCH_TOOLS:
+            run.changes += 1
         self._ensure_running(task)
         self._track_failures(call.name, result.ok, run, observation)
         return observation
