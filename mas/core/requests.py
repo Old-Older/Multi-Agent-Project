@@ -64,7 +64,7 @@ class _RootRun:
     root_id: str
     session_id: str
     channel: str
-    started: float = field(default_factory=time.monotonic)
+    started: float = field(default_factory=time.perf_counter)   # monotonic() ticks every 15.6 ms on Windows
     stamp: str = field(default_factory=lambda: time.strftime("%Y%m%d-%H%M%S"))   # start time, names the output dir
     task: asyncio.Task | None = None                          # the asyncio task running run_request
     rounds: int = 0
@@ -207,7 +207,7 @@ class RequestTracker:
                deliverables: list[str], output_dir: str = "") -> RootOutcome:
         """Record how the root ended and close it on the board."""
         outcome = RootOutcome(run.root_id, success, run.rounds, failure, summary, deliverables,
-                              output_dir, time.monotonic() - run.started, run.lead)
+                              output_dir, time.perf_counter() - run.started, run.lead)
         self.outcomes[run.root_id] = outcome
         self.router.board(run.session_id).finish_root(run.root_id, summary, deliverables)
         return outcome

@@ -17,7 +17,7 @@ from mas.core.state import StateTable
 from mas.core.task import FailureMode, Task, TaskResult
 from mas.llm.base import LLMResponse
 from mas.memory.base import JsonlMemory
-from tests.test_worker import MemorySandbox, ScriptedTool, SnapshotLLM, call, final, prompt_text, until
+from tests.test_worker import MemorySandbox, ScriptedTool, SnapshotLLM, call, final, own_steps, prompt_text, until
 
 
 class BudgetCase(unittest.IsolatedAsyncioTestCase):
@@ -117,7 +117,7 @@ class TimeBudgetTest(BudgetCase):
         result = await asyncio.wait_for(worker.handle_task(task), 3)
         self.assertFalse(result.success)
         self.assertEqual(result.failure_mode, FailureMode.TIMEOUT)
-        self.assertEqual(len(llm.calls), 4)                             # the first step, then three answers refused
+        self.assertEqual(len(own_steps(llm)), 4)                        # the first step, then three answers refused
 
     async def test_a_lead_is_told_when_half_and_when_three_quarters_of_the_time_is_gone(self):
         task = self.task()

@@ -37,6 +37,12 @@ def prompt_text(messages):
     return "\n".join(str(message.get("content", "")) for message in messages)
 
 
+def own_steps(llm):
+    """The model calls of the worker's loop. A failed task also starts a background call that reflects on the
+    failure; whether it has reached the model when handle_task returns depends on the event loop."""
+    return [made for made in llm.calls if not made[0][0]["content"].startswith("Write one short, actionable sentence")]
+
+
 async def until(predicate):
     async def poll():
         while not predicate():
@@ -297,7 +303,7 @@ class WorkerTest(unittest.IsolatedAsyncioTestCase):
         worker, llm = self.worker(script, [tool])
         result = await asyncio.wait_for(worker.handle_task(self.task()), 2)
         self.assertEqual((result.success, result.summary), (False, "ran out, partly done"))   # a result, not "step limit reached"
-        sent = [(call_[1], prompt_text(call_[0])) for call_ in llm.calls]
+        sent = [(call_[1], prompt_text(call_[0])) for call_ in own_steps(llm)]
         self.assertEqual(len(sent), 5)
         self.assertNotIn("Budget:", sent[0][1])
         self.assertIn("Budget: 3 steps left", sent[1][1])
