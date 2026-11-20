@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from mas.sandbox.base import LocalSandbox
 from mas.tools import DeleteFile, ListFiles, ReadFile, Tool, ToolResult, WriteFile
+from mas.tools.files import cut_write
 
 
 class FileToolsTest(unittest.IsolatedAsyncioTestCase):
@@ -144,6 +145,21 @@ class FileToolsTest(unittest.IsolatedAsyncioTestCase):
         schema = WriteFile().spec().to_openai()["function"]["parameters"]
         self.assertEqual(schema["properties"]["append"]["type"], "boolean")
         self.assertEqual(schema["required"], ["path", "content"])
+
+    def test_what_arrived_of_a_write_that_was_cut_off(self):
+        cut = '{"path": "notes/deck.html", "content": "<html>\\n<body>\\n<h1>T\\u4e2d \\"q\\"</h1>\\n<p>half a li'
+        self.assertEqual(cut_write(cut), ("notes/deck.html", '<html>\n<body>\n<h1>T中 "q"</h1>\n', False))
+        self.assertEqual(cut_write('{"path": "a.md", "append": true, "content": "one\\ntwo\\nthr'),
+                         ("a.md", "one\ntwo\n", True))
+        self.assertEqual(cut_write('{"path": "a.md", "content": "a long first line without a break\\'),
+                         ("a.md", "a long first line without a break", False))      # nothing to cut back to
+        self.assertEqual(cut_write('{"path": "a.md", "content": "ends in half an escape \\u4e'),
+                         ("a.md", "ends in half an escape ", False))
+        for other in ('{"path": "a.md", "content": "whole"}',                     # not cut: the string is closed
+                      '{"content": "the path comes after the content and never arr',
+                      '{"path": "a.md", "content": "',                            # nothing arrived
+                      '{"path": "a.md", "conte', "", "not json at all"):
+            self.assertIsNone(cut_write(other), other)
 
     def test_names_and_approval_contract(self):
         tools = [ReadFile(), WriteFile(), DeleteFile(), ListFiles()]

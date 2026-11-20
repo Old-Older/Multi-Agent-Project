@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import re
 from typing import Any
 
 from mas.sandbox.base import Sandbox
@@ -16,6 +17,41 @@ READ_WINDOW = 3500
 # What one write_file call should carry at most. A reply ends at the model's output limit (8192 tokens with
 # DeepSeek, about 26 000 characters of arguments); a call that is cut off there cannot be parsed and is lost whole.
 WRITE_PART_CHARS = 12_000
+
+_CUT_PATH = re.compile(r'"path"\s*:\s*"((?:[^"\\]|\\.)*)"')
+_CUT_CONTENT = re.compile(r'"content"\s*:\s*"')
+
+
+def cut_write(raw: str) -> tuple[str, str, bool] | None:
+    """What arrived of a write_file call whose JSON stops inside `content`: (path, the content so far, append).
+
+    A reply that ends at the output limit stops in the middle of the content string. None unless `path` is complete
+    and comes before `content`, and `content` is still open where `raw` ends. The content is cut back to its last
+    complete line when that keeps at least half of it, so that what follows can start on a new line."""
+    path, start = _CUT_PATH.search(raw), _CUT_CONTENT.search(raw)
+    if path is None or start is None or path.start() > start.start():
+        return None
+    body, escaped = raw[start.end():], False
+    for char in body:
+        if escaped:
+            escaped = False
+        elif char == "\\":
+            escaped = True
+        elif char == '"':
+            return None                            # the string was closed: something else is wrong with this call
+    if escaped:
+        body = body[:-1]                           # half an escape sequence
+    body = re.sub(r"\\u[0-9a-fA-F]{0,3}$", "", body)
+    try:
+        name, content = json.loads(f'"{path.group(1)}"'), json.loads(f'"{body}"')
+    except ValueError:
+        return None
+    if not name or not content:
+        return None
+    line_end = content.rfind("\n") + 1
+    if line_end and line_end >= len(content) // 2:
+        content = content[:line_end]
+    return name, content, bool(re.search(r'"append"\s*:\s*true', raw[:start.start()]))
 
 
 def _parameters(*, content: bool = False, optional_path: bool = False) -> dict[str, Any]:
@@ -94,7 +130,8 @@ class WriteFile(_FileTool):
     description = ("Create or overwrite a UTF-8 text file, creating parent directories as needed. One reply can carry only "
                    f"so much: write a file longer than about {WRITE_PART_CHARS} characters in parts, the first part with a "
                    "plain call and each further part with `append` set to true (the answer says how long the file is "
-                   "now). A call that is cut off at the output limit writes nothing.")
+                   "now). Of a call that is cut off at the output limit, at most the part that arrived is kept, and only "
+                   "for a new file.")
     parameters = _parameters(content=True)
     parameters["properties"] = {**parameters["properties"], "append": {
         "type": "boolean", "default": False,

@@ -29,7 +29,7 @@ from mas.llm.base import ChatMessage, FunctionSpec, LLMClient, LLMError, ToolCal
 from mas.memory.base import Experience, Memory, tags_for_tools
 from mas.sandbox.base import INBOX, Sandbox
 from mas.tools.base import Tool, ToolResult
-from mas.tools.files import WRITE_PART_CHARS
+from mas.tools.files import WRITE_PART_CHARS, cut_write
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
@@ -141,6 +141,7 @@ class _Run:
     failed_tool: str = ""
     failures: int = 0
     reply_cut: bool = False           # the model's latest reply ended at its output limit
+    cuts: int = 0                     # calls in a row that arrived cut off at the output limit
     changes: int = 0                  # goes up whenever something may have changed (a write, a script, a teammate's answer)
     repeats: dict[str, list] = field(default_factory=dict)             # call -> [changes then, its answer, its step, times]
     llm_s: float = 0.0                # time spent waiting for the model, and how many calls
@@ -550,9 +551,10 @@ class WorkerAgent(Agent):
     async def _run_call(self, task: Task, call: ToolCall, run: _Run) -> dict:
         self._ensure_running(task)
         if call.malformed:
-            observation = self._unreadable_call(call, run)
-            self._track_failures(call.name, False, run, observation)
+            observation = await self._unreadable_call(call, run)
+            self._track_failures(call.name, bool(observation.get("partial")), run, observation)
             return observation
+        run.cuts = 0
         args = call.arguments
         if not isinstance(args, dict):
             return {"ok": False, "output": "Tool arguments must be a JSON object"}
@@ -668,25 +670,61 @@ class WorkerAgent(Agent):
                                        "different approach or tool, or finish with what you have and say what is missing.")
                 run.failures = 0
 
-    def _unreadable_call(self, call: ToolCall, run: _Run) -> dict:
-        """The answer to a call whose arguments could not be read; the tool is not run.
+    async def _unreadable_call(self, call: ToolCall, run: _Run) -> dict:
+        """The answer to a call whose arguments could not be read; the tool is not run as it was sent.
 
         Its parsed arguments are {}: run with them, write_file answers 'missing required argument: path', the model
         takes that for a slip of its own and sends the same call again. A reply that ended at the output limit is cut
         at the same place every time, so one member spent its whole task repeating a write that could never arrive."""
         size = len(call.raw_arguments)
         if run.reply_cut:
+            run.cuts += 1
+            kept = await self._keep_cut_write(call, run)
+            if kept is not None:
+                return kept
+            again = (f"This is reply number {run.cuts} in a row that was cut off: do NOT send that content in one call "
+                     "again. ") if run.cuts > 1 else ""
             output = (f"{call.name} was NOT run: your reply reached the model's output limit and was cut off inside this "
-                      f"call's arguments ({size} characters arrived, incomplete), so nothing was written or changed. The "
-                      "same call would be cut off again: send less in one call.")
+                      f"call's arguments ({size} characters arrived, incomplete), so nothing was written or changed. "
+                      f"{again}The same call would be cut off again: send less in one call.")
             if "write_file" in self.tools:
                 output += (f" Write a long file in parts of at most about {WRITE_PART_CHARS} characters: write_file with "
-                           "the first part, then write_file with append set to true for each further part.")
+                           "the first part (for an existing file this replaces it), then write_file with append set to "
+                           "true for each further part.")
         else:
             output = (f"{call.name} was NOT run: its arguments were not a valid JSON object ({size} characters arrived), "
                       "so nothing was written or changed. Send the call again with all arguments in one JSON object, "
                       "with quotes and line breaks inside strings escaped.")
         return {"ok": False, "output": output}
+
+    async def _keep_cut_write(self, call: ToolCall, run: _Run) -> dict | None:
+        """Keep what arrived of a write_file call that was cut off, instead of throwing a whole reply away.
+
+        Told only that the call was cut off, one member wrote its 25 000-character file from the start three times in
+        a row, each time to the same limit, and lost a third of the request's time. The part that arrived is written
+        when that cannot destroy anything: a file that does not exist yet, or an append to one that does. An existing
+        file is never replaced by a part of its new version. None when nothing was kept."""
+        tool, cut = self.tools.get("write_file"), cut_write(call.raw_arguments)
+        if call.name != "write_file" or tool is None or cut is None:
+            return None
+        path, content, append = cut
+        try:
+            if self.sandbox.exists(path) != append:
+                return None
+        except Exception:
+            return None
+        result = await self._invoke_tool(tool, {"path": path, "content": content, **({"append": True} if append else {})})
+        if not result.ok:
+            return None
+        run.artifacts.extend(result.files_written)
+        run.changes += 1
+        last = content.rstrip().rsplit("\n", 1)[-1].strip()
+        return {"ok": False, "partial": True, "files_written": result.files_written, "output": (
+            f"Your reply reached the model's output limit, so this write_file call arrived cut off. The part that arrived "
+            f"was kept: {len(content)} characters were {'appended to' if append else 'written to'} {path} "
+            f"({_clip(result.output, 200)}), and the file now ends with: {_clip(last, 160)!r}. The file is NOT complete. "
+            "Continue it now with write_file and append set to true, sending ONLY what comes after that (nothing that is "
+            f"already in the file), in parts of at most about {WRITE_PART_CHARS} characters.")}
 
     # ---- the request's requirements -------------------------------------------------------
 
