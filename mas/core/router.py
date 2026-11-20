@@ -404,6 +404,42 @@ class Router:
                     seen.setdefault((t.assignee, name), None)
         return list(seen)
 
+    def delivery_owner(self, root_id: str, lead: str, name: str) -> str:
+        """Whose copy of a file the lead listed is handed to the human: the lead's own or a teammate's.
+
+        A file no teammate reported in this request is the lead's. One a teammate wrote that the lead does not have, or
+        has unchanged, is the teammate's (the newest task that reported it). When both have it and the two differ, the
+        latest revision is taken: the lead's if it was written after the teammate's, unless it is byte for byte what
+        that teammate was handed to work on (then the teammate's file is the revision and the lead's copy the text it
+        started from). The teammate's copy used to win always, so a lead that revised a teammate's draft through two
+        review rounds handed in the first draft."""
+        writer = None
+        for task in self.state.by_root(root_id):
+            result = self.state.result(task.id)
+            if task.assignee != lead and result and result.success and not result.declined and name in result.artifacts:
+                writer = task
+        if writer is None:
+            return lead
+        mine, theirs = self.sandboxes.get(lead), self.sandboxes.get(writer.assignee)
+        if mine is None or theirs is None:
+            return writer.assignee
+        try:
+            own, other = mine.resolve(name), theirs.resolve(name)
+            if not own.is_file():
+                return writer.assignee
+            if not other.is_file():
+                return lead
+            text = _digest(own)
+            if text is None or text == _digest(other):
+                return writer.assignee
+            started_from = {digest for handed, (_, digest) in self._handed.get(writer.id, {}).items()
+                            if Path(handed).name == Path(name).name}
+            if text in started_from:
+                return writer.assignee
+            return lead if own.stat().st_mtime_ns > other.stat().st_mtime_ns else writer.assignee
+        except (OSError, ValueError):
+            return writer.assignee
+
     def _refuse(self, task: Task, reason: str) -> TaskResult:
         """Record a refused call as a FAILED task (for /status and debugging) and return
         its result. Not added to the retry or delegation counters."""

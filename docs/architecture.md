@@ -193,7 +193,9 @@ When the lead's task returns, the `RequestTracker`:
 
 - copies the deliverables (the files the lead listed, and only those: its helper scripts and drafts are not added behind
   its back; if it listed nothing, every file the successful tasks of the root wrote) from the writing agents' workspaces to `data/output/<root>-<time>/` (name clashes get an
-  `<agent>_` prefix; a listed file that does not exist is reported, not hidden);
+  `<agent>_` prefix; a listed file that does not exist is reported, not hidden). A listed file that both the lead and a
+  teammate have is taken from whoever revised it last: the lead's copy if it was written after the teammate's, unless it is
+  exactly what that teammate was handed to work on (`Router.delivery_owner`);
 - records a `RootOutcome` (success, failure mode, duration, lead, deliverables, output directory);
 - posts the final reply **in the lead's name**, with a payload evaluation can read:
   `{"final": true, "root_id", "success", "failure_mode", "rounds", "duration", "lead", "deliverables", "output_dir"}`.

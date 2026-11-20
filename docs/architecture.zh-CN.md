@@ -164,7 +164,7 @@ agent id、角色名和提示词，请它选出最适合*协调*这个请求的�
 牵头者的任务返回后，`RequestTracker`：
 
 - 把交付物（牵头者列出的文件，且只有这些：它的辅助脚本和草稿不会被悄悄加进去；一个都没列才是这个 root 里所有成功任务写的文件）从写它们的 agent 的工作区复制到
-  `data/output/<root>-<时间>/`（重名的加 `<agent>_` 前缀；列出但不存在的文件会被报告，不会被藏起来）；
+  `data/output/<root>-<时间>/`（重名的加 `<agent>_` 前缀；列出但不存在的文件会被报告，不会被藏起来）。牵头者和队友都有的同名文件，取最后修订的那一份：牵头者的副本比队友的晚写就取牵头者的，除非它与当初交给该队友的那份完全相同（`Router.delivery_owner`）；
 - 记录一个 `RootOutcome`（是否成功、失败模式、耗时、牵头者、交付物、输出目录）；
 - **以牵头者的名义**发出最终回复，载荷里有评测可读的结构化信息：
   `{"final": true, "root_id", "success", "failure_mode", "rounds", "duration", "lead", "deliverables", "output_dir"}`。

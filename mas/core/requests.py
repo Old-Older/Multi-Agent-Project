@@ -237,14 +237,13 @@ class RequestTracker:
     def _collect(self, run: _RootRun, result: TaskResult, out_dir: Path) -> tuple[list[str], list[str]]:
         """Copy the deliverables into out_dir. They are the files the lead listed; if it listed
         none, every file the successful tasks of the root wrote. Each file comes from the
-        workspace of the agent that wrote it (the newest one if several did)."""
-        written = self.router.root_artifacts(run.root_id)                      # (agent, file)
+        workspace of the agent that wrote it; a listed file that the lead and a teammate both
+        have comes from whoever revised it last (Router.delivery_owner)."""
         listed = list(dict.fromkeys(result.artifacts))
         if listed:
-            pairs = [next(((a, n) for a, n in reversed(written) if n == name), None) or (run.lead, name)
-                     for name in listed]
+            pairs = [(self.router.delivery_owner(run.root_id, run.lead, name), name) for name in listed]
         else:
-            pairs = written
+            pairs = self.router.root_artifacts(run.root_id)                    # (agent, file)
         copied, missing, used = [], [], set()
         for agent, name in pairs:
             sandbox = self.router.sandboxes.get(agent)
