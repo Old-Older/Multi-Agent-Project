@@ -270,7 +270,7 @@ worker 在下一步读到。
 | `edit_file` | 用精确替换修改文件 | `{old, new}` 对（或一组 `old`/`new`），按顺序应用，全有或全无；失败时说明是哪一处、为什么，并给出最接近的一行；成功时确认新长度。成员被告知用它代替重写整个文件或写补丁脚本 |
 | `delete_file` | 删除文件 | 需要人类批准 |
 | `run_python` | 在工作区里运行脚本或模块（`unittest`、`pytest`） | 有超时（默认 60 秒），返回输出和退出码 |
-| `web_search` | 标题、链接和摘要 | 在 `SEARCH_PROVIDER=auto` 下，HKGAI 模型用可选的 `HKGAI_SEARCH_API_KEY` 调用 Studio Quick search。DeepSeek 模型用同一把模型 key 调用搜索接口，`freshness` 转成 `after:` 运算符，英文查询加 `lang:en`，查询截到 128 字符。缺少所选的搜索 key 或服务不可用时，回退到 `ddgs`。 |
+| `web_search` | 标题、链接和摘要 | 在 `SEARCH_PROVIDER=auto` 下，HKGAI 模型用可选的 `HKGAI_SEARCH_API_KEY` 调用 SerpApi 的 Google 搜索接口。DeepSeek 模型用同一把模型 key 调用搜索接口，`freshness` 转成 `after:` 运算符，英文查询加 `lang:en`，查询截到 128 字符。缺少所选的搜索 key 或服务不可用时，回退到 `ddgs`。 |
 | `fetch_url` | 抓取公开网页的文本 | 只限公开的 HTTP(S)：每一次重定向都会拒绝私有和混合地址；20 秒和 1 MiB 的限制；文本、HTML、JSON、XML。网站拒绝本机（401、403、406、429、451 或服务器错误）且当前用的是 DeepSeek 模型时，用同一把 key 请 DeepSeek 的抓取接口读（`"via": "deepseek"`） |
 | `git` | `init`、`clone`、`status`、`diff`、`add`、`commit`、`log`、`push` | 每次调用都需要人类批准；GitHub token 只通过 HTTPS 发给 github.com，不会出现在输出里 |
 

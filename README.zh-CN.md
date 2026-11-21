@@ -115,7 +115,7 @@
 - Python **3.10 或更高**
 - `git` 在 `PATH` 里（仅当 agent 使用 git 工具时需要）
 - 课程发放的 **HKGAI API key**，或你自己的 **DeepSeek API key**（真实运行需要；演示模式不需要）
-- 用 HKGAI 模型时可选配独立的课程搜索 key。用 DeepSeek 模型时，搜索和网页抓取共用 DeepSeek API key（项目评测时每 1000 次约 5 元）。两种模型都支持无 key 搜索。
+- 用 HKGAI 模型时可选配课程提供的 SerpApi 搜索密钥。用 DeepSeek 模型时，搜索和网页抓取共用 DeepSeek API key（项目评测时每 1000 次约 5 元）。两种模型都支持无 key 搜索。
 - 推送代码用的 GitHub token
 
 ```bash
@@ -139,7 +139,7 @@ cp .env.example .env                # 然后编辑 .env
 | `DEEPSEEK_API_KEY` | 使用 `deepseek` 的真实运行 | 你的 DeepSeek key |
 | `DEEPSEEK_BASE_URL`、`DEEPSEEK_MODEL` | 可选 | 默认 `https://api.deepseek.com` 和 `deepseek-chat` |
 | `DEEPSEEK_THINKING` | 可选 | `off`（默认）要求 DeepSeek 不先思考再回答：更快，而且 agent 每一步都在调用工具；`default` 交给服务自己决定 |
-| `HKGAI_SEARCH_API_KEY` | 可选 | 独立的课程搜索 key。使用 HKGAI 模型且 `SEARCH_PROVIDER=auto` 时供 `web_search` 使用，此时网页抓取在本机进行。 |
+| `HKGAI_SEARCH_API_KEY` | 可选 | 填入课程提供的 SerpApi 密钥。使用 HKGAI 模型且 `SEARCH_PROVIDER=auto` 时，`web_search` 通过 SerpApi 搜索 Google，网页抓取在本机进行。[SerpApi 接口文档](https://serpapi.com/search-api) |
 | `SEARCH_PROVIDER` | 可选 | `auto`（默认）按当前模型选择搜索服务。DeepSeek 用 `DEEPSEEK_API_KEY` 搜索，也用它抓取拒绝本机访问的网页。`deepseek` 让两种模型都用 DeepSeek 搜索和抓取。`keyless` 通过 `ddgs` 使用 DuckDuckGo 等搜索引擎，在本机抓取网页。缺少所选的搜索 key 或服务不可用时，搜索也会回退到 `ddgs`。 |
 | `GITHUB_TOKEN` | `git push` 到 GitHub | 只会通过 HTTPS 发给 github.com |
 
@@ -275,7 +275,7 @@ python -m unittest tests.test_lead      # 单个模块
 
 **1. 环境**
 
-- Python 3.10 以上（我们用的是 macOS 上的 3.14.3）、`git`，以及用于复现归档配置 `deepseek-chat` 的 DeepSeek API key。要评测 HKGAI，使用 `--llm hkgai` 并设置 `HKGAI_API_KEY`，另可设置 `HKGAI_SEARCH_API_KEY` 启用课程搜索。
+- Python 3.10 以上（我们用的是 macOS 上的 3.14.3）、`git`，以及用于复现归档配置 `deepseek-chat` 的 DeepSeek API key。要评测 HKGAI，使用 `--llm hkgai` 并设置 `HKGAI_API_KEY`，另可设置 `HKGAI_SEARCH_API_KEY` 启用 SerpApi 搜索。
 - 在仓库根目录安装：
 
 ```bash
@@ -283,7 +283,7 @@ python3 -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\activate
 python -m pip install -e .
 cp .env.example .env                # 填入 DEEPSEEK_API_KEY（用 HKGAI 就填 HKGAI_API_KEY）
-python -m unittest                  # 可选：645 项测试，不需要 key
+python -m unittest                  # 可选：647 项测试，不需要 key
 ```
 
 **2. 用默认（快速）配置跑测试集**

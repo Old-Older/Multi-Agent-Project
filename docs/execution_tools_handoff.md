@@ -8,7 +8,7 @@ python -X utf8 -m examples.execution_tools
 
 ## 把工具交给自己的 Worker
 
-默认的 `mas.app.build_tools` 已按角色配置注册全部九个工具：`read_file`、`write_file`、`edit_file`、`delete_file`、`list_files`、`run_python`、`web_search`、`fetch_url`、`git`。`web_search` 默认按模型选择 HKGAI Studio Quick search 或 DeepSeek 搜索。缺少所选的搜索 key 或服务不可用时，改用无需 key 的应急搜索（`ddgs` 包，只调一次，12 秒期限，连续失败 3 次后停手 30 秒）。`git` 使用 `GITHUB_TOKEN`（`git push` 等操作执行前会向人类请求批准）。角色配置里出现不认识的工具名会直接报错。
+默认的 `mas.app.build_tools` 已按角色配置注册全部九个工具：`read_file`、`write_file`、`edit_file`、`delete_file`、`list_files`、`run_python`、`web_search`、`fetch_url`、`git`。`web_search` 默认对 HKGAI 模型使用 SerpApi，对 DeepSeek 模型使用 DeepSeek 搜索。缺少所选的搜索 key 或服务不可用时，改用无需 key 的应急搜索（`ddgs` 包，只调一次，12 秒期限，连续失败 3 次后停手 30 秒）。`git` 使用 `GITHUB_TOKEN`（`git push` 等操作执行前会向人类请求批准）。角色配置里出现不认识的工具名会直接报错。
 
 `examples.execution_tools.execution_worker_factory` 仍可使用，现在只是直接调用 `default_worker_factory`。
 
@@ -26,7 +26,7 @@ system = build_system(settings, llm, human, roles=roles)    # 默认工厂就会
 | --- | --- |
 | `LLM_PROVIDER` | 默认 `hkgai`，可省略。使用旧版 `.env` 的队友应更新此项。 |
 | `HKGAI_API_KEY` | 必填，使用课程网关分配的模型密钥。 |
-| `HKGAI_SEARCH_API_KEY` | 可选的独立搜索密钥，仅在 HKGAI 模型和 `SEARCH_PROVIDER=auto` 下供 `web_search` 调用 HKGAI Studio Quick search。 |
+| `HKGAI_SEARCH_API_KEY` | 可选。填入课程提供的 SerpApi 密钥，供 HKGAI 模型在 `SEARCH_PROVIDER=auto` 时调用 Google 搜索。 |
 | `HKGAI_MODEL` | 默认 `t2_hkgai-v3_fp8_1m_e7`，可覆盖为该账号有权访问的其他模型。 |
 | `HKGAI_BASE_URL` | 默认 `https://api1.hkgai.net/v1`。也可填课程发放的裸域名，客户端会补上 `/v1`；带路径的部署地址会保留该路径。 |
 
@@ -56,7 +56,7 @@ python -X utf8 -m examples.hkgai_chat --with-tools
 
 **Python 和产物。** 先用 `write_file` 写脚本，再以工作区相对路径运行。测试可用 `module="unittest", args=["discover", "-s", "tests"]`；也可选当前解释器已安装的 `pytest`。脚本处理中文文件时可指定 `encoding="utf-8"`。参数逐项传给 `Sandbox.exec`。这四个工具均不填 `files_written`，Python 脚本自行生成的报告需由 Worker 在完成结果的 `artifacts` 中列出。当前执行后端用 `LocalSandbox`，子进程拥有宿主用户权限，适用于可信代码。
 
-**网络与引用。** HKGAI Studio 搜索密钥只发往 `studio-api.hkchat.app`，DeepSeek 搜索密钥只发往 `api.deepseek.com`。备用搜索使用 `ddgs` 的 `auto` 模式。[HKGAI Studio 联网搜索指南](https://hkgai-studio.prod.hkchat.app/en/docs/web-search)
+**网络与引用。** SerpApi 接收 `engine=google` 和查询词 `q`，从 `organic_results` 返回标题、链接和摘要。SerpApi 搜索密钥只发往 `serpapi.com`，DeepSeek 搜索密钥只发往 `api.deepseek.com`。备用搜索使用 `ddgs` 的 `auto` 模式。[SerpApi Google 搜索接口](https://serpapi.com/search-api)
 
 `FetchURL()` 无需密钥（给了 `deepseek_key` 时，网站以 401、403、406、429、451 或服务器错误拒绝本机，会再请 DeepSeek 的抓取接口读一次），接受公开 HTTP(S) 的文本、静态 HTML、JSON、XML；HTML 提取可见文本并保留标题。每次操作限时 20 秒，支持 gzip 和未压缩响应，传输数据与解压正文各限 1 MiB。网页超出字节或字符上限会置 `truncated=true`。网络读取直接连接经过检查的 IP，每次重定向重新校验地址；仅提供内部代理或将公网域名解析成保留 IP 的环境可能无法取页。搜索可取少量结果、抓取可调小 `max_chars`，以适配 Worker 的 `tool_output_max_chars` 观察长度。引用使用搜索项的 `url` 或抓取返回的最终 `url`。[DeepSeek 搜索与抓取接口](https://api-docs.deepseek.com/zh-cn/guides/search/)
 

@@ -89,7 +89,7 @@ class Settings:
 
     # tools
     github_token: str = ""
-    # In auto mode the active model selects the search service. HKGAI search uses a separate key.
+    # In auto mode the HKGAI model uses SerpApi with its own search key.
     # Only DeepSeek provides the fallback for page fetching.
     search_provider: str = "auto"
     hkgai_search_api_key: str = ""
@@ -105,7 +105,7 @@ class Settings:
         return self.deepseek_api_key if allowed else ""
 
     def hkgai_search_key(self) -> str:
-        """The dedicated course search key applies only to the HKGAI model in auto mode."""
+        """The SerpApi key applies only to the HKGAI model in auto mode."""
         if self.search_provider == "auto" and self.llm_provider.strip().lower() == "hkgai":
             return self.hkgai_search_api_key
         return ""

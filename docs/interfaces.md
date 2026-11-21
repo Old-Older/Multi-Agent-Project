@@ -318,7 +318,7 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 | `sandbox_backend` | `"local"` | `docker` 尚未实现 |
 | `llm_provider` | `"hkgai"` | 或 `"deepseek"`；各自的 `*_api_key`、`*_base_url`、`*_model` |
 | `search_provider` / `github_token` | `auto` / 空 | `auto` 按模型选搜索服务，`deepseek` 指定 DeepSeek 搜索与抓取，`keyless` 使用免密钥搜索和本机抓取 / `git push` |
-| `hkgai_search_api_key` | 空 | 独立的 `HKGAI_SEARCH_API_KEY`，仅在 HKGAI 模型和 `auto` 模式下启用 Studio Quick search |
+| `hkgai_search_api_key` | 空 | 读取 `HKGAI_SEARCH_API_KEY` 中的 SerpApi 密钥，仅在 HKGAI 模型和 `auto` 模式下用于 Google 搜索 |
 | `auto_hitl` | `False` | 无人值守时设为 `True` |
 
 `Settings.from_env(**overrides)` 读取 `.env` 中的变量（见 `.env.example`），遇到未知字段直接报错。运行时数据统一放在 `data/` 下（已在 `.gitignore` 中）。
