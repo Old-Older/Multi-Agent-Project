@@ -1,5 +1,4 @@
-"""What web_search and fetch_url may use besides this machine: DeepSeek's own search and fetch with the DeepSeek model,
-nothing keyed with the HKGAI model; and how they are used."""
+"""Provider selection, authenticated search requests, and fallback behavior for search and page fetching."""
 from __future__ import annotations
 
 import asyncio
@@ -21,6 +20,7 @@ from mas.tools.web import FetchURL, WebSearch
 from tests.test_web_tools import response
 
 DS = "ds-secret-key"
+HK_SEARCH = "hk-search-fixture"
 
 
 def result_row(**fields):
@@ -63,8 +63,23 @@ class WhichKeyTest(unittest.TestCase):
             search, fetch = build_tools(role, Settings(llm_provider=llm, deepseek_api_key=DS))
             self.assertEqual((search._deepseek_key, fetch._deepseek_key), (expected, expected), llm)
 
+    def test_course_search_key_is_only_used_for_auto_with_the_hkgai_model(self):
+        role = RoleConfig("r", "R", "researches", "", ["web_search", "fetch_url"])
+        env = {"HKGAI_SEARCH_API_KEY": HK_SEARCH, "HKGAI_API_KEY": "hk-model-fixture", "DEEPSEEK_API_KEY": DS}
+        with patch.dict(os.environ, env, clear=True):
+            for model, mode, expected in (
+                (" HKGAI ", "auto", (HK_SEARCH, "", "")),
+                (" DEEPSEEK ", "auto", ("", DS, DS)),
+                ("hkgai", "deepseek", ("", DS, DS)),
+                ("hkgai", "keyless", ("", "", "")),
+                ("deepseek", "keyless", ("", "", "")),
+            ):
+                with self.subTest(model=model, mode=mode):
+                    search, fetch = build_tools(role, Settings.from_env(llm_provider=model, search_provider=mode))
+                    self.assertEqual((search._hkgai_key, search._deepseek_key, fetch._deepseek_key), expected)
 
-class DeepSeekSearchTest(unittest.IsolatedAsyncioTestCase):
+
+class _SearchTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.sandbox = Mock(spec=Sandbox)
         self.requests, self.responses = [], []
@@ -88,6 +103,8 @@ class DeepSeekSearchTest(unittest.IsolatedAsyncioTestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
+
+class DeepSeekSearchTest(_SearchTestCase):
     def answer(self, *rows, status=200):
         self.responses.append(response(json.dumps({"results": list(rows)}).encode(), status=status,
                                        content_type="application/json"))
@@ -187,6 +204,90 @@ class DeepSeekSearchTest(unittest.IsolatedAsyncioTestCase):
         result = await self.search(deepseek="", query="q")
         self.assertTrue(result.ok)
         self.assertEqual(self.requests, [])
+
+
+class HKGAISearchTest(_SearchTestCase):
+    def course_answer(self, *urls):
+        data = {"content": "Survey findings on campus.", "used_urls": list(urls)}
+        self.responses.append(response(json.dumps({"data": data}).encode(), content_type="application/json"))
+
+    async def test_course_search_posts_only_the_query_and_returns_usable_sources_up_to_count(self):
+        sources = ["https://one.example/news", "https://two.example/figures", "https://three.example/report"]
+        self.course_answer("file:///example.txt", "https://user:pass@four.example/", *sources)
+        result = await WebSearch(hkgai_key=HK_SEARCH).run(self.sandbox, query="campus survey", count=2)
+        self.assertTrue(result.ok, result.output)
+        request, = self.requests
+        self.assertEqual(request.method, "POST")
+        self.assertEqual(str(request.url), "https://studio-api.hkchat.app/web-search/v1/tool/search-agent")
+        self.assertEqual(request.headers["Authorization"], f"Bearer {HK_SEARCH}")
+        self.assertEqual(json.loads(request.content), {"query": "campus survey"})
+        rows = json.loads(result.output)
+        self.assertEqual([row["url"] for row in rows], sources[:2])
+        self.assertTrue(all(isinstance(row["title"], str) and isinstance(row["description"], str) for row in rows))
+        self.assertNotIn(HK_SEARCH, result.output)
+        self.keyless.assert_not_called()
+
+    async def test_freshness_is_included_in_the_course_query(self):
+        self.course_answer("https://one.example/result")
+        with patch("mas.tools.web.date") as today:
+            today.today.return_value = date(2026, 11, 19)
+            result = await WebSearch(hkgai_key=HK_SEARCH).run(self.sandbox, query="campus events", freshness="pw")
+        self.assertTrue(result.ok, result.output)
+        query = json.loads(self.requests[0].content)["query"]
+        self.assertIn("campus events", query)
+        self.assertIn("2026-11-12", query)
+
+    async def test_source_blocks_stay_with_the_url_that_identifies_them(self):
+        first, second = "https://one.example/report", "https://two.example/study"
+        for content in (
+            f"{second}\nStudy of outcomes.\n\n{first}\nSurvey findings.",
+            [{"url": second, "title": "Study", "content": "Study of outcomes."},
+             {"url": first, "title": "Survey", "snippet": "Survey findings."}],
+        ):
+            data = {"used_urls": [first, second], "content": content}
+            self.responses.append(response(json.dumps({"data": data}).encode(), content_type="application/json"))
+            web._SEARCH_CACHE.clear()
+            result = await WebSearch(hkgai_key=HK_SEARCH).run(self.sandbox, query="research")
+            self.assertTrue(result.ok, result.output)
+            rows = json.loads(result.output)
+            self.assertEqual([(r["url"], r["description"]) for r in rows],
+                             [(first, "Survey findings."), (second, "Study of outcomes.")])
+
+    async def test_hkgai_without_a_search_key_uses_keyless_even_with_both_model_keys(self):
+        self.keyless.side_effect = None
+        self.keyless.return_value = [{"title": "News", "url": "https://one.example/news", "description": ""}]
+        role = RoleConfig("r", "R", "researches", "", ["web_search"])
+        search, = build_tools(role, Settings(llm_provider="hkgai", hkgai_api_key="model-fixture", deepseek_api_key=DS))
+        result = await search.run(self.sandbox, query="campus events")
+        self.assertTrue(result.ok, result.output)
+        self.keyless.assert_called_once()
+        self.assertEqual(self.requests, [])
+
+    async def test_unavailable_course_search_falls_back_without_disclosing_the_key(self):
+        self.keyless.side_effect = None
+        self.keyless.return_value = [{"title": "News", "url": "https://one.example/news", "description": ""}]
+        for i, failure in enumerate((response(HK_SEARCH.encode(), status=429), httpx.ConnectError(HK_SEARCH))):
+            self.responses.append(failure)
+            with self.assertLogs("mas.tools.web", level="WARNING") as logs:
+                result = await WebSearch(hkgai_key=HK_SEARCH).run(self.sandbox, query=f"topic {i}")
+            self.assertTrue(result.ok, result.output)
+            self.assertEqual(json.loads(result.output)[0]["title"], "News")
+            self.assertNotIn(HK_SEARCH, "".join(logs.output) + result.output)
+        self.assertEqual(self.keyless.call_count, 2)
+
+    async def test_hkgai_and_deepseek_do_not_share_cached_results_for_the_same_query(self):
+        self.course_answer("https://one.example/course")
+        self.responses.append(response(json.dumps({"results": [result_row()]}).encode(),
+                                       content_type="application/json"))
+        course = await WebSearch(hkgai_key=HK_SEARCH).run(self.sandbox, query="campus")
+        ds = await WebSearch(deepseek_key=DS).run(self.sandbox, query="campus")
+        self.assertTrue(course.ok, course.output)
+        self.assertTrue(ds.ok, ds.output)
+        course_row, = json.loads(course.output)
+        self.assertEqual(course_row["url"], "https://one.example/course")
+        self.assertIn("Survey findings", course_row["description"])
+        self.assertEqual(json.loads(ds.output)[0]["url"], result_row()["url"])
+        self.assertEqual([r.url.host for r in self.requests], ["studio-api.hkchat.app", "api.deepseek.com"])
 
 
 class DeepSeekFetchTest(unittest.IsolatedAsyncioTestCase):

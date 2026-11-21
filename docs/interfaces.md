@@ -317,7 +317,8 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 | `memory_recall_k` / `profile_max_chars` | 3 / 300 | §8、§2.3 |
 | `sandbox_backend` | `"local"` | `docker` 尚未实现 |
 | `llm_provider` | `"hkgai"` | 或 `"deepseek"`；各自的 `*_api_key`、`*_base_url`、`*_model` |
-| `search_provider` / `github_token` | `auto` / 空 | 用 DeepSeek 模型时 `web_search` 和 `fetch_url` 是否用 DeepSeek 的搜索与抓取接口 / `git push` |
+| `search_provider` / `github_token` | `auto` / 空 | `auto` 按模型选搜索服务，`deepseek` 指定 DeepSeek 搜索与抓取，`keyless` 使用免密钥搜索和本机抓取 / `git push` |
+| `hkgai_search_api_key` | 空 | 独立的 `HKGAI_SEARCH_API_KEY`，仅在 HKGAI 模型和 `auto` 模式下启用 Studio Quick search |
 | `auto_hitl` | `False` | 无人值守时设为 `True` |
 
 `Settings.from_env(**overrides)` 读取 `.env` 中的变量（见 `.env.example`），遇到未知字段直接报错。运行时数据统一放在 `data/` 下（已在 `.gitignore` 中）。
@@ -326,7 +327,7 @@ LLM 能看到、但不属于 `Tool` 子类的工具：
 
 - `build_system(settings, llm, human, *, roles, worker_factory=..., sandbox_factory=..., run_name="session") -> System`：唯一知道各个零件怎么接在一起的地方。`roles`（团队）必须传入，没有内置角色。创建 `InMemoryBus`、`StateTable`，每个角色一个 workspace（`settings.workspaces_dir/<agent_id>`）和一份记忆，再创建 `Router`、`RequestTracker`、`Transcript`、各 Worker，并把人类和所有 Worker 放进群聊。
 - `System`：`start()`（启动各 Worker 的循环；请求层是总线观察者，不需要循环）、`stop()`、`run(driver=None, until_driver_done=False)`（启动全部，跑 human 一侧；`driver` 是以人类身份说话的协程，场景运行器用它发任务；结束时写对话记录）；字段 `bus / state / router / requests / workers / memories / sandboxes / human / transcript`。
-- `build_tools(role, settings) -> list[Tool]`：按 `role.tool_names` 的顺序为每个工具构造新实例，共九种：`read_file`、`write_file`、`edit_file`、`delete_file`、`list_files`、`run_python`、`web_search`、`fetch_url`、`git`。`web_search` 和 `fetch_url` 读 `settings.deepseek_search_key()`（用 DeepSeek 模型时才有值），`git` 读 `github_token`。未知名称抛 `ValueError`。
+- `build_tools(role, settings) -> list[Tool]`：按 `role.tool_names` 的顺序为每个工具构造新实例，共九种：`read_file`、`write_file`、`edit_file`、`delete_file`、`list_files`、`run_python`、`web_search`、`fetch_url`、`git`。`web_search` 从 `settings.hkgai_search_key()` 和 `settings.deepseek_search_key()` 读取所选服务的密钥。`fetch_url` 只读后者，`git` 读 `github_token`。未知名称抛 `ValueError`。
 - `default_worker_factory`：`WorkerAgent(role, ..., build_tools(...), sandbox, memory, peers=parts.peers, peer_memories=parts.memories)`；想换实现就传 `worker_factory=`（参数是 `RoleConfig` 和 `WorkerParts(bus, router, settings, llm, sandbox, memory, peers, memories)`）。
 - `default_sandbox_factory`：按 `settings.sandbox_backend` 用 `LocalSandbox` 或 `DockerSandbox`。`make_llm(settings)`：按 `llm_provider` 建 `HKGAIClient` 或 `DeepSeekClient`，没有对应的 key 时直接退出并说明怎么办。`make_human(settings)`：`auto_hitl` 为真用 `AutoResponder`，否则用 `CliHumanIO`。
 - `mas/team.py`：`load_team(path)` / `parse_team(text)` 读课程 `01_role_initialization.md` 格式的角色文件（表格定顺序，`## 角色名 (agent_id)` 后面的围栏代码块是提示词）；每位成员默认拿到全部八个工具。`mas/scenario.py`：`load_scenario(folder)`（团队加任务）、`driver_for(scenario)`（依次发任务，上一个请求结束才发下一个）。

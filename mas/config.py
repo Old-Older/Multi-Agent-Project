@@ -89,22 +89,26 @@ class Settings:
 
     # tools
     github_token: str = ""
-    # Which service web_search and fetch_url may use besides this machine and the keyless search. "auto": DeepSeek's own
-    # search and fetch (same key) while the DeepSeek model is in use, nothing else (the HKGAI model: the course's search
-    # service is not known yet, so only the keyless search). "deepseek" forces DeepSeek's, "keyless" forbids any key.
-    # Whichever is chosen, a search that cannot be answered falls back to the keyless one.
+    # In auto mode the active model selects the search service. HKGAI search uses a separate key.
+    # Only DeepSeek provides the fallback for page fetching.
     search_provider: str = "auto"
+    hkgai_search_api_key: str = ""
 
     def __post_init__(self) -> None:
         if self.search_provider not in ("auto", "deepseek", "keyless"):
             raise ValueError(f"search_provider must be auto, deepseek or keyless, not {self.search_provider!r}")
 
     def deepseek_search_key(self) -> str:
-        """The DeepSeek key that web_search and fetch_url may use, or "" when the setting does not allow it. It is never
-        used for search while the HKGAI model is the one in use."""
+        """DeepSeek search and fetch are available with its model or an explicit provider override."""
         mode = self.search_provider
-        allowed = mode == "deepseek" or (mode == "auto" and self.llm_provider == "deepseek")
+        allowed = mode == "deepseek" or (mode == "auto" and self.llm_provider.strip().lower() == "deepseek")
         return self.deepseek_api_key if allowed else ""
+
+    def hkgai_search_key(self) -> str:
+        """The dedicated course search key applies only to the HKGAI model in auto mode."""
+        if self.search_provider == "auto" and self.llm_provider.strip().lower() == "hkgai":
+            return self.hkgai_search_api_key
+        return ""
 
     @property
     def memory_dir(self) -> Path:
@@ -124,6 +128,7 @@ class Settings:
         env = {
             "llm_provider": os.getenv("LLM_PROVIDER"),
             "hkgai_api_key": os.getenv("HKGAI_API_KEY"),
+            "hkgai_search_api_key": os.getenv("HKGAI_SEARCH_API_KEY"),
             "hkgai_base_url": os.getenv("HKGAI_BASE_URL"),
             "hkgai_model": os.getenv("HKGAI_MODEL"),
             "deepseek_api_key": os.getenv("DEEPSEEK_API_KEY"),
