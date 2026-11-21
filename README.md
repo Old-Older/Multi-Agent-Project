@@ -70,7 +70,7 @@ Three principles guide how we tune and debug the system, in this order of import
 - **Isolation.** Every agent has its own workspace directory (`workspaces/<agent>/`); files only move
   between agents through the Router.
 - **Tools.** `read_file`, `write_file`, `edit_file` (exact replacement), `delete_file`, `list_files`, `run_python`, `web_search`
-  (DeepSeek's own search when the DeepSeek model is used, otherwise a keyless stop-gap search), `fetch_url` (reads the page here; a site that refuses it is read through DeepSeek's fetch API), `git` (clone, add, commit, push; each call needs your approval).
+  (defaults to SerpApi for HKGAI or DeepSeek search for DeepSeek, with a keyless fallback), `fetch_url` (reads pages locally, with a fallback for blocked pages when DeepSeek search is selected), `git` (clone, add, commit, push; each call needs your approval).
 - **LLM.** The course HKGAI gateway (default) or DeepSeek, the two the course allows; both are
   OpenAI-compatible chat endpoints. OpenAI and Anthropic APIs are not allowed.
 
@@ -122,8 +122,8 @@ output, transcripts, log). Both are git-ignored.
 - Python **3.10 or newer**
 - `git` on your `PATH` (only if agents use the git tool)
 - An **HKGAI API key** from the course, or a **DeepSeek API key** (for real runs; the demo needs none)
-- With the DeepSeek model, `web_search` and `fetch_url` use DeepSeek's search and fetch APIs with the same key (about 5 yuan per 1000 requests); nothing else to set up
-  (search works without one), and a GitHub token for pushing
+- An optional SerpApi key for web search with the HKGAI model. The DeepSeek model uses its own API key for search and page fetching (about 5 yuan per 1000 requests in our runs). Both models support keyless search.
+- A GitHub token for pushing
 
 ```bash
 git clone https://github.com/Old-Older/Multi-Agent-Project.git
@@ -146,7 +146,8 @@ cp .env.example .env                # then edit .env
 | `DEEPSEEK_API_KEY` | real runs with `deepseek` | your DeepSeek key |
 | `DEEPSEEK_BASE_URL`, `DEEPSEEK_MODEL` | optional | default `https://api.deepseek.com` and `deepseek-chat` |
 | `DEEPSEEK_THINKING` | optional | `off` (default) asks DeepSeek not to think before answering: faster, and the agents call tools at every step; `default` leaves it to the service |
-| `SEARCH_PROVIDER` | optional | `auto` (default): with the DeepSeek model, `web_search` uses DeepSeek's search API and `fetch_url` falls back to DeepSeek's fetch API for pages a site refuses (403, 429, ...), both with `DEEPSEEK_API_KEY`; with the HKGAI model only a keyless stop-gap search (DuckDuckGo and others via `ddgs`: no key or account, but slower and unreliable, so some searches fail and the agents carry on without them). `deepseek` uses DeepSeek's even with the HKGAI model; `keyless` never uses a key. A search DeepSeek cannot answer falls back to the keyless one |
+| `HKGAI_SEARCH_API_KEY` | optional | Set this to the course’s SerpApi key to enable Google Search with HKGAI and `SEARCH_PROVIDER=auto`. Page fetching stays local. [SerpApi documentation](https://serpapi.com/search-api) |
+| `SEARCH_PROVIDER` | optional | `auto` (default) selects the search service for the active model. DeepSeek uses `DEEPSEEK_API_KEY` for search and to fetch pages that refuse local access. `deepseek` selects DeepSeek search and fetch with either model. `keyless` selects DuckDuckGo and other engines through `ddgs`, with local page fetching. Search also falls back to `ddgs` when the selected key is missing or its service is unavailable. |
 | `GITHUB_TOKEN` | `git push` to GitHub | sent only to github.com over HTTPS |
 
 ## Running it
@@ -285,7 +286,7 @@ How we test the system on the course's test set (`Mid_Test.zip`: three scenarios
 
 **1. Environment**
 
-- Python 3.10+ (we used 3.14.3 on macOS), `git`, a DeepSeek API key (our runs used `deepseek-chat`; the course HKGAI key works too, but search is then the slower keyless one).
+- Python 3.10+ (we used 3.14.3 on macOS), `git`, and a DeepSeek API key for the archived `deepseek-chat` configuration. To evaluate HKGAI, pass `--llm hkgai` and set `HKGAI_API_KEY`. Set `HKGAI_SEARCH_API_KEY` to use SerpApi for search.
 - Setup, from the repository root:
 
 ```bash
@@ -293,7 +294,7 @@ python3 -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\activate
 python -m pip install -e .
 cp .env.example .env                # fill in DEEPSEEK_API_KEY (and HKGAI_API_KEY if you use it)
-python -m unittest                  # optional: 638 tests, no key needed
+python -m unittest                  # optional: 647 tests, no key needed
 ```
 
 **2. Run the test set with the default (fast) configuration**

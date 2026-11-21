@@ -1,14 +1,17 @@
-"""What web_search and fetch_url may use besides this machine: DeepSeek's own search and fetch with the DeepSeek model,
-nothing keyed with the HKGAI model; and how they are used."""
+"""Provider selection, authenticated search requests, and fallback behavior for search and page fetching."""
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import os
 import socket
 import unittest
 from datetime import date
 from unittest.mock import Mock, patch
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, quote_plus, urlsplit
+from urllib.request import HTTPRedirectHandler
 
 import httpx
 
@@ -21,6 +24,7 @@ from mas.tools.web import FetchURL, WebSearch
 from tests.test_web_tools import response
 
 DS = "ds-secret-key"
+HK_SEARCH = "hk+search-fixture"
 
 
 def result_row(**fields):
@@ -63,8 +67,23 @@ class WhichKeyTest(unittest.TestCase):
             search, fetch = build_tools(role, Settings(llm_provider=llm, deepseek_api_key=DS))
             self.assertEqual((search._deepseek_key, fetch._deepseek_key), (expected, expected), llm)
 
+    def test_course_search_key_is_only_used_for_auto_with_the_hkgai_model(self):
+        role = RoleConfig("r", "R", "researches", "", ["web_search", "fetch_url"])
+        env = {"HKGAI_SEARCH_API_KEY": HK_SEARCH, "HKGAI_API_KEY": "hk-model-fixture", "DEEPSEEK_API_KEY": DS}
+        with patch.dict(os.environ, env, clear=True):
+            for model, mode, expected in (
+                (" HKGAI ", "auto", (HK_SEARCH, "", "")),
+                (" DEEPSEEK ", "auto", ("", DS, DS)),
+                ("hkgai", "deepseek", ("", DS, DS)),
+                ("hkgai", "keyless", ("", "", "")),
+                ("deepseek", "keyless", ("", "", "")),
+            ):
+                with self.subTest(model=model, mode=mode):
+                    search, fetch = build_tools(role, Settings.from_env(llm_provider=model, search_provider=mode))
+                    self.assertEqual((search._hkgai_key, search._deepseek_key, fetch._deepseek_key), expected)
 
-class DeepSeekSearchTest(unittest.IsolatedAsyncioTestCase):
+
+class _SearchTestCase(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.sandbox = Mock(spec=Sandbox)
         self.requests, self.responses = [], []
@@ -88,6 +107,8 @@ class DeepSeekSearchTest(unittest.IsolatedAsyncioTestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
+
+class DeepSeekSearchTest(_SearchTestCase):
     def answer(self, *rows, status=200):
         self.responses.append(response(json.dumps({"results": list(rows)}).encode(), status=status,
                                        content_type="application/json"))
@@ -187,6 +208,150 @@ class DeepSeekSearchTest(unittest.IsolatedAsyncioTestCase):
         result = await self.search(deepseek="", query="q")
         self.assertTrue(result.ok)
         self.assertEqual(self.requests, [])
+
+
+class SerpApiSearchTest(_SearchTestCase):
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.serpapi_requests, self.serpapi_responses = [], []
+
+        def serve(request, timeout):
+            self.serpapi_requests.append(request)
+            item = self.serpapi_responses.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            reply = io.BytesIO(item)
+            reply.headers = {"Content-Type": "application/json"}
+            reply.status = 200
+            reply.getcode = lambda: 200
+            return reply
+
+        self.opener = Mock()
+        self.opener.open.side_effect = serve
+        patcher = patch("mas.tools.web.build_opener", return_value=self.opener)
+        self.build_opener = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def serpapi_answer(self, *rows):
+        payload = {"search_metadata": {"status": "Success"}, "organic_results": list(rows)}
+        self.serpapi_responses.append(json.dumps(payload).encode())
+
+    async def test_course_search_uses_google_and_returns_safe_organic_results_up_to_count(self):
+        self.serpapi_answer(
+            {"title": "Local", "link": "file:///example.txt"},
+            {"title": "Credentials", "link": "https://user:pass@four.example/"},
+            {"title": "Survey &amp; results", "link": "https://one.example/news", "snippet": "Campus survey."},
+            {"title": "Data", "link": "https://two.example/figures"},
+            {"title": "More", "link": "https://three.example/report", "snippet": "Extra result."},
+        )
+        result = await WebSearch(hkgai_key=HK_SEARCH).run(self.sandbox, query="港科大 AI & policy", count=2)
+        self.assertTrue(result.ok, result.output)
+        request, = self.serpapi_requests
+        url = urlsplit(request.full_url)
+        self.assertEqual((request.get_method(), url.scheme, url.netloc, url.path),
+                         ("GET", "https", "serpapi.com", "/search.json"))
+        self.assertEqual(parse_qs(url.query), {"engine": ["google"], "q": ["港科大 AI & policy"], "api_key": [HK_SEARCH]})
+        self.assertFalse(request.has_header("Authorization"))
+        self.assertEqual(self.requests, [])
+        self.assertEqual(json.loads(result.output), [
+            {"title": "Survey & results", "url": "https://one.example/news", "description": "Campus survey."},
+            {"title": "Data", "url": "https://two.example/figures", "description": ""},
+        ])
+        self.keyless.assert_not_called()
+
+    async def test_query_credentials_are_never_forwarded_to_redirect_targets(self):
+        self.serpapi_answer()
+        await WebSearch(hkgai_key=HK_SEARCH).run(self.sandbox, query="campus")
+        request, = self.serpapi_requests
+        handlers = [handler() if isinstance(handler, type) else handler for handler in self.build_opener.call_args.args]
+        redirect_handler = next(handler for handler in handlers if isinstance(handler, HTTPRedirectHandler))
+        redirected = redirect_handler.redirect_request(request, None, 302, "Found", {}, "https://other.example/search")
+        self.assertIsNone(redirected)
+
+    async def test_freshness_uses_the_google_time_filter(self):
+        for freshness, unit in (("pd", "d"), ("pw", "w"), ("pm", "m"), ("py", "y")):
+            with self.subTest(freshness=freshness):
+                self.serpapi_answer()
+                result = await WebSearch(hkgai_key=HK_SEARCH).run(self.sandbox, query="events", freshness=freshness)
+                self.assertTrue(result.ok, result.output)
+                params = parse_qs(urlsplit(self.serpapi_requests[-1].full_url).query)
+                self.assertEqual(params["tbs"], [f"qdr:{unit}"])
+                self.assertEqual(params["q"], ["events"])
+
+    async def test_empty_organic_results_are_valid_and_a_malformed_result_is_an_error(self):
+        self.serpapi_answer()
+        fully_empty = {"search_metadata": {"status": "Success"},
+                       "search_information": {"organic_results_state": "Fully empty"},
+                       "error": "Google hasn't returned any results for this query."}
+        self.serpapi_responses.append(json.dumps(fully_empty).encode())
+        for query in ("rare topic", "obscure phrase"):
+            result = await WebSearch(hkgai_key=HK_SEARCH).run(self.sandbox, query=query)
+            self.assertTrue(result.ok, result.output)
+            self.assertEqual(json.loads(result.output), [])
+        self.serpapi_responses.append(b'{"organic_results":"invalid"}')
+        result = await WebSearch(hkgai_key=HK_SEARCH).run(self.sandbox, query="other topic")
+        self.assertFalse(result.ok)
+        self.keyless.assert_not_called()
+
+    async def test_hkgai_without_a_search_key_uses_keyless_even_with_both_model_keys(self):
+        self.keyless.side_effect = None
+        self.keyless.return_value = [{"title": "News", "url": "https://one.example/news", "description": ""}]
+        role = RoleConfig("r", "R", "researches", "", ["web_search"])
+        search, = build_tools(role, Settings(llm_provider="hkgai", hkgai_api_key="model-fixture", deepseek_api_key=DS))
+        result = await search.run(self.sandbox, query="campus events")
+        self.assertTrue(result.ok, result.output)
+        self.keyless.assert_called_once()
+        self.assertEqual(self.requests, [])
+        self.assertEqual(self.serpapi_requests, [])
+
+    async def test_unavailable_course_search_falls_back_without_disclosing_the_key(self):
+        self.keyless.side_effect = None
+        self.keyless.return_value = [{"title": "News", "url": "https://one.example/news", "description": ""}]
+        sensitive_url = "https://serpapi.com/search.json?api_key=" + HK_SEARCH
+        failures = [HTTPError(sensitive_url, status, HK_SEARCH, {}, io.BytesIO(HK_SEARCH.encode()))
+                    for status in (401, 429)]
+        failures.append(URLError(HK_SEARCH))
+        failures.append(json.dumps({"error": f"Invalid key {HK_SEARCH}"}).encode())
+        for i, failure in enumerate(failures):
+            self.serpapi_responses.append(failure)
+            with self.assertLogs(level="INFO") as logs:
+                result = await WebSearch(hkgai_key=HK_SEARCH).run(self.sandbox, query=f"topic {i}")
+            self.assertTrue(result.ok, result.output)
+            self.assertEqual(json.loads(result.output)[0]["title"], "News")
+            self.assertNotIn(HK_SEARCH, "".join(logs.output) + result.output)
+            self.assertNotIn(quote_plus(HK_SEARCH), "".join(logs.output) + result.output)
+        self.assertEqual(self.keyless.call_count, len(failures))
+
+    async def test_echoed_key_in_search_results_never_enters_the_tool_output(self):
+        self.serpapi_answer(
+            {"title": HK_SEARCH, "link": "https://one.example/news", "snippet": "Sample"},
+            {"title": "More", "link": "https://two.example/?q=" + quote_plus(HK_SEARCH), "snippet": "Sample"},
+            {"title": "Survey", "link": "https://three.example/", "snippet": "echo: " + HK_SEARCH},
+            {"title": "Clean", "link": "https://four.example/", "snippet": "Public news"},
+        )
+        result = await WebSearch(hkgai_key=HK_SEARCH).run(self.sandbox, query="news")
+        self.assertTrue(result.ok, result.output)
+        self.assertNotIn(HK_SEARCH, result.output)
+        self.assertNotIn(quote_plus(HK_SEARCH), result.output)
+        self.assertIn("Public news", result.output)
+
+    async def test_hkgai_and_deepseek_do_not_share_cached_results_for_the_same_query(self):
+        self.serpapi_answer({"title": "Survey", "link": "https://one.example/course", "snippet": "Survey findings."})
+        self.responses.append(response(json.dumps({"results": [result_row()]}).encode(),
+                                       content_type="application/json"))
+        with self.assertLogs(level="INFO") as logs:
+            course = await WebSearch(hkgai_key=HK_SEARCH).run(self.sandbox, query="campus")
+            ds = await WebSearch(deepseek_key=DS).run(self.sandbox, query="campus")
+        self.assertNotIn(HK_SEARCH, "".join(logs.output) + course.output + ds.output)
+        self.assertNotIn(quote_plus(HK_SEARCH), "".join(logs.output) + course.output + ds.output)
+        self.assertTrue(course.ok, course.output)
+        self.assertTrue(ds.ok, ds.output)
+        course_row, = json.loads(course.output)
+        self.assertEqual(course_row["url"], "https://one.example/course")
+        self.assertIn("Survey findings", course_row["description"])
+        self.assertEqual(json.loads(ds.output)[0]["url"], result_row()["url"])
+        self.assertEqual([urlsplit(r.full_url).netloc for r in self.serpapi_requests], ["serpapi.com"])
+        self.assertEqual([r.url.host for r in self.requests], ["api.deepseek.com"])
 
 
 class DeepSeekFetchTest(unittest.IsolatedAsyncioTestCase):

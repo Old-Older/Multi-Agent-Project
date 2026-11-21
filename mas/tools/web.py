@@ -1,9 +1,9 @@
 """Web research tools.
 
-web_search asks DeepSeek's own search API when the DeepSeek model is in use (its key goes only to the fixed DeepSeek
-endpoint) and otherwise, or when that cannot answer (key rejected, balance used up, rate limit, server error), a keyless
-search through DuckDuckGo and other engines (the `ddgs` package). The keyless path is what makes the system work on a
-machine that has no search key. fetch_url reads the page from this machine; when a site refuses it (HTTP 401, 403, 406,
+web_search uses SerpApi's Google search with HKGAI, or DeepSeek's own search with DeepSeek.
+Each search credential goes only to its service. When a search service is unavailable or no search key
+is configured, DuckDuckGo and other engines provide a keyless fallback through `ddgs`.
+fetch_url reads the page from this machine; when a site refuses it (HTTP 401, 403, 406,
 429, 451 or a server error), the same DeepSeek key lets DeepSeek's fetch API read the page from its side.
 """
 from __future__ import annotations
@@ -20,8 +20,12 @@ import time
 import weakref
 import zlib
 from datetime import date, timedelta
+from http.client import HTTPException
 from html.parser import HTMLParser
 from typing import Any
+from urllib.error import HTTPError
+from urllib.parse import unquote_plus, urlencode
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 import httpx
 
@@ -40,8 +44,10 @@ _FRESHNESS = ("pd", "pw", "pm", "py")
 _DEEPSEEK_SEARCH_URL = "https://api.deepseek.com/v1/tools/search"
 _DEEPSEEK_TIMEOUT = 8.0             # shorter than the whole search, so that a fallback still has time
 _DEEPSEEK_QUERY_MAX = 128
-_DEEPSEEK_DAYS = {"pd": 1, "pw": 7, "pm": 31, "py": 366}
+_FRESHNESS_DAYS = {"pd": 1, "pw": 7, "pm": 31, "py": 366}
 _DEEPSEEK_TEXT_MAX = 360
+_SERPAPI_SEARCH_URL = "https://serpapi.com/search.json"
+_SERPAPI_TIMEOUT = 30.0
 _DEEPSEEK_FETCH_URL = "https://api.deepseek.com/v1/tools/fetch"
 _DEEPSEEK_FETCH_TIMEOUT = 25.0      # some pages take it 15 s
 _FETCH_WITH_FALLBACK_TIMEOUT = 40.0  # the whole fetch_url call: this machine's try, then DeepSeek's
@@ -59,11 +65,12 @@ _KEYLESS_DEADLINE = 12.0            # the whole search
 _KEYLESS_GIVE_UP_AFTER = 3          # failures in a row...
 _KEYLESS_PAUSE = 30.0               # ...and then no attempts for this long
 _keyless = {"failures": 0, "paused_until": 0.0}
-_KEYLESS_TIMELIMIT = {"pd": "d", "pw": "w", "pm": "m", "py": "y"}
+_SEARCH_PERIOD = {"pd": "d", "pw": "w", "pm": "m", "py": "y"}
 
 # Answers are kept for a while: agents repeat searches (retries, two members researching the same thing), and a
 # repeated search is free. Only answers with results are kept, never failures.
-_SEARCH_CACHE: dict[tuple[str, int, str], tuple[float, list[dict[str, str]]]] = {}
+_SearchCacheKey = tuple[str, str, int, str]
+_SEARCH_CACHE: dict[_SearchCacheKey, tuple[float, list[dict[str, str]]]] = {}
 _SEARCH_CACHE_TTL = 1800.0
 _KEYLESS_CONCURRENCY = 3                 # keyless searches at the same time: more than that only brings rate limits
 _SEARCH_CACHE_SIZE = 256
@@ -82,7 +89,7 @@ def _keyless_slot() -> asyncio.Semaphore:
     return slot
 
 
-def _cached(key: tuple[str, int, str]) -> list[dict[str, str]] | None:
+def _cached(key: _SearchCacheKey) -> list[dict[str, str]] | None:
     hit = _SEARCH_CACHE.get(key)
     if hit and time.monotonic() - hit[0] < _SEARCH_CACHE_TTL:
         return [dict(row) for row in hit[1]]
@@ -90,7 +97,7 @@ def _cached(key: tuple[str, int, str]) -> list[dict[str, str]] | None:
     return None
 
 
-def _remember(key: tuple[str, int, str], rows: list[dict[str, str]]) -> None:
+def _remember(key: _SearchCacheKey, rows: list[dict[str, str]]) -> None:
     if not rows:
         return
     if len(_SEARCH_CACHE) >= _SEARCH_CACHE_SIZE:
@@ -120,7 +127,7 @@ def _fetch_remember(key: tuple[str, int], page: dict) -> None:
 
 
 class _SearchUnavailable(Exception):
-    """DeepSeek's search or fetch could not answer (rejected key, no balance, rate limit, server or network trouble)."""
+    """The remote service could not answer (rejected key, no balance, rate limit, server or network trouble)."""
 
 
 class _HttpStatus(ValueError):
@@ -150,7 +157,7 @@ def _keyless_text(query: str, count: int, freshness: str) -> list[dict[str, str]
         raise ValueError("keyless search needs the 'ddgs' package: python -m pip install ddgs") from None
     if time.monotonic() < _keyless["paused_until"]:
         raise ValueError(f"search is paused for a moment: the free search engines have not been answering. {_KEYLESS_ADVICE}")
-    options = {"timelimit": _KEYLESS_TIMELIMIT[freshness]} if freshness else {}
+    options = {"timelimit": _SEARCH_PERIOD[freshness]} if freshness else {}
     try:
         rows = DDGS(timeout=_KEYLESS_TIMEOUT).text(query, max_results=count, backend="auto", **options)
     except Exception as exc:                             # ddgs raises its own types
@@ -166,8 +173,43 @@ def _keyless_text(query: str, count: int, freshness: str) -> list[dict[str, str]
     return results
 
 
+class _NoSearchRedirect(HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def _serpapi_payload(query: str, freshness: str, api_key: str) -> dict:
+    # SerpApi requires the key in the query. urllib keeps the URL out of HTTPX's request logs.
+    params = {"engine": "google", "q": query.strip(), "api_key": api_key}
+    if freshness:
+        params["tbs"] = "qdr:" + _SEARCH_PERIOD[freshness]
+    request = Request(_SERPAPI_SEARCH_URL + "?" + urlencode(params),
+                      headers={"Accept": "application/json", "Accept-Encoding": "identity"})
+    try:
+        with build_opener(_NoSearchRedirect()).open(request, timeout=_SERPAPI_TIMEOUT) as response:
+            encoding = response.headers.get("Content-Encoding", "identity").strip().lower()
+            body = response.read(_MAX_BYTES + 1)
+    except HTTPError as exc:
+        exc.close()
+        raise _SearchUnavailable(f"HTTP {exc.code}") from None
+    except (OSError, HTTPException, ValueError) as exc:
+        # Exception messages and provider error bodies can include the full URL.
+        raise _SearchUnavailable(type(exc).__name__) from None
+    if len(body) > _MAX_BYTES:
+        raise ValueError("SerpApi search response exceeded the byte limit")
+    if encoding != "identity":
+        raise ValueError("unsupported SerpApi response encoding")
+    try:
+        payload = json.loads(body)
+    except (ValueError, RecursionError):
+        raise ValueError("invalid SerpApi search JSON response") from None
+    if not isinstance(payload, dict):
+        raise ValueError("invalid SerpApi search results")
+    return payload
+
+
 def _check_key(key: object, name: str) -> None:
-    """A key that cannot be sent as a header value is a mistake in the configuration: say so, never send it."""
+    """Reject malformed credentials before sending them."""
     if not isinstance(key, str) or not key.isascii() or not key.isprintable() or " " in key:
         raise ValueError(f"invalid {name}")
 
@@ -252,8 +294,13 @@ class WebSearch(_WebTool):
         "required": ["query"], "additionalProperties": False,
     }
 
-    def __init__(self, deepseek_key: str = "") -> None:
+    def __init__(self, deepseek_key: str = "", *, hkgai_key: str = "") -> None:
         self._deepseek_key = deepseek_key
+        self._hkgai_key = hkgai_key
+        if hkgai_key:
+            if deepseek_key:
+                raise ValueError("select a single web search provider")
+            self.timeout = _SERPAPI_TIMEOUT + _KEYLESS_DEADLINE + 2
 
     async def _request(self, *, query: str, count: int = 5, freshness: str = "") -> list[dict[str, str]]:
         if not isinstance(query, str) or not query.strip() or len(query) > 600 or len(query.split()) > 75:
@@ -261,17 +308,26 @@ class WebSearch(_WebTool):
         _integer(count, "count", 10)
         if freshness != "" and freshness not in _FRESHNESS:
             raise ValueError("freshness must be pd, pw, pm or py")
-        key = (" ".join(query.lower().split()), count, freshness)
+        provider = "keyless"
+        if self._hkgai_key:
+            provider = "SerpApi"
+        elif self._deepseek_key:
+            provider = "DeepSeek"
+        key = (provider, " ".join(query.lower().split()), count, freshness)
         if (hit := _cached(key)) is not None:
             return hit
-        if self._deepseek_key:
-            _check_key(self._deepseek_key, "DEEPSEEK_API_KEY")
+        if provider != "keyless":
             try:
-                results = await self._deepseek(query, count, freshness)
+                if self._hkgai_key:
+                    _check_key(self._hkgai_key, "HKGAI_SEARCH_API_KEY")
+                    results = await self._serpapi(query, count, freshness)
+                else:
+                    _check_key(self._deepseek_key, "DEEPSEEK_API_KEY")
+                    results = await self._deepseek(query, count, freshness)
                 _remember(key, results)
                 return results
             except _SearchUnavailable as exc:
-                log.warning("DeepSeek search unavailable (%s); using the keyless search instead", exc)
+                log.warning("%s search unavailable (%s); using the keyless search instead", provider, exc)
         try:
             async with _keyless_slot():
                 rows = await asyncio.wait_for(asyncio.to_thread(_keyless_text, query.strip(), count, freshness),
@@ -289,28 +345,13 @@ class WebSearch(_WebTool):
         text = " ".join(query.split())
         suffix = ""
         if freshness:                                       # DeepSeek has no freshness parameter: the after: operator does it
-            suffix += f" after:{(date.today() - timedelta(days=_DEEPSEEK_DAYS[freshness])).isoformat()}"
+            suffix += f" after:{(date.today() - timedelta(days=_FRESHNESS_DAYS[freshness])).isoformat()}"
         if text.isascii() and "lang:" not in text:         # an English question gets English pages first
             suffix += " lang:en"
         text = text[:_DEEPSEEK_QUERY_MAX - len(suffix)].rstrip() + suffix
-        headers = {"Authorization": f"Bearer {self._deepseek_key}", "Content-Type": "application/json",
-                   "Accept-Encoding": "gzip, identity"}
-        try:
-            async with httpx.AsyncClient(timeout=_DEEPSEEK_TIMEOUT) as client:
-                async with client.stream("POST", _DEEPSEEK_SEARCH_URL, headers=headers, follow_redirects=False,
-                                         json={"query": text, "count": count, "need_content": False}) as response:
-                    if not response.is_success:
-                        raise _SearchUnavailable(f"HTTP {response.status_code}")
-                    body, truncated = await _bounded_body(response)
-        except (httpx.TimeoutException, httpx.RequestError) as exc:
-            raise _SearchUnavailable(type(exc).__name__) from None
-        if truncated:
-            raise ValueError("DeepSeek search response exceeded the byte limit")
-        try:
-            payload = json.loads(body)
-        except (ValueError, RecursionError) as exc:
-            raise ValueError("invalid DeepSeek search JSON response") from exc
-        rows = payload.get("results") if isinstance(payload, dict) else None
+        payload = await self._post_search("DeepSeek", _DEEPSEEK_SEARCH_URL, self._deepseek_key, _DEEPSEEK_TIMEOUT,
+                                          {"query": text, "count": count, "need_content": False})
+        rows = payload.get("results")
         if not isinstance(rows, list):
             raise ValueError("invalid DeepSeek search results")
         results = []
@@ -325,6 +366,54 @@ class WebSearch(_WebTool):
             if len(results) == count:
                 break
         return results
+
+    @staticmethod
+    async def _post_search(provider: str, url: str, key: str, timeout: float, params: dict) -> dict:
+        headers = {"Authorization": f"Bearer {key}", "Accept-Encoding": "gzip, identity"}
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                async with client.stream("POST", url, headers=headers, follow_redirects=False, json=params) as response:
+                    if not response.is_success:
+                        raise _SearchUnavailable(f"HTTP {response.status_code}")
+                    body, truncated = await _bounded_body(response)
+        except httpx.RequestError as exc:
+            raise _SearchUnavailable(type(exc).__name__) from None
+        if truncated:
+            raise ValueError(f"{provider} search response exceeded the byte limit")
+        try:
+            payload = json.loads(body)
+        except (ValueError, RecursionError) as exc:
+            raise ValueError(f"invalid {provider} search JSON response") from exc
+        if not isinstance(payload, dict):
+            raise ValueError(f"invalid {provider} search results")
+        return payload
+
+    async def _serpapi(self, query: str, count: int, freshness: str) -> list[dict[str, str]]:
+        try:
+            payload = await asyncio.wait_for(asyncio.to_thread(_serpapi_payload, query, freshness, self._hkgai_key),
+                                             _SERPAPI_TIMEOUT)
+        except asyncio.TimeoutError:
+            raise _SearchUnavailable("request timed out") from None
+        info = payload.get("search_information")
+        meta = payload.get("search_metadata")
+        if (isinstance(info, dict) and info.get("organic_results_state") == "Fully empty"
+                and isinstance(meta, dict) and meta.get("status") == "Success"):
+            return []  # SerpApi also includes an "error" string for a successful search with no matches.
+        if payload.get("error") or (isinstance(meta, dict) and meta.get("status") == "Error"):
+            raise _SearchUnavailable("service rejected request")
+        organic = payload.get("organic_results")
+        if not isinstance(organic, list):
+            raise ValueError("invalid SerpApi search results")
+        rows = []
+        for item in organic:
+            if not isinstance(item, dict):
+                continue
+            row = {"title": item.get("title"), "url": item.get("link"), "description": item.get("snippet")}
+            if any(self._hkgai_key in value or self._hkgai_key in unquote_plus(html.unescape(value))
+                   for value in row.values() if isinstance(value, str)):
+                continue
+            rows.append(row)
+        return self._clean(rows, count)
 
     @staticmethod
     def _deepseek_text(row: dict) -> str:

@@ -334,7 +334,7 @@ its workspace mounted) is the planned stronger isolation and is not implemented.
 | `edit_file` | change a file by exact replacement | `{old, new}` pairs (or one `old`/`new`), applied in order all or nothing; a failure says which edit and why, with the closest line; success confirms the new size. Members are told to use it instead of rewriting a file or patching it with a script |
 | `delete_file` | delete a file | needs the human's approval |
 | `run_python` | run a script or a module (`unittest`, `pytest`) in the workspace | timeout (default 60 s), output returned with the exit code |
-| `web_search` | titles, URLs and snippets | DeepSeek's search API when the DeepSeek model is used (same key; `freshness` becomes an `after:` operator, an English query gets `lang:en`, the query is cut to 128 characters); otherwise, or if DeepSeek cannot answer (401, 402, 429, server or network trouble), a keyless stop-gap (`ddgs`, one call): 12 s deadline, and after 3 failures in a row it stands down for 30 s and tells the member to carry on without it. A real search API replaces it |
+| `web_search` | titles, URLs and snippets | With `SEARCH_PROVIDER=auto`, HKGAI uses SerpApi's Google Search API with the optional `HKGAI_SEARCH_API_KEY`. DeepSeek uses its model key for search, adds `after:` for freshness and `lang:en` for English queries, and limits queries to 128 characters. When the selected key is missing or its service is unavailable, search falls back to `ddgs`. |
 | `fetch_url` | the text of a public web page | public HTTP(S) only: private and mixed addresses are refused on every redirect hop, 20 s and 1 MiB limits, text, HTML, JSON and XML. When the site refuses this machine (401, 403, 406, 429, 451 or a server error) and the DeepSeek model is in use, DeepSeek's fetch API reads the page with the same key (`"via": "deepseek"`) |
 | `git` | `init`, `clone`, `status`, `diff`, `add`, `commit`, `log`, `push` | every call needs the human's approval; the GitHub token is sent only to github.com over HTTPS and kept out of the output |
 
@@ -405,6 +405,6 @@ data/mas.log               the log (stack traces of internal errors)
   but not the earlier requests of the conversation.
 - The unattended `AutoResponder` answers every question with a fixed default, so it cannot stand in for a
   human who has real preferences (for example an investor's risk tolerance).
-- Keyless web search is a stop-gap: it depends on third-party engines that rate-limit or change, so some searches fail (about 2 in 8 in a test on one network). It is built so that a failing search costs seconds, not a run; DeepSeek's search API (with the DeepSeek model) is the way to make research reliable. With the HKGAI model the course's search service is not known yet, so only the keyless search is used.
+- Keyless search depends on third-party engines that rate-limit or change (2 failures in 8 queries on one network). Each `ddgs` search has a 12 s deadline. After 3 consecutive failures it pauses for 30 s and tells the member to carry on.
 - Recall is keyword-based, and lessons are only learned from failures.
 - Real-model evaluations so far use the DeepSeek model only, are single runs and are graded by the same model; scenario 3 was tuned on. The HKGAI model has not been run. Open problems are listed in `docs/report.md` (stage 4, section 9).
