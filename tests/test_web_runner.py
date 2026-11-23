@@ -49,6 +49,9 @@ class WebRunnerTest(unittest.TestCase):
                                         {"interaction": "manual"})
             state = self.wait(run_id, lambda snapshot: snapshot["questions"])
             question = state["questions"][0]
+            self.assertIsInstance(state["started"], float)                    # the monitor counts time from here...
+            self.assertIsNone(state["finished"])                              # ...for as long as the run is open
+            self.assertTrue(all(event["time"] >= state["started"] for event in state["events"]))
             self.assertEqual(self.manager.active_id(), run_id)
             self.assertEqual(self.manager.inputs(run_id)["roles"], TEAM)
             self.assertEqual(self.manager.inputs(run_id)["tasks"][-1], "Review it.")
@@ -61,6 +64,7 @@ class WebRunnerTest(unittest.TestCase):
                 self.manager.reply(run_id, question["id"], "red")
             state = self.wait(run_id, lambda snapshot: snapshot["status"] != "running")
         self.assertEqual(state["status"], "failed")
+        self.assertGreaterEqual(state["finished"], state["started"])           # the clock stops when the run does
         self.assertEqual([r["success"] for r in state["results"]], [True, False])
         self.assertEqual([r["title"] for r in state["results"]], ["First", "任务 2"])
         self.assertEqual([r["default_title"] for r in state["results"]], [False, True])

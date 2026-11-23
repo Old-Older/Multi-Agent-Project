@@ -338,6 +338,31 @@ function showView(results) {
   }
 }
 
+function formatElapsed(seconds) {
+  const total = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(total / 3600), minutes = Math.floor(total % 3600 / 60), rest = total % 60;
+  const two = (value) => String(value).padStart(2, "0");
+  return hours ? hours + ":" + two(minutes) + ":" + two(rest) : two(minutes) + ":" + two(rest);
+}
+
+// Seconds since epoch when the run began: the server says so; an older run falls back to its first event.
+function runOrigin(events) {
+  if (Number.isFinite(lastRun?.started)) return lastRun.started;
+  const first = events.length ? events[0].ts ?? events[0].time : null;
+  const value = typeof first === "number" ? first : Date.parse(first) / 1000;
+  return Number.isFinite(value) ? value : null;
+}
+
+function renderElapsed() {
+  const label = el("elapsed");
+  const started = lastRun?.started;
+  if (!Number.isFinite(started)) { label.hidden = true; return; }
+  const end = Number.isFinite(lastRun.finished) ? lastRun.finished : Date.now() / 1000;
+  label.textContent = t("已用时 ", "Elapsed ") + formatElapsed(end - started);
+  label.hidden = false;
+}
+setInterval(renderElapsed, 1000);
+
 function renderEvents(events, relabel = false) {
   const list = el("events");
   const nearEnd = list.scrollHeight - list.clientHeight - list.scrollTop < 60;
@@ -358,8 +383,13 @@ function renderEvents(events, relabel = false) {
     if (stamp) {
       const date = new Date(typeof stamp === "number" ? stamp * 1000 : stamp);
       if (!Number.isNaN(date.valueOf())) {
-        const time = node("time", "", date.toLocaleTimeString(t("zh-CN", "en-US"), {hourCycle: "h23"}));
+        // How long into the run, not the time of day: what matters while following a run is how many minutes it has taken.
+        const origin = runOrigin(events);
+        const seconds = origin === null ? null : date.valueOf() / 1000 - origin;
+        const time = node("time", "", seconds === null ? date.toLocaleTimeString(t("zh-CN", "en-US"), {hourCycle: "h23"})
+          : formatElapsed(seconds));
         time.dateTime = date.toISOString();
+        time.title = date.toLocaleTimeString(t("zh-CN", "en-US"), {hourCycle: "h23"});
         heading.append(time);
       }
     }
@@ -459,6 +489,7 @@ function renderRun(run) {
   setBusy(active);
   if (runInteraction !== "manual") notice("switch-error", "");
   renderStatus(status);
+  renderElapsed();
   notice("run-error", run.error);
   renderEvents(run.events || []);
   renderResults(run.results || [], run.files || []);
