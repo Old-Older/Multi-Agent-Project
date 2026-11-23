@@ -54,13 +54,21 @@ def load_scenario(folder: str | Path) -> Scenario:
         if path.name == ROLE_FILE or path.name.lower() == "readme.md":
             continue
         text = path.read_text(encoding="utf-8")
-        prompt = _first_fenced(text)
-        if prompt:
-            title = _TITLE.search(text)
-            tasks.append(ScenarioTask(path.name, title.group(1) if title else path.stem, prompt))
+        task = parse_task_markdown(text, path.name)
+        if task:
+            tasks.append(task)
     if not tasks:
         raise ValueError(f"no task found in {folder}: expected files such as 02_task_1.md with the task in a fenced block")
     return Scenario(folder.name.strip() or "scenario", team, tasks)
+
+
+def parse_task_markdown(text: str, filename: str) -> ScenarioTask | None:
+    """Read the course task format from a file or a pasted Markdown document."""
+    prompt = _first_fenced(text)
+    if not prompt:
+        return None
+    title = _TITLE.search(text)
+    return ScenarioTask(filename, title.group(1) if title else Path(filename).stem, prompt)
 
 
 def _first_fenced(text: str) -> str:

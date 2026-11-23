@@ -649,6 +649,9 @@ class Router:
 
     # ---- cancel ------------------------------------------------------------
 
+    def root_cancelled(self, root_id: str) -> bool:
+        return root_id in self._cancelled_roots
+
     def cancel_root(self, root_id: str) -> None:
         """/cancel: mark all unfinished tasks of the root CANCELLED and release waiters.
         Later calls in the same root are refused. Agents still running keep going in the
