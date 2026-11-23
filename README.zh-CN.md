@@ -15,6 +15,7 @@
 - [仓库结构](#仓库结构)
 - [环境与安装](#环境与安装)
 - [如何启动](#如何启动)
+  - [浏览器工作台](#浏览器工作台)
 - [定义你自己的团队](#定义你自己的团队)
 - [一次运行留下什么](#一次运行留下什么)
 - [配置](#配置)
@@ -113,23 +114,34 @@
 ## 环境与安装
 
 - Python **3.10 或更高**
-- `git` 在 `PATH` 里（仅当 agent 使用 git 工具时需要）
+- Git，用来克隆仓库，以及供需要 Git 工具的 agent 使用
 - 课程发放的 **HKGAI API key**，或你自己的 **DeepSeek API key**（真实运行需要；演示模式不需要）
 - 用 HKGAI 模型时可选配课程提供的 SerpApi 搜索密钥。用 DeepSeek 模型时，搜索和网页抓取共用 DeepSeek API key（项目评测时每 1000 次约 5 元）。两种模型都支持无 key 搜索。
-- 推送代码用的 GitHub token
+- 如果需要让 agent 推送代码，可设置 `GITHUB_TOKEN`。
 
 ```bash
 git clone https://github.com/Old-Older/Multi-Agent-Project.git
 cd Multi-Agent-Project
-
-python3 -m venv .venv
-source .venv/bin/activate           # Windows：.venv\Scripts\activate
-python -m pip install -e .
-
-cp .env.example .env                # 然后编辑 .env
 ```
 
-`.env`（不要提交）：
+如果克隆后仓库里还没有 `mas/web.py`，运行 `git switch feat/codex-web-workbench` 切到包含工作台的分支。
+
+**Windows PowerShell**（从项目根目录执行）
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+```
+
+**macOS 或 Linux**
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+```
+
+首次运行可以直接在工作台输入本次使用的 Key。如果希望每次沿用同一配置，将 `.env.example` 复制为项目根目录的 `.env`，填入相应服务的 Key。该文件已加入 Git 忽略列表。
 
 | 变量 | 用途 | 说明 |
 |---|---|---|
@@ -144,6 +156,40 @@ cp .env.example .env                # 然后编辑 .env
 | `GITHUB_TOKEN` | `git push` 到 GitHub | 只会通过 HTTPS 发给 github.com |
 
 ## 如何启动
+
+### 浏览器工作台
+
+在项目根目录启动服务。Windows PowerShell 使用刚创建的虚拟环境。
+
+```powershell
+.\.venv\Scripts\python.exe -m mas.web
+```
+
+macOS 或 Linux 激活虚拟环境后运行以下命令。
+
+```bash
+python -m mas.web
+```
+
+保持终端运行，在浏览器打开终端打印的地址，默认是 [本机工作台](http://127.0.0.1:8765/)。
+
+1. **选择模型和密钥。** 在「运行配置」里选 HKGAI 或 DeepSeek。已设置对应环境变量时选「本机 Key」，也可选「输入本次 Key」。本次输入的 Key 仅用于当前运行。
+2. **配置无人值守作业。** 在「执行模式」选「快速」或「完整」，在「任务交互方式」保留默认的「自动使用默认答案」。团队询问细节时会自动得到答复。删除文件、Git 操作等审批请求会被自动拒绝。若选了「人工回复」，运行时可用「本次改为自动回复」处理当前和后续提问。
+3. **准备角色和任务。** 初次使用可从「场景模板」选择「软件开发团队」，页面会填入团队角色和两轮任务。导入自己的 Mid Test 时，在「团队角色」导入 `01_role_initialization.md`，在「任务内容」一起选中 `02_task_1.md`、`03_task_2.md`。多选会按文件名排序并替换全部轮次，单选只替换当前轮。也可直接编辑文本。[仓库中的 Mid Test 示例](testset/README.md)
+4. **启动并查看交付。** 点击「启动运行」，同一团队依次执行各轮任务。「协作过程」显示委派、状态和自动答复。「最终结果」按轮显示汇报、完成状态和可下载的文件。
+
+| 执行模式 | 每轮时间预算（不含等待人工回复） | 每个任务搜索与抓取合计上限 | 牵头者最早交付 |
+|---|---:|---:|---|
+| 快速 | 270 秒 | 14 次 | 用掉 50% 预算后 |
+| 完整 | 900 秒 | 28 次 | 随时 |
+| 自定义 | 手动填写 | 手动填写 | 手动填写预算比例 |
+
+「环境默认」沿用启动服务时的配置。端口被占用时，可在启动命令末尾加 `--port 8766`。使用另一份模型配置时，加 `--env-file "路径/.env"`。
+任务结束后按 `Ctrl+C` 停止服务。网页中的运行记录保留到服务退出。之后仍可在 `data/web-runs/<运行 ID>/output/` 找到已收集的文件，在同级的 `transcripts/` 查看对话。用 `--data-dir <目录>` 可更改数据根目录。
+
+### 命令行
+
+以下示例中的 `python` 指虚拟环境的解释器。在未激活环境的 Windows PowerShell 中，可将它替换为 `.\.venv\Scripts\python.exe`。
 
 **1. 没有 key 也能试。** 替身 LLM 和替身 worker 驱动真实的总线、Router、请求层和命令行：
 
@@ -164,8 +210,8 @@ python -m mas --team path/to/01_role_initialization.md      # 文件，或包含
 先发出第一个任务，它结束后在同一个群里发出下一个，团队因此保留上下文。团队提问时你照常回答，输入 `/quit` 结束。
 
 ```bash
-python -m mas --scenario "scenario_1_software_engineering 2"
-python -m mas --scenario "scenario_1_software_engineering 2" --auto     # 无人值守
+python -m mas --scenario "testset/scenario_1_software_engineering 2"
+python -m mas --scenario "testset/scenario_1_software_engineering 2" --auto     # 无人值守
 ```
 
 加 `--llm deepseek` 就用 DeepSeek 而不是课程网关。
@@ -182,6 +228,7 @@ python -m mas --scenario "scenario_1_software_engineering 2" --auto     # 无人
 | `--scenario DIR` | 场景文件夹：团队和任务 |
 | `--llm hkgai\|deepseek` | 用哪个 LLM（默认取 `LLM_PROVIDER`，否则 `hkgai`） |
 | `--auto` | 无人值守；必须配合 `--scenario` |
+| `--time-budget SECONDS` | 每个请求的时间预算，单位为秒，0 表示不限 |
 | `--data-dir DIR` | 记忆、输出、对话记录放在哪里（默认 `./data`） |
 | `--keep`、`--delay S` | 仅演示模式 |
 | `-v` | 同时把日志打到屏幕上（日志总会写到 `<data-dir>/mas.log`） |
@@ -243,7 +290,7 @@ You are the software developer on a software development team. You are responsib
 | 设置 | 默认值 | 含义 |
 |---|---|---|
 | `max_worker_steps` | 30 | worker 完成一个任务的 ReAct 步数 |
-| `max_lead_steps` | 40 | 牵头者处理一个请求的 ReAct 步数 |
+| `max_lead_steps` | 60 | 牵头者处理一个请求的 ReAct 步数 |
 | `subtask_timeout_s` | 900 | 一个被委派任务的时限（等待人类的时间不计） |
 | `lead_timeout_s` | 2400 | 一个完整请求的时限 |
 | `max_delegation_depth`、`max_delegations_per_task`、`max_retries_same_goal` | 2、2、2 | 防止委派失控（worker 再委派的次数、同一目标的重试） |
@@ -252,7 +299,7 @@ You are the software developer on a software development team. You are responsib
 | `repeat_limit` | 2 | 同一个调用、同样的结果、中间什么都没变，最多执行这么多次，之后拒绝（0 为不限） |
 | `finish_not_before` | 0.5 | 牵头者至少用掉预算的这个比例才能收工（0 为关闭） |
 | `max_lead_delegations` | 16 | 一个请求的牵头者可以委派的次数 |
-| `early_stop_nudges`、`research_note_after`、`research_note_every` | 开、12、6 | 帮成员"够了就停"的提醒；`EARLY_STOP_NUDGES=0` 关闭 |
+| `early_stop_nudges`、`research_note_after`、`research_note_every` | 开、6、2 | 帮成员"够了就停"的提醒；`EARLY_STOP_NUDGES=0` 关闭 |
 | `memory_recall_k` | 3 | 任务开始时召回的教训条数 |
 | `sandbox_backend` | `local` | `docker` 尚未实现 |
 
@@ -283,7 +330,7 @@ python3 -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\activate
 python -m pip install -e .
 cp .env.example .env                # 填入 DEEPSEEK_API_KEY（用 HKGAI 就填 HKGAI_API_KEY）
-python -m unittest                  # 可选：647 项测试，不需要 key
+python -m unittest                  # 可选，不需要 key
 ```
 
 **2. 用默认（快速）配置跑测试集**

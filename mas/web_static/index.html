@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>任务工作台 · MAS 协作台</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand"><span class="brand-icon" aria-hidden="true"><i></i><i></i><i></i></span><strong>MAS</strong><span class="brand-divider"></span><span>多智能体协作台</span></div>
+      <span class="environment"><i class="local-icon" aria-hidden="true"></i>本地工作区</span>
+    </div>
+  </header>
+  <main>
+    <div class="page-head">
+      <div><h1>任务工作台</h1><p>定义团队角色，按轮次提交任务，在同一会话中持续协作。</p></div>
+      <button id="start" class="primary" type="button"><span class="play" aria-hidden="true"></span><span id="start-label">启动运行</span></button>
+    </div>
+    <p class="notice" id="setup-error" role="alert" hidden></p>
+    <div class="workspace">
+      <section class="panel setup" aria-labelledby="config-title">
+        <header class="panel-head"><span class="section-icon settings-icon" aria-hidden="true">☷</span><h2 id="config-title">运行配置</h2></header>
+        <div class="config-body">
+          <section class="model-settings" aria-labelledby="settings-heading">
+            <h3 id="settings-heading">模型与运行参数</h3>
+            <p id="config-summary">正在读取配置</p>
+            <fieldset id="config-fields" aria-labelledby="settings-heading" disabled>
+              <div class="settings-grid">
+                <div><label for="provider">模型服务</label><div class="select-wrap"><select id="provider"></select></div></div>
+                <div><label for="model-name">模型名称</label><input id="model-name" type="text" spellcheck="false" autocomplete="off"></div>
+                <fieldset class="wide choice-group" id="key-source">
+                  <legend>API Key 来源</legend>
+                  <div class="choices">
+                    <label><input type="radio" name="key-source" value="server" checked><span id="server-key-option">使用本机 Key</span></label>
+                    <label><input id="custom-key-choice" type="radio" name="key-source" value="custom"><span>输入本次 Key</span></label>
+                  </div>
+                </fieldset>
+                <div class="wide" id="custom-key-row" hidden><label for="api-key">本次运行的 API 密钥</label><input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴密钥，仅用于启动本次运行"></div>
+                <fieldset class="wide choice-group" id="preset">
+                  <legend>执行模式</legend>
+                  <div class="choices">
+                    <label><input type="radio" name="preset" value="environment" checked><span>环境默认</span></label>
+                    <label><input type="radio" name="preset" value="fast"><span>快速</span></label>
+                    <label><input type="radio" name="preset" value="full"><span>完整</span></label>
+                    <label><input type="radio" name="preset" value="custom"><span>自定义</span></label>
+                  </div>
+                </fieldset>
+              </div>
+              <div class="limits">
+                <label for="budget">每轮时限（秒）<input id="budget" type="number" min="0" step="any"></label>
+                <label for="research">每任务检索次数<input id="research" type="number" min="0" step="1"></label>
+                <label for="min-use">最早交付比例<input id="min-use" type="number" min="0" max="1" step="any"></label>
+              </div>
+              <p class="setting-hint">时限不含等待人工回复的时间。检索次数合计搜索与网页抓取。比例 0.5 表示用完一半时限后可交付。三项均可设为 0 以关闭对应限制。</p>
+              <fieldset class="choice-group interaction" id="interaction" aria-describedby="interaction-note">
+                <legend>任务交互方式</legend>
+                <div class="choices">
+                  <label><input type="radio" name="interaction" value="auto" checked><span>自动使用默认答案</span></label>
+                  <label><input type="radio" name="interaction" value="manual"><span>人工回复</span></label>
+                </div>
+                <p class="setting-hint" id="interaction-note">自动模式会优先采用推荐或默认答案，并拒绝需要授权的风险操作。人工模式会暂停任务，等待你回复。</p>
+              </fieldset>
+            </fieldset>
+          </section>
+          <label for="example">场景模板</label>
+          <div class="select-wrap"><select id="example"><option value="">自定义场景</option></select></div>
+          <div class="field-head"><label for="roles">团队角色</label><button id="import-roles" class="text-button" type="button">导入 .md</button></div>
+          <textarea id="roles" spellcheck="false" rows="7" placeholder="粘贴 01_role_initialization.md 的内容"></textarea>
+          <input id="roles-file" type="file" accept=".md,.markdown,.txt,text/plain,text/markdown" hidden>
+          <div class="field-head"><label for="task">任务内容</label><button id="import-task" class="text-button" type="button" title="单个文件填入当前轮；多个文件按文件名排序并替换所有轮次">导入 .md</button></div>
+          <div class="round-toolbar">
+            <div id="rounds" class="rounds" role="group" aria-label="选择任务轮次"></div>
+            <button id="add-task" class="add" type="button" title="添加一轮任务" aria-label="添加一轮任务">＋</button>
+          </div>
+          <textarea id="task" spellcheck="false" rows="5" placeholder="粘贴任务 Markdown，或直接描述要团队完成的工作"></textarea>
+          <div class="task-foot"><span id="task-count"></span><button id="remove-task" class="text-button muted" type="button">移除此轮</button></div>
+          <input id="task-file" type="file" accept=".md,.markdown,.txt,text/plain,text/markdown" multiple hidden>
+        </div>
+      </section>
+      <section class="panel monitor" aria-labelledby="monitor-title">
+        <header class="panel-head"><span class="section-icon pulse-icon" aria-hidden="true">∿</span><h2 id="monitor-title">运行监视器</h2><span id="status" class="status" data-state="idle" role="status">待启动</span></header>
+        <div class="view-switch" role="group" aria-label="运行视图">
+          <button id="events-tab" class="view-tab active" aria-pressed="true" aria-controls="events-view" type="button">协作过程 <span class="count" id="event-count">0</span></button>
+          <button id="results-tab" class="view-tab" aria-pressed="false" aria-controls="results-view" type="button">最终结果 <span class="count" id="result-count">0</span></button>
+        </div>
+        <p id="run-error" class="notice monitor-notice" role="alert" hidden></p>
+        <div id="switch-mode-row" class="switch-mode" hidden>
+          <span>本次交互方式：人工回复</span>
+          <button id="switch-mode" class="text-button" type="button">本次改为自动回复</button>
+        </div>
+        <p id="switch-error" class="notice monitor-notice" role="alert" hidden></p>
+        <form id="question-form" class="question" hidden>
+          <h3 id="question-heading">团队需要你的回复</h3>
+          <p id="question-text"></p>
+          <div id="question-options"></div>
+          <label class="sr-only" for="answer">回复内容</label>
+          <textarea id="answer" rows="2" placeholder="输入回复，让团队继续工作"></textarea>
+          <div class="question-actions"><span id="answer-error" role="alert"></span><button id="send-answer" type="submit" class="small-primary">发送回复</button></div>
+        </form>
+        <div id="events-view" class="view">
+          <div class="empty" id="events-empty">
+            <div class="empty-network" aria-hidden="true"><span></span><span></span><span></span></div>
+            <h3 id="empty-title">等待任务启动</h3>
+            <p id="empty-note">运行后，在这里跟踪团队的消息与执行进度。</p>
+          </div>
+          <ol id="events" class="timeline" aria-label="协作事件" hidden></ol>
+        </div>
+        <div id="results-view" class="view" hidden>
+          <div class="empty" id="results-empty"><div class="result-symbol" aria-hidden="true">≡</div><h3>暂无交付结果</h3><p>每轮结束后，可在这里查看团队答复并下载文件。</p></div>
+          <div id="results"></div>
+          <div id="extra-files"></div>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 from mas.app import make_llm
-from mas.config import Settings
+from mas.config import Settings, research_limit_overrides
 from mas.eval.harness import render_report, run_suite, save_results, summarize
 from mas.eval.simulated_human import SimulatedHuman
 from mas.scenario import load_scenario
@@ -55,11 +55,7 @@ def settings_overrides(args: argparse.Namespace) -> dict[str, object]:
     if args.research_limit is not None:
         if args.research_limit < 0:
             raise SystemExit("--research-limit must be 0 or more")
-        overrides["research_max_calls"] = args.research_limit
-        if args.research_limit:
-            # the reminders to stop come at 60% of the limit and then every 15% (6 and 2 for the default 14)
-            overrides["research_note_after"] = max(6, round(args.research_limit * 0.6))
-            overrides["research_note_every"] = max(2, round(args.research_limit * 0.15))
+        overrides.update(research_limit_overrides(args.research_limit))
     if args.min_use is not None:
         if not 0 <= args.min_use < 1:
             raise SystemExit("--min-use must be from 0 up to (not including) 1")

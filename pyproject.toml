@@ -23,3 +23,11 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["mas*"]
+
+[tool.setuptools.package-data]
+mas = ["web_static/*.html", "web_static/*.css", "web_static/*.js"]
+
+[tool.setuptools.data-files]
+"share/mas/midtest/scenario_1_software_engineering 2" = ["testset/scenario_1_software_engineering 2/*.md"]
+"share/mas/midtest/scenario_2_newsroom 2" = ["testset/scenario_2_newsroom 2/*.md"]
+"share/mas/midtest/scenario_3_securities_fund 2" = ["testset/scenario_3_securities_fund 2/*.md"]
