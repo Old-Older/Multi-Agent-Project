@@ -120,8 +120,8 @@
 - 如果需要让 agent 推送代码，可设置 `GITHUB_TOKEN`。
 
 ```bash
-git clone https://github.com/Old-Older/Old-Older-Multi-Agent-Project.git
-cd Old-Older-Multi-Agent-Project
+git clone https://github.com/Old-Older/Multi-Agent-Project.git
+cd Multi-Agent-Project
 ```
 
 如果克隆后仓库里还没有 `mas/web.py`，运行 `git switch feat/codex-web-workbench` 切到包含工作台的分支。

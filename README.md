@@ -127,8 +127,8 @@ output, transcripts, log). Both are git-ignored.
 - A GitHub token only if you want agents to push to GitHub
 
 ```bash
-git clone https://github.com/Old-Older/Old-Older-Multi-Agent-Project.git
-cd Old-Older-Multi-Agent-Project
+git clone https://github.com/Old-Older/Multi-Agent-Project.git
+cd Multi-Agent-Project
 ```
 
 If your checkout does not yet contain `mas/web.py`, run `git switch feat/codex-web-workbench` to use the browser workspace before it lands on `main`.
