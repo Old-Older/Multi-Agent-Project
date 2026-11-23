@@ -131,8 +131,6 @@ git clone https://github.com/Old-Older/Multi-Agent-Project.git
 cd Multi-Agent-Project
 ```
 
-If your checkout does not yet contain `mas/web.py`, run `git switch feat/codex-web-workbench` to use the browser workspace before it lands on `main`.
-
 **Windows PowerShell**
 
 ```powershell
@@ -172,11 +170,13 @@ From the project root, start the local server with the Python you installed abov
 
 Open the URL printed in the terminal and leave the server running. [Open the default local workspace](http://127.0.0.1:8765/).
 
-1. Under **模型与运行参数** (model and run settings), select HKGAI or DeepSeek. Keep the default model name or enter one your key can access. Choose **本机 Key（已配置）** for a configured key or **输入本次 Key** to paste a key for this run.
-2. Under **执行模式** (execution preset), **快速** (fast) gives each round 270 seconds, each task 14 combined searches and page fetches, and allows the lead to deliver after half the time budget. **完整** (full) uses 900 seconds, 28 calls and allows immediate delivery. **环境默认** uses the server settings (fast on a fresh install). **自定义** lets you edit all three values. Time spent waiting for a human reply is excluded.
-3. Under **任务交互方式**, the default **自动使用默认答案** answers clarification questions automatically and declines approval requests such as file deletion and Git operations. Choose **人工回复** to reply yourself. During a manual run, **本次改为自动回复** switches pending and future questions to automatic replies.
-4. Select a Mid Test example under **场景模板**, or paste or import `01_role_initialization.md` under **团队角色** and the task Markdown under **任务内容**. Importing one task file replaces the selected round. Importing multiple files replaces all rounds in filename order, e.g. `02_task_1.md`, then `03_task_2.md`. The team keeps its context across rounds.
-5. Click **启动运行** to start. Follow team messages and task progress in **协作过程**. Open **最终结果** for each round's final response and downloadable files.
+Select **English** or **中文** in the upper-right corner. The workspace opens in Chinese on the first visit and remembers your choice on this browser. You can switch languages while editing a draft or following a run. Roles, tasks, team messages and deliverables stay in their original language.
+
+1. Under **Model and limits**, select HKGAI or DeepSeek. Keep the default model name or enter one your key can access. Under **API key source**, use the locally configured key or choose **Enter key for this run** to paste one.
+2. Under **Execution preset**, **Fast** gives each round 270 seconds and each task 14 combined searches and page fetches. The lead can deliver after half the time budget. **Full** uses 900 seconds and 28 calls and allows immediate delivery. **Environment defaults** uses the server settings (Fast on a fresh install). **Custom** lets you edit all three limits. The timer pauses while the team waits for a manual reply.
+3. Leave **Reply mode** on **Use default replies** for an unattended run. The team answers clarification questions automatically and declines approval requests such as file deletion and Git operations. Choose **Reply manually** to answer questions yourself. During a manual run, **Switch to automatic replies** applies to pending and future questions.
+4. Select a Mid Test example under **Scenario template**, or paste or import `01_role_initialization.md` under **Team roles** and the task Markdown under **Task instructions**. Importing one task file replaces the selected round. Importing multiple files replaces all rounds in filename order, e.g. `02_task_1.md`, then `03_task_2.md`. The team keeps its context across rounds.
+5. Click **Start run**. Follow team messages and task progress in **Activity**. Open **Results** for each round's final response and downloadable files.
 
 Append `--port 8766` to use another port, `--env-file PATH` to load an existing configuration, or `--data-dir DIR` to choose where runs are saved. Press **Ctrl+C** in the terminal to stop the server. Restarting it clears the in-memory run history and ends any active run. Saved transcripts and deliverables remain under `data/web-runs/<run-id>/` by default.
 

@@ -96,7 +96,7 @@ def _scenario(roles: str, tasks: list[str]) -> Scenario:
             if not task:
                 raise ValueError(f"{title} 的代码块中没有任务内容。")
         else:
-            task = ScenarioTask(title, title, doc)
+            task = ScenarioTask(title, title, doc, default_title=True)
         if task.prompt.startswith("/"):
             raise ValueError(f"{title} 以 / 开头，会被系统当作聊天命令。请填写任务指令。")
         rounds.append(task)
@@ -236,7 +236,7 @@ class _Run(HumanIO):
                 self.files[file_id] = path
                 files.append({"id": file_id, "name": path.name})
         task = self.scenario.tasks[len(self.results)]
-        self.results.append({"title": task.title, "success": bool(payload.get("success")),
+        self.results.append({"title": task.title, "default_title": task.default_title, "success": bool(payload.get("success")),
                              "text": msg.content, "files": files})
 
     def _is_delivery(self, path: Path) -> bool:
