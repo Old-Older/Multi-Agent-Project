@@ -70,7 +70,7 @@ class WebTest(unittest.TestCase):
                 self.fail(f"Timed out waiting for run: {state}")
             time.sleep(0.02)
 
-    def test_task_waits_for_an_answer_and_delivers_a_download(self):
+    def test_manual_task_waits_for_an_answer_and_delivers_a_download(self):
         llm = MockLLM([
             LLMResponse("", [ToolCall("q", "ask_human", {"question": "Which colour?"})]),
             LLMResponse("", [ToolCall("w", "write_file", {"path": "colour.txt", "content": "Blue"})]),
@@ -80,23 +80,69 @@ class WebTest(unittest.TestCase):
         with patch("mas.web_runner.make_llm", return_value=llm):
             tasks = ["# First\n```text\nAsk for my colour and write it in colour.txt.\n```",
                      "# Second\n```text\nConfirm the first task is complete.\n```"]
-            run = self.json("POST", "/api/runs", {"roles": TEAM, "tasks": tasks})
+            run = self.json("POST", "/api/runs", {"roles": TEAM, "tasks": tasks, "config": {"interaction": "manual"}})
             path = f"/api/runs/{run['id']}"
             waiting = self.poll(path, lambda s: s["question"])
             question = waiting["question"]
+            self.assertEqual(waiting["interaction"], "manual")
+            self.assertEqual(self.json("GET", path + "/inputs")["config"]["interaction"], "manual")
             self.assertEqual((waiting["status"], question["text"]), ("waiting", "Which colour?"))
             self.assertFalse(waiting["results"])
             self.json("POST", path + "/answer", {"id": question["id"], "answer": "Blue"})
             done = self.poll(path, lambda s: s["status"] in ("completed", "failed"))
         self.assertEqual(done["status"], "completed", done["error"])
         self.assertEqual([r["title"] for r in done["results"]], ["First", "Second"])
-        self.assertTrue(done["events"])
+        replies = [e for e in done["events"] if e["kind"] == "hitl_response"]
+        self.assertEqual(len(replies), 1)
+        self.assertFalse(replies[0].get("automatic", False))
         self.assertTrue(all(result["success"] for result in done["results"]), done["results"])
         self.assertIn("Blue", json.dumps(llm.calls[1][0]))
         artifact = done["results"][0]["files"][0]
         status, headers, body = self.request("GET", artifact["url"])
         self.assertEqual((status, body), (200, b"Blue"))
         self.assertIn("attachment", headers["Content-Disposition"])
+
+    def test_default_autonomously_answers_questions_and_refuses_approval(self):
+        llm = MockLLM([
+            LLMResponse("", [ToolCall("q", "ask_human", {"question": "Any further instructions?"})]),
+            LLMResponse("", [ToolCall("w", "write_file", {"path": "note.txt", "content": "First draft."})]),
+            LLMResponse('{"success":true,"summary":"Draft created.","artifacts":["note.txt"]}'),
+            LLMResponse("", [ToolCall("d", "delete_file", {"path": "note.txt"})]),
+            LLMResponse('{"success":true,"summary":"Kept the existing draft."}'),
+        ])
+        tasks = ["Write a draft.", "Consider deleting the previous draft if permitted."]
+        with patch("mas.web_runner.make_llm", return_value=llm), patch("mas.tools.files.DeleteFile.run") as delete:
+            run = self.json("POST", "/api/runs", {"roles": TEAM, "tasks": tasks})
+            path = f"/api/runs/{run['id']}"
+            done = self.poll(path, lambda s: s["status"] in ("completed", "failed"))
+            delete.assert_not_called()
+        self.assertEqual((done["status"], done["interaction"], done["question"]), ("completed", "auto", None))
+        self.assertEqual(len(done["results"]), 2)
+        self.assertEqual(self.json("GET", path + "/inputs")["config"]["interaction"], "auto")
+        replies = [e for e in done["events"] if e["kind"] == "hitl_response"]
+        self.assertEqual(len(replies), 2)
+        self.assertTrue(all(e["automatic"] for e in replies))
+        self.assertIn("approval_denied", json.dumps(llm.calls[-1][0]))
+
+    def test_switch_to_auto_answers_pending_and_later_questions(self):
+        llm = MockLLM([
+            LLMResponse("", [ToolCall("q1", "ask_human", {"question": "Which audience?"})]),
+            LLMResponse('{"success":true,"summary":"First round finished."}'),
+            LLMResponse("", [ToolCall("q2", "ask_human", {"question": "How detailed?"})]),
+            LLMResponse('{"success":true,"summary":"Second round finished."}'),
+        ])
+        with patch("mas.web_runner.make_llm", return_value=llm):
+            run = self.json("POST", "/api/runs", {"roles": TEAM, "tasks": ["Plan the talk.", "Finish the talk."],
+                                                  "config": {"interaction": "manual"}})
+            path = f"/api/runs/{run['id']}"
+            waiting = self.poll(path, lambda s: s["status"] == "waiting")
+            self.assertEqual(waiting["question"]["text"], "Which audience?")
+            self.json("POST", path + "/auto", {})
+            done = self.poll(path, lambda s: s["status"] in ("completed", "failed"))
+        self.assertEqual((done["status"], done["interaction"], done["question"]), ("completed", "auto", None))
+        self.assertEqual(self.json("GET", path + "/inputs")["config"]["interaction"], "auto")
+        self.assertEqual(len(done["results"]), 2)
+        self.assertEqual([e["automatic"] for e in done["events"] if e["kind"] == "hitl_response"], [True, True])
 
     def test_unknown_run_and_invalid_input(self):
         status, _, _ = self.request("GET", "/api/runs/unknown")
@@ -125,6 +171,7 @@ class WebTest(unittest.TestCase):
 
     def test_config_exposes_provider_readiness_and_presets(self):
         config = self.json("GET", "/api/config")
+        self.assertEqual(config["interaction"], "auto")
         self.assertEqual(config["provider"], "hkgai")
         self.assertEqual(config["providers"]["hkgai"]["model"], "test-course-model")
         self.assertIs(config["providers"]["hkgai"]["has_key"], True)

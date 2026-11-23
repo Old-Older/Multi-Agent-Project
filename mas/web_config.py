@@ -8,7 +8,7 @@ from mas.config import Settings, research_limit_overrides
 
 _PROVIDERS = {"hkgai": "HKGAI", "deepseek": "DeepSeek"}
 _PARAMETERS = {"budget", "research", "min_use"}
-_FIELDS = {"provider", "model", "key_source", "api_key", "preset"} | _PARAMETERS
+_FIELDS = {"provider", "model", "key_source", "api_key", "preset", "interaction"} | _PARAMETERS
 
 
 def config_catalog(settings: Settings) -> dict:
@@ -24,7 +24,7 @@ def config_catalog(settings: Settings) -> dict:
         "full": {"name": "完整", "budget": 900, "research": 28, "min_use": 0},
     }
     return {"provider": settings.llm_provider.strip().lower(), "providers": providers,
-            "preset": "environment", "presets": presets}
+            "preset": "environment", "presets": presets, "interaction": "auto"}
 
 
 def _custom_parameters(options: dict) -> dict:
@@ -53,7 +53,10 @@ def resolve_config(settings: Settings, options: dict | None) -> tuple[Settings, 
     if not isinstance(model, str) or not model.strip() or len(model) > 256 or not model.isprintable():
         raise ValueError("请输入有效的模型 ID。")
     model = model.strip()
-    overrides = {"llm_provider": provider, f"{provider}_model": model}
+    interaction = options.get("interaction", catalog["interaction"])
+    if interaction not in ("auto", "manual"):
+        raise ValueError("请选择自动答复或手动答复。")
+    overrides = {"llm_provider": provider, f"{provider}_model": model, "auto_hitl": interaction == "auto"}
     source = options.get("key_source", "server")
     if source == "custom":
         key = options.get("api_key")
@@ -80,5 +83,6 @@ def resolve_config(settings: Settings, options: dict | None) -> tuple[Settings, 
                              research_note_every=Settings.research_note_every)
         elif preset == "full" or values["research"] != settings.research_max_calls:
             overrides.update(research_limit_overrides(values["research"]))
-    public = {"provider": provider, "model": model, "key_source": source, "preset": preset, **values}
+    public = {"provider": provider, "model": model, "key_source": source, "preset": preset,
+              "interaction": interaction, **values}
     return replace(settings, **overrides), public

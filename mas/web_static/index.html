@@ -56,6 +56,14 @@
                 <label for="min-use">最早交付比例<input id="min-use" type="number" min="0" max="1" step="any"></label>
               </div>
               <p class="setting-hint">时限不含等待人工回复的时间。检索次数合计搜索与网页抓取。比例 0.5 表示用完一半时限后可交付。三项均可设为 0 以关闭对应限制。</p>
+              <fieldset class="choice-group interaction" id="interaction" aria-describedby="interaction-note">
+                <legend>任务交互方式</legend>
+                <div class="choices">
+                  <label><input type="radio" name="interaction" value="auto" checked><span>自动使用默认答案</span></label>
+                  <label><input type="radio" name="interaction" value="manual"><span>人工回复</span></label>
+                </div>
+                <p class="setting-hint" id="interaction-note">自动模式会优先采用推荐或默认答案，并拒绝需要授权的风险操作。人工模式会暂停任务，等待你回复。</p>
+              </fieldset>
             </fieldset>
           </section>
           <label for="example">场景模板</label>
@@ -80,6 +88,11 @@
           <button id="results-tab" class="view-tab" aria-pressed="false" aria-controls="results-view" type="button">最终结果 <span class="count" id="result-count">0</span></button>
         </div>
         <p id="run-error" class="notice monitor-notice" role="alert" hidden></p>
+        <div id="switch-mode-row" class="switch-mode" hidden>
+          <span>本次交互方式：人工回复</span>
+          <button id="switch-mode" class="text-button" type="button">本次改为自动回复</button>
+        </div>
+        <p id="switch-error" class="notice monitor-notice" role="alert" hidden></p>
         <form id="question-form" class="question" hidden>
           <h3 id="question-heading">团队需要你的回复</h3>
           <p id="question-text"></p>

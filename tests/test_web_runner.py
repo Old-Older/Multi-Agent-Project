@@ -1,4 +1,5 @@
 """Browser runs use the real workers, bus and output collector with a scripted model."""
+import asyncio
 import io
 import logging
 import tempfile
@@ -8,9 +9,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from mas.config import Settings
+from mas.core.human import HitlKind, HitlRequest
 from mas.llm.base import LLMError, LLMResponse, ToolCall
 from mas.llm.mock import MockLLM
-from mas.web_runner import RunManager
+from mas.web_runner import RunManager, _default_answer, _Run, _scenario
 from mas.web_config import resolve_config
 
 TEAM = "## Writer (writer)\n\n```text\nWrite a short note.\n```"
@@ -43,7 +45,8 @@ class WebRunnerTest(unittest.TestCase):
             LLMResponse("Check the requirements."),
         ])
         with patch("mas.web_runner.make_llm", return_value=script):
-            run_id = self.manager.start(TEAM, ["# First\n\n```text\nMake a note.\n```", "Review it."])
+            run_id = self.manager.start(TEAM, ["# First\n\n```text\nMake a note.\n```", "Review it."],
+                                        {"interaction": "manual"})
             state = self.wait(run_id, lambda snapshot: snapshot["questions"])
             question = state["questions"][0]
             self.assertEqual(self.manager.active_id(), run_id)
@@ -72,7 +75,7 @@ class WebRunnerTest(unittest.TestCase):
     def test_server_shutdown_cancels_a_pending_human_question(self):
         script = MockLLM([LLMResponse("", [ToolCall("ask", "ask_human", {"question": "Which title?"})])])
         with patch("mas.web_runner.make_llm", return_value=script):
-            run_id = self.manager.start(TEAM, ["Make a note"])
+            run_id = self.manager.start(TEAM, ["Make a note"], {"interaction": "manual"})
             self.wait(run_id, lambda state: state["questions"])
             self.manager.close()
         self.assertIsNone(self.manager.active_id())
@@ -105,7 +108,7 @@ class WebRunnerTest(unittest.TestCase):
                     {"research": 0.4}, {"research": False}, {"min_use": 1}, {"min_use": -0.1},
                     {"provider": ["deepseek"]}, {"api_key": "unused"}, {"key_source": "custom"},
                     {"key_source": "custom", "api_key": "invalid\nkey"}, {"model": "\n"},
-                    {"api_base": "https://invalid.invalid/"}):
+                    {"api_base": "https://invalid.invalid/"}, {"interaction": True}, {"interaction": ["auto"]}):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 resolve_config(self.manager.settings, {**valid, **bad})
         settings, _ = resolve_config(self.manager.settings, {**valid, "research": 40})
@@ -137,3 +140,35 @@ class WebRunnerTest(unittest.TestCase):
             with self.assertRaises(ValueError) as caught:
                 self.manager.start(TEAM, ["Make a note."], options)
         self.assertNotIn(key, str(caught.exception))
+
+    def test_default_answer_honours_unambiguous_labels_and_question_defaults(self):
+        for kind, prompt, options, expected in [
+            (HitlKind.CLARIFY, "Which settings?",
+             ["Use all three defaults", "Defaults, but shorter"], "Use all three defaults"),
+            (HitlKind.CLARIFY, "请选择。", ["自定义", "沿用方案（推荐）"], "沿用方案（推荐）"),
+            (HitlKind.ADVICE, "Choose a format. Default: PDF.", ["TXT", "PDF"], "PDF"),
+            (HitlKind.CLARIFY, "请选择。默认选项为蓝色。", ["蓝色", "红色"], "蓝色"),
+            (HitlKind.APPROVAL, "Approve?", ["yes (recommended)", "no"], "no"),
+            (HitlKind.ADVICE, "Retry?", [], "try a different approach"),
+            (HitlKind.CLARIFY, "Which?", ["A (default)", "B (recommended)"], "proceed as described"),
+        ]:
+            with self.subTest(prompt=prompt, options=options):
+                req = HitlRequest("h1", "writer", "t1", "group:main", kind, prompt, options)
+                self.assertEqual(_default_answer(req), expected)
+
+    def test_switch_resolves_parallel_questions_and_preserves_a_manual_answer(self):
+        async def choices():
+            tasks = ["Make a note."]
+            run = _Run(self.root, _scenario(TEAM, tasks), TEAM, tasks, {"interaction": "manual"})
+            queries = [HitlRequest(f"h{i}", "writer", "t1", "group:main", HitlKind.CLARIFY,
+                                   "Which format?", ["TXT", "PDF (default)"]) for i in range(4)]
+            waiting = [asyncio.create_task(run.answer(q)) for q in queries[:3]]
+            await asyncio.sleep(0)
+            self.assertEqual(len(run.snapshot()["questions"]), 3)
+            run.reply("h1", "TXT")
+            run.enable_auto()
+            run.enable_auto()
+            self.assertEqual(await asyncio.gather(*waiting), ["PDF (default)", "TXT", "PDF (default)"])
+            self.assertEqual(await run.answer(queries[-1]), "PDF (default)")
+            self.assertEqual(run.snapshot()["questions"], [])
+        asyncio.run(choices())

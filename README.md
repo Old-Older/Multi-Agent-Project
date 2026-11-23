@@ -163,8 +163,11 @@ and task Markdown. Choose HKGAI or DeepSeek, edit the model name, and use the pr
 configured API key or enter one for this run. Fast mode gives each request 270 seconds and each task
 14 search or fetch calls. The lead can deliver after 50% of the budget. Full mode uses 900 seconds
 and 28 calls and allows delivery at any time. Custom mode lets you set each value.
-Start the run to have the same team work through the tasks in order.
-Follow the live conversation, answer questions and approvals, and download each task's deliverables
+Start the run to have the same team work through the tasks in order. By default, the workspace
+answers clarification questions automatically and records the replies. Operations that require
+approval, including file deletion and Git actions, receive a refusal so the team can continue unattended.
+Choose manual replies before starting if you want to answer yourself. Switching a manual run to
+automatic replies also handles its pending questions. Download each task's deliverables
 alongside its final response. Run data lives in `data/web-runs/`. Use `--env-file <path>` to
 load an existing workspace's model configuration.
 

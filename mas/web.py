@@ -146,6 +146,9 @@ def create_server(settings: Settings, port: int = 8765) -> ThreadingHTTPServer:
                 if not isinstance(roles, str) or not isinstance(tasks, list) or not all(isinstance(t, str) for t in tasks):
                     raise ValueError("请输入角色 Markdown 和任务列表。")
                 self.json(201, {"id": manager.start(roles, tasks, config=data.get("config"))})
+            elif len(parts) == 4 and parts[:2] == ["api", "runs"] and parts[3] == "auto":
+                manager.enable_auto(parts[2])
+                self.json(200, {"ok": True})
             elif len(parts) == 4 and parts[:2] == ["api", "runs"] and parts[3] == "answer":
                 question, answer = data.get("id"), data.get("answer")
                 if not isinstance(question, str) or not isinstance(answer, str) or not answer.strip():

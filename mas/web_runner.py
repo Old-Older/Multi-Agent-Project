@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import threading
 import uuid
 from concurrent.futures import Future
@@ -12,7 +13,7 @@ from pathlib import Path, PureWindowsPath
 from mas.app import build_system, make_llm
 from mas.config import Settings
 from mas.core.bus import MessageBus
-from mas.core.human import HitlRequest, HumanIO
+from mas.core.human import AutoResponder, HitlKind, HitlRequest, HumanIO
 from mas.core.message import HUMAN, Message, MsgType
 from mas.llm.base import ChatMessage, FunctionSpec, LLMClient, LLMError, LLMResponse
 from mas.scenario import Scenario, ScenarioTask, driver_for, parse_task_markdown
@@ -20,6 +21,31 @@ from mas.team import parse_team
 from mas.web_config import resolve_config
 
 log = logging.getLogger(__name__)
+
+_DEFAULT_LABEL = re.compile(r"\b(?:defaults?|recommended)\b|默认|推荐", re.I)
+_DEFAULT_VARIANT = re.compile(
+    r"\b(?:but|except|instead|not|non|change|replace|override|skip|customi[sz]e)\b|"
+    r"但|除外|不要|不使用|不采用|不推荐|非默认|修改默认|更改默认", re.I)
+_EXPLICIT_CHOICE = (
+    r"(?:\b(?:defaults?|recommended)(?:\s+(?:option|choice))?(?:\s+is)?\s*[:：]\s*|"
+    r"\b(?:default is|we recommend|I recommend)\s+|(?:默认|推荐)(?:选项)?\s*[:：为是]\s*)")
+
+
+def _default_answer(req: HitlRequest) -> str:
+    if req.kind == HitlKind.APPROVAL:
+        return "no"
+    marked = [option for option in req.options if _DEFAULT_LABEL.search(option)
+              and not _DEFAULT_VARIANT.search(option)]
+    if len(marked) == 1:
+        return marked[0]
+    if not marked:
+        # Some teams mark the choice only in the question, e.g. "Default: blue".
+        choices = [option for option in req.options if option.strip() and re.search(
+            _EXPLICIT_CHOICE + r"['\"“]?"
+            + re.escape(option.strip()) + r"['\"”]?(?:[.,;!?。，；！？)\]\n]|$)", req.question, re.I)]
+        if len(choices) == 1:
+            return choices[0]
+    return AutoResponder.DEFAULT_ANSWERS[req.kind]
 
 
 def _safe_error(exc: BaseException, settings: Settings) -> str:
@@ -93,6 +119,7 @@ class _Run(HumanIO):
         self.events: list[dict] = []
         self.results: list[dict] = []
         self.pending: dict[str, tuple[HitlRequest, Future[str]]] = {}
+        self._auto_answers: set[tuple[str, str]] = set()
         self.files: dict[str, Path] = {}
         self._task: asyncio.Task | None = None
         self._stopping = False
@@ -145,14 +172,31 @@ class _Run(HumanIO):
         pass
 
     async def answer(self, req: HitlRequest) -> str:
-        choice: Future[str] = Future()
         with self.lock:
+            if self.config["interaction"] == "auto":
+                return self._choose_default(req)
+            choice: Future[str] = Future()
             self.pending[req.request_id] = req, choice
         try:
             return await asyncio.wrap_future(choice)
         finally:
             with self.lock:
                 self.pending.pop(req.request_id, None)
+
+    def _choose_default(self, req: HitlRequest) -> str:
+        self._auto_answers.add((req.channel, req.request_id))
+        return _default_answer(req)
+
+    def enable_auto(self) -> None:
+        with self.lock:
+            if self.config["interaction"] == "auto":
+                return
+            if self._stopping or self.status != "running":
+                raise ValueError("这次运行已经结束。")
+            self.config["interaction"] = "auto"
+            for req, choice in self.pending.values():
+                if not choice.done():
+                    choice.set_result(self._choose_default(req))
 
     def reply(self, question_id: str, answer: str) -> None:
         if not isinstance(answer, str) or not answer.strip():
@@ -170,7 +214,12 @@ class _Run(HumanIO):
         if msg.type == MsgType.STATUS:
             text = payload.get("note") or payload.get("status", "")
         with self.lock:
-            self.events.append({"kind": kind, "sender": msg.sender, "text": text, "time": msg.ts})
+            event = {"kind": kind, "sender": msg.sender, "text": text, "time": msg.ts}
+            if msg.type == MsgType.HITL_RESPONSE:
+                key = (msg.channel, payload["request_id"])
+                event["automatic"] = key in self._auto_answers
+                self._auto_answers.discard(key)
+            self.events.append(event)
             if kind == "final":
                 self._finish_round(msg)
 
@@ -205,7 +254,7 @@ class _Run(HumanIO):
             questions = [{"id": req.request_id, "sender": req.agent_id, "kind": req.kind.value,
                           "text": req.question, "options": list(req.options)}
                          for req, future in self.pending.values() if not future.done()]
-            return {"id": self.id, "status": self.status, "events": list(self.events),
+            return {"id": self.id, "status": self.status, "interaction": self.config["interaction"], "events": list(self.events),
                     "questions": questions, "results": list(self.results), "error": self.error}
 
 
@@ -246,13 +295,17 @@ class RunManager:
 
     def inputs(self, run_id: str) -> dict:
         run = self._get(run_id)
-        return {"roles": run.roles, "tasks": list(run.tasks), "config": dict(run.config)}
+        with run.lock:
+            return {"roles": run.roles, "tasks": list(run.tasks), "config": dict(run.config)}
 
     def snapshot(self, run_id: str) -> dict:
         return self._get(run_id).snapshot()
 
     def reply(self, run_id: str, question_id: str, answer: str) -> None:
         self._get(run_id).reply(question_id, answer)
+
+    def enable_auto(self, run_id: str) -> None:
+        self._get(run_id).enable_auto()
 
     def artifact(self, run_id: str, file_id: str) -> Path:
         return self._get(run_id).artifact(file_id)

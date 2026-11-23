@@ -22,6 +22,9 @@ let questionId = null;
 let renderedResults = "";
 let sendingAnswer = false;
 let configMenu = null;
+let preferredInteraction = "auto";
+let runInteraction = null;
+let switchingMode = false;
 
 const limitFields = {budget: "budget", research: "research", min_use: "min-use"};
 
@@ -39,7 +42,7 @@ function publicSettings() {
   if (!configMenu) return undefined;
   const options = {
     provider: el("provider").value, model: el("model-name").value.trim(),
-    key_source: choice("key-source"), preset: choice("preset"),
+    key_source: choice("key-source"), preset: choice("preset"), interaction: preferredInteraction,
   };
   if (options.preset === "custom") {
     for (const [key, id] of Object.entries(limitFields)) {
@@ -64,7 +67,8 @@ function updateSettingsSummary() {
   const keyStatus = custom ? (busy && runId ? "本次密钥" : el("api-key").value.trim() ? "本次密钥已填" : "待输入密钥")
     : provider.has_key ? "服务端密钥已配置" : "服务端密钥未配置";
   const lockHint = busy && runId ? "。本次运行结束后可更改配置。" : "";
-  el("config-summary").textContent = [provider.name, presetName, keyStatus].join(" · ") + lockHint;
+  const interactionName = choice("interaction") === "auto" ? "自动回复" : "人工回复";
+  el("config-summary").textContent = [provider.name, presetName, keyStatus, interactionName].join(" · ") + lockHint;
   el("custom-key-row").hidden = !custom || Boolean(busy && runId);
 }
 
@@ -89,9 +93,16 @@ function applyProvider(saved = {}) {
   updateSettingsSummary();
 }
 
-function restoreSettings(saved = {}) {
+function restoreSettings(saved = {}, activeRun = false) {
   if (!configMenu) return;
   saved ||= {};
+  if (activeRun) {
+    // Runs created before interaction was configurable used manual answers.
+    runInteraction = saved.interaction === "auto" ? "auto" : "manual";
+  } else {
+    preferredInteraction = saved.interaction === "manual" ? "manual" : "auto";
+  }
+  selectChoice("interaction", activeRun ? runInteraction : preferredInteraction);
   const defaultProvider = Object.hasOwn(configMenu.providers, configMenu.provider) ? configMenu.provider : "hkgai";
   el("provider").value = Object.hasOwn(configMenu.providers, saved.provider) ? saved.provider : defaultProvider;
   selectChoice("preset", saved.preset === "custom" || Object.hasOwn(configMenu.presets, saved.preset)
@@ -116,6 +127,12 @@ function settingsError(id, message) {
 
 function runSettings() {
   const options = publicSettings();
+  if (!configMenu.interaction) {
+    if (options.interaction === "auto") {
+      settingsError("start", "当前服务版本仅支持人工回复。请使用新版服务启动自动模式，或选择人工回复。");
+    }
+    delete options.interaction;
+  }
   options.model ||= configMenu.providers[options.provider].model;
   if (options.key_source === "custom") {
     options.api_key = el("api-key").value.trim();
@@ -201,11 +218,15 @@ function renderTasks() {
 
 function setBusy(value) {
   busy = value;
+  if (!busy) runInteraction = null;
+  selectChoice("interaction", runInteraction ?? preferredInteraction);
   for (const id of ["start", "example", "import-roles", "import-task", "add-task", "remove-task"]) {
     el(id).disabled = value;
   }
   el("roles").readOnly = el("task").readOnly = value;
   el("config-fields").disabled = value || !configMenu;
+  el("switch-mode-row").hidden = !runId || runInteraction !== "manual" || !busy;
+  el("switch-mode").disabled = switchingMode || sendingAnswer;
   updateSettingsSummary();
   el("start-label").textContent = value ? "运行中" : "启动运行";
 }
@@ -244,8 +265,9 @@ function renderEvents(events) {
   for (const event of events.slice(list.children.length)) {
     const item = node("li", "event");
     const heading = node("div", "event-head");
-    const label = eventLabels[event.kind] || event.kind || "进度";
-    heading.append(node("strong", "", event.sender ? event.sender + " · " + label : label));
+    const label = event.automatic ? "自动回复" : eventLabels[event.kind] || event.kind || "进度";
+    const speaker = event.automatic && event.sender === "human" ? null : event.sender;
+    heading.append(node("strong", "", speaker ? speaker + " · " + label : label));
     const stamp = event.ts ?? event.time;
     if (stamp) {
       const date = new Date(typeof stamp === "number" ? stamp * 1000 : stamp);
@@ -328,7 +350,9 @@ function renderQuestion(question) {
 function renderRun(run) {
   const status = run.status;
   const active = ["queued", "running", "waiting"].includes(status);
+  if (active && ["auto", "manual"].includes(run.interaction)) runInteraction = run.interaction;
   setBusy(active);
+  if (runInteraction !== "manual") notice("switch-error", "");
   el("status").dataset.state = status;
   el("status").textContent = stateLabels[status] || status;
   el("empty-title").textContent = active ? "等待团队消息" : "暂无协作记录";
@@ -336,7 +360,7 @@ function renderRun(run) {
   notice("run-error", run.error);
   renderEvents(run.events || []);
   renderResults(run.results || [], run.files || []);
-  renderQuestion(run.question);
+  renderQuestion(runInteraction === "auto" ? null : run.question);
 }
 
 async function refresh(id) {
@@ -372,7 +396,7 @@ async function resumeActive() {
   tasks = inputs.tasks;
   activeTask = runId === id ? Math.min(activeTask, tasks.length - 1) : 0;
   runId = id;
-  restoreSettings(inputs.config);
+  restoreSettings(inputs.config, true);
   renderTasks();
   save();
   el("events").replaceChildren();
@@ -408,6 +432,7 @@ async function start() {
     const result = await api("/api/runs", {roles: el("roles").value, tasks, config});
     el("api-key").value = "";
     runId = result.id;
+    runInteraction = config.interaction || "manual";
     save();
     showView(false);
     el("events").replaceChildren();
@@ -444,10 +469,11 @@ async function importFiles(event, roles) {
 
 async function answer(event) {
   event.preventDefault();
-  if (!questionId || sendingAnswer) return;
+  if (!questionId || sendingAnswer || switchingMode) return;
   const reply = el("answer").value.trim();
   if (!reply) { el("answer-error").textContent = "请先输入回复。"; el("answer").focus(); return; }
   sendingAnswer = true;
+  el("switch-mode").disabled = true;
   el("send-answer").disabled = true;
   try {
     await api("/api/runs/" + encodeURIComponent(runId) + "/answer", {id: questionId, answer: reply});
@@ -455,7 +481,34 @@ async function answer(event) {
   } catch (error) { el("answer-error").textContent = error.message; }
   finally {
     sendingAnswer = false;
+    el("switch-mode").disabled = switchingMode;
     el("send-answer").disabled = false;
+  }
+}
+
+async function switchToAuto() {
+  if (!busy || !runId || runInteraction !== "manual" || switchingMode || sendingAnswer) return;
+  const id = runId;
+  const path = "/api/runs/" + encodeURIComponent(id);
+  switchingMode = true;
+  el("switch-mode").disabled = el("send-answer").disabled = true;
+  notice("switch-error", "");
+  try {
+    await api(path + "/auto", {});
+    if (runId !== id || !busy) return;
+    runInteraction = "auto";
+    setBusy(busy);
+    renderQuestion(null);
+    const inputs = await api(path + "/inputs");
+    if (runId === id && busy) restoreSettings(inputs.config, true);
+  } catch (error) {
+    const message = error.status === 404 && !configMenu?.interaction
+      ? "当前服务版本尚未支持运行中切换，仍可在此人工回复。" : error.message;
+    notice("switch-error", message);
+  } finally {
+    switchingMode = false;
+    el("switch-mode").disabled = el("send-answer").disabled = false;
+    if (runId === id) await refresh(id);
   }
 }
 
@@ -494,6 +547,9 @@ el("key-source").addEventListener("change", () => {
 });
 el("api-key").addEventListener("input", updateSettingsSummary);
 el("preset").addEventListener("change", () => { applyPreset(); save(); });
+el("interaction").addEventListener("change", () => {
+  preferredInteraction = choice("interaction"); updateSettingsSummary(); save();
+});
 for (const id of ["model-name", ...Object.values(limitFields)]) el(id).addEventListener("input", save);
 el("example").addEventListener("change", () => useExample(el("example").value));
 el("roles").addEventListener("input", markEdited);
@@ -512,6 +568,7 @@ el("remove-task").addEventListener("click", () => {
 });
 el("start").addEventListener("click", start);
 el("question-form").addEventListener("submit", answer);
+el("switch-mode").addEventListener("click", switchToAuto);
 el("events-tab").addEventListener("click", () => showView(false));
 el("results-tab").addEventListener("click", () => showView(true));
 init();
