@@ -254,6 +254,13 @@ class RequestTest(TrackerTestBase):
         self.assertEqual((final.payload["success"], final.payload["failure_mode"]), (False, "crash"))
         self.assertIn("kaput", final.content)
 
+    async def test_cancelled_text_without_a_cancel_command_still_ends_the_round(self):
+        async def stopped(worker, task):
+            return TaskResult(task.id, False, "", error="cancelled")
+        self.start({"coder": stopped})
+        await self.say("write it")
+        self.assertFalse((await self.final()).payload["success"])
+
     async def test_a_bug_does_not_leave_the_root_open(self):
         self.start()
         with patch.object(Router, "dispatch", side_effect=RuntimeError("bug")):
@@ -263,8 +270,9 @@ class RequestTest(TrackerTestBase):
         self.assertEqual((outcome.success, outcome.failure_mode), (False, FailureMode.CRASH))
         self.assertTrue(self.router.board(GROUP_MAIN).roots["R1"].finished)
         self.assertTrue(any("could not be handled" in m.content for m in self.says()))
+        self.assertFalse((await self.final()).payload["success"])
         await self.say("try again")                           # and the next request still works
-        await self.final()
+        self.assertTrue((await self.final(2)).payload["success"])
 
     async def test_the_output_dir_is_not_reused_by_a_run_that_starts_in_the_same_second(self):
         self.start({"coder": self.writes("a.py", "x")})

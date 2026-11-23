@@ -17,7 +17,8 @@ its own workspace and its own memory.
 - [How it works](#how-it-works)
 - [Repository layout](#repository-layout)
 - [Requirements and setup](#requirements-and-setup)
-- [Running it](#running-it)
+- [Browser workspace](#browser-workspace)
+- [Running it from the command line](#running-it)
 - [Defining your own team](#defining-your-own-team)
 - [What a run leaves behind](#what-a-run-leaves-behind)
 - [Configuration](#configuration)
@@ -120,23 +121,31 @@ output, transcripts, log). Both are git-ignored.
 ## Requirements and setup
 
 - Python **3.10 or newer**
-- `git` on your `PATH` (only if agents use the git tool)
+- Git for cloning the repository and for agents that use the Git tool
 - An **HKGAI API key** from the course, or a **DeepSeek API key** (for real runs; the demo needs none)
 - An optional SerpApi key for web search with the HKGAI model. The DeepSeek model uses its own API key for search and page fetching (about 5 yuan per 1000 requests in our runs). Both models support keyless search.
-- A GitHub token for pushing
+- A GitHub token only if you want agents to push to GitHub
 
 ```bash
 git clone https://github.com/Old-Older/Multi-Agent-Project.git
 cd Multi-Agent-Project
-
-python3 -m venv .venv
-source .venv/bin/activate           # Windows: .venv\Scripts\activate
-python -m pip install -e .
-
-cp .env.example .env                # then edit .env
 ```
 
-`.env` (never commit it):
+**Windows PowerShell**
+
+```powershell
+py -3 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+```
+
+**macOS or Linux**
+
+```bash
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+```
+
+The browser can accept a key for a single run. To reuse a key across runs, copy `.env.example` to `.env` in the project root and set the appropriate variable below. Keep `.env` local.
 
 | Variable | Needed for | Notes |
 |---|---|---|
@@ -150,7 +159,30 @@ cp .env.example .env                # then edit .env
 | `SEARCH_PROVIDER` | optional | `auto` (default) selects the search service for the active model. DeepSeek uses `DEEPSEEK_API_KEY` for search and to fetch pages that refuse local access. `deepseek` selects DeepSeek search and fetch with either model. `keyless` selects DuckDuckGo and other engines through `ddgs`, with local page fetching. Search also falls back to `ddgs` when the selected key is missing or its service is unavailable. |
 | `GITHUB_TOKEN` | `git push` to GitHub | sent only to github.com over HTTPS |
 
+## Browser workspace
+
+From the project root, start the local server with the Python you installed above.
+
+| Platform | Command |
+|---|---|
+| Windows PowerShell | `.\.venv\Scripts\python.exe -m mas.web` |
+| macOS or Linux | `.venv/bin/python -m mas.web` |
+
+Open the URL printed in the terminal and leave the server running. [Open the default local workspace](http://127.0.0.1:8765/).
+
+Select **English** or **中文** in the upper-right corner. The workspace opens in Chinese on the first visit and remembers your choice on this browser. You can switch languages while editing a draft or following a run. Roles, tasks, team messages and deliverables stay in their original language.
+
+1. Under **Model and limits**, select HKGAI or DeepSeek. Keep the default model name or enter one your key can access. Under **API key source**, use the locally configured key or choose **Enter key for this run** to paste one.
+2. Under **Execution preset**, **Fast** gives each round 270 seconds and each task 14 combined searches and page fetches. The lead can deliver after half the time budget. **Full** uses 900 seconds and 28 calls and allows immediate delivery. **Environment defaults** uses the server settings (Fast on a fresh install). **Custom** lets you edit all three limits. The timer pauses while the team waits for a manual reply.
+3. Leave **Reply mode** on **Use default replies** for an unattended run. The team answers clarification questions automatically and declines approval requests such as file deletion and Git operations. Choose **Reply manually** to answer questions yourself. During a manual run, **Switch to automatic replies** applies to pending and future questions.
+4. Select a Mid Test example under **Scenario template**, or paste or import `01_role_initialization.md` under **Team roles** and the task Markdown under **Task instructions**. Importing one task file replaces the selected round. Importing multiple files replaces all rounds in filename order, e.g. `02_task_1.md`, then `03_task_2.md`. The team keeps its context across rounds.
+5. Click **Start run**. Follow team messages and task progress in **Activity**. Open **Results** for each round's final response and downloadable files.
+
+Append `--port 8766` to use another port, `--env-file PATH` to load an existing configuration, or `--data-dir DIR` to choose where runs are saved. Press **Ctrl+C** in the terminal to stop the server. Restarting it clears the in-memory run history and ends any active run. Saved transcripts and deliverables remain under `data/web-runs/<run-id>/` by default.
+
 ## Running it
+
+The commands below use `python` for the virtual environment's interpreter. Substitute `.\.venv\Scripts\python.exe` on Windows or `.venv/bin/python` on macOS and Linux if the environment is inactive.
 
 **1. Try it without a key.** A stand-in LLM and stand-in workers drive the real bus, router, request
 tracker and command line:
@@ -173,8 +205,8 @@ The first task is posted, and when it has ended the next one is posted to the sa
 keeps its context. You answer the team's questions as they come; type `/quit` to finish.
 
 ```bash
-python -m mas --scenario "scenario_1_software_engineering 2"
-python -m mas --scenario "scenario_1_software_engineering 2" --auto     # unattended
+python -m mas --scenario "testset/scenario_1_software_engineering 2"
+python -m mas --scenario "testset/scenario_1_software_engineering 2" --auto     # unattended
 ```
 
 Add `--llm deepseek` to use DeepSeek instead of the course gateway.
@@ -191,6 +223,7 @@ Command line options:
 | `--scenario DIR` | a scenario folder: team and tasks |
 | `--llm hkgai\|deepseek` | which LLM to use (default: `LLM_PROVIDER`, else `hkgai`) |
 | `--auto` | unattended; needs `--scenario` |
+| `--time-budget SECONDS` | time budget for each request, excluding waits for a human reply (0 disables the budget) |
 | `--data-dir DIR` | where memory, output and transcripts go (default `./data`) |
 | `--keep`, `--delay S` | demo only |
 | `-v` | also print the log on the screen (it always goes to `<data-dir>/mas.log`) |
@@ -254,7 +287,7 @@ Every limit is a field of `Settings` in `mas/config.py`. The ones you may want t
 | Setting | Default | Meaning |
 |---|---|---|
 | `max_worker_steps` | 30 | ReAct steps of a worker for one task |
-| `max_lead_steps` | 40 | ReAct steps of the lead of a request |
+| `max_lead_steps` | 60 | ReAct steps of the lead of a request |
 | `subtask_timeout_s` | 900 | time limit for one delegated task (waiting for a human does not count) |
 | `lead_timeout_s` | 2400 | time limit for a whole request |
 | `max_delegation_depth`, `max_delegations_per_task`, `max_retries_same_goal` | 2, 2, 2 | guards against runaway delegation (a worker re-delegating one task, same goal retried) |
@@ -263,7 +296,7 @@ Every limit is a field of `Settings` in `mas/config.py`. The ones you may want t
 | `repeat_limit` | 2 | the same call with the same answer and nothing changed in between is run this many times, then refused (0: no limit) |
 | `finish_not_before` | 0.5 | share of the budget a lead must have used before it may hand in (0: off) |
 | `max_lead_delegations` | 16 | how many times the lead of a request may delegate |
-| `early_stop_nudges`, `research_note_after`, `research_note_every` | on, 12, 6 | reminders that help a member stop once it has enough; `EARLY_STOP_NUDGES=0` turns them off |
+| `early_stop_nudges`, `research_note_after`, `research_note_every` | on, 6, 2 | reminders that help a member stop once it has enough; `EARLY_STOP_NUDGES=0` turns them off |
 | `memory_recall_k` | 3 | lessons recalled when a task starts |
 | `sandbox_backend` | `local` | `docker` is not implemented yet |
 
@@ -294,7 +327,7 @@ python3 -m venv .venv
 source .venv/bin/activate           # Windows: .venv\Scripts\activate
 python -m pip install -e .
 cp .env.example .env                # fill in DEEPSEEK_API_KEY (and HKGAI_API_KEY if you use it)
-python -m unittest                  # optional: 647 tests, no key needed
+python -m unittest                  # optional test suite, no API key needed
 ```
 
 **2. Run the test set with the default (fast) configuration**

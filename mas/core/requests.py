@@ -198,6 +198,14 @@ class RequestTracker:
         except asyncio.CancelledError:
             self._close(run, False, None, "Cancelled", [])
             raise
+        except Exception as exc:
+            # A scenario driver waits for a final message before it posts the next task.
+            log.exception("request %s failed", run.root_id)
+            summary = f"the request could not be handled: {type(exc).__name__}: {exc}"
+            self._close(run, False, FailureMode.CRASH, summary, [])
+            await self._say(msg, f"@{HUMAN} {summary}", payload={
+                "final": True, "root_id": run.root_id, "success": False,
+                "failure_mode": FailureMode.CRASH.value, "deliverables": []})
         finally:
             self._runs.pop(session, None)
             if not board.roots[run.root_id].finished:         # a bug ended the request: do not leave it open
@@ -214,7 +222,9 @@ class RequestTracker:
 
     async def _conclude(self, msg: Message, run: _RootRun, result: TaskResult) -> None:
         """Collect the deliverables, close the root and post the lead's final reply."""
-        if result.error == CANCELLED_ANSWER:                  # /cancel already told the human
+        if result.error == CANCELLED_ANSWER and self.router.root_cancelled(run.root_id):
+            # /cancel already told the human. A worker can also return the word
+            # "cancelled" on its own, in which case the scenario still needs a reply.
             self._close(run, False, None, "Cancelled", [])
             return
         out_dir = self._output_dir(run)
