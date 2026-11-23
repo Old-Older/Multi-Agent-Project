@@ -27,6 +27,24 @@
         <div class="config-body">
           <label for="example">场景模板</label>
           <div class="select-wrap"><select id="example"><option value="">自定义场景</option></select></div>
+          <details class="model-settings" id="model-settings">
+            <summary><span>模型与运行参数</span><small id="config-summary">正在读取配置</small></summary>
+            <fieldset id="config-fields" disabled>
+              <div class="settings-grid">
+                <div><label for="provider">模型服务</label><div class="select-wrap"><select id="provider"></select></div></div>
+                <div><label for="key-source">API 密钥来源</label><div class="select-wrap"><select id="key-source"><option id="server-key-option" value="server">服务端密钥</option><option value="custom">本次输入</option></select></div></div>
+                <div class="wide" id="custom-key-row" hidden><label for="api-key">本次运行的 API 密钥</label><input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴密钥，仅用于启动本次运行"></div>
+                <div class="wide"><label for="model-name">模型名称</label><input id="model-name" type="text" spellcheck="false" autocomplete="off"></div>
+                <div class="wide"><label for="preset">执行模式</label><div class="select-wrap"><select id="preset"></select></div></div>
+              </div>
+              <div class="limits">
+                <label for="budget">每轮时限（秒）<input id="budget" type="number" min="0" step="any"></label>
+                <label for="research">每任务检索次数<input id="research" type="number" min="0" step="1"></label>
+                <label for="min-use">最早交付比例<input id="min-use" type="number" min="0" max="1" step="any"></label>
+              </div>
+              <p class="setting-hint">时限不含等待人工回复的时间。检索次数合计搜索与网页抓取。比例 0.5 表示用完一半时限后可交付。三项均可设为 0 以关闭对应限制。</p>
+            </fieldset>
+          </details>
           <div class="field-head"><label for="roles">团队角色</label><button id="import-roles" class="text-button" type="button">导入 .md</button></div>
           <textarea id="roles" spellcheck="false" rows="7" placeholder="粘贴 01_role_initialization.md 的内容"></textarea>
           <input id="roles-file" type="file" accept=".md,.markdown,.txt,text/plain,text/markdown" hidden>

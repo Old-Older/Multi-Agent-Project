@@ -14,11 +14,39 @@ from mas.config import Settings
 from mas.core.bus import MessageBus
 from mas.core.human import HitlRequest, HumanIO
 from mas.core.message import HUMAN, Message, MsgType
-from mas.llm.base import LLMClient
+from mas.llm.base import ChatMessage, FunctionSpec, LLMClient, LLMError, LLMResponse
 from mas.scenario import Scenario, ScenarioTask, driver_for, parse_task_markdown
 from mas.team import parse_team
+from mas.web_config import resolve_config
 
 log = logging.getLogger(__name__)
+
+
+def _safe_error(exc: BaseException, settings: Settings) -> str:
+    message = str(exc) or type(exc).__name__
+    secrets = (settings.hkgai_api_key, settings.deepseek_api_key, settings.hkgai_search_api_key,
+               settings.github_token)
+    if any(secret and secret in message for secret in secrets):
+        return "模型服务调用失败，请检查配置。"
+    return message
+
+
+class _WebLLM(LLMClient):
+    """Remove credential-bearing diagnostics before workers can log or record them."""
+
+    def __init__(self, client: LLMClient, settings: Settings) -> None:
+        self.client = client
+        self.settings = settings
+
+    async def chat(self, messages: list[ChatMessage], tools: list[FunctionSpec] | None = None,
+                   temperature: float = 0.2) -> LLMResponse:
+        try:
+            return await self.client.chat(messages, tools, temperature)
+        except LLMError as exc:
+            raise LLMError(_safe_error(exc, self.settings)) from None
+        except Exception:
+            # Third-party transport exceptions can include their request headers.
+            raise LLMError("模型服务调用失败，请检查模型和连接。") from None
 
 
 def _scenario(roles: str, tasks: list[str]) -> Scenario:
@@ -52,10 +80,10 @@ def _scenario(roles: str, tasks: list[str]) -> Scenario:
 class _Run(HumanIO):
     """The bus and workers live on one event loop. HTTP reads and answers use a lock."""
 
-    def __init__(self, settings: Settings, scenario: Scenario, roles: str, tasks: list[str]) -> None:
+    def __init__(self, base_dir: Path, scenario: Scenario, roles: str, tasks: list[str], config: dict) -> None:
         self.id = uuid.uuid4().hex
-        directory = settings.data_dir.resolve() / "web-runs" / self.id
-        self.settings = replace(settings, data_dir=directory, workspaces_dir=directory / "workspaces")
+        self.directory = base_dir.resolve() / "web-runs" / self.id
+        self.config = config
         self.scenario = scenario
         self.roles = roles
         self.tasks = tuple(tasks)
@@ -69,9 +97,9 @@ class _Run(HumanIO):
         self._task: asyncio.Task | None = None
         self._stopping = False
 
-    def execute(self, llm: LLMClient) -> None:
+    def execute(self, llm: LLMClient, settings: Settings) -> None:
         try:
-            asyncio.run(self._execute(llm))
+            asyncio.run(self._execute(llm, settings))
             if len(self.results) != len(self.scenario.tasks):
                 raise RuntimeError("运行提前结束。")
             status = "completed" if all(result["success"] for result in self.results) else "failed"
@@ -79,19 +107,19 @@ class _Run(HumanIO):
         except asyncio.CancelledError:
             status, error = "failed", "本地服务已停止，运行中断。"
         except Exception as exc:
-            log.exception("web run %s failed", self.id)
-            status, error = "failed", str(exc) or type(exc).__name__
+            status, error = "failed", _safe_error(exc, settings)
+            log.error("web run %s failed: %s", self.id, error)
         with self.lock:
             self.status = status
             self.error = error
 
-    async def _execute(self, llm: LLMClient) -> None:
+    async def _execute(self, llm: LLMClient, settings: Settings) -> None:
         with self.lock:
             if self._stopping:
                 raise asyncio.CancelledError()
             self._task = asyncio.current_task()
         try:
-            system = build_system(self.settings, llm, self, roles=self.scenario.team, run_name="web")
+            system = build_system(settings, llm, self, roles=self.scenario.team, run_name="web")
             system.bus.add_observer(self.observe)
             await system.run(driver_for(self.scenario, announce=lambda text: None), until_driver_done=True)
         finally:
@@ -163,7 +191,7 @@ class _Run(HumanIO):
                              "text": msg.content, "files": files})
 
     def _is_delivery(self, path: Path) -> bool:
-        return path.resolve().is_relative_to(self.settings.output_dir) and path.is_file()
+        return path.resolve().is_relative_to(self.directory / "output") and path.is_file()
 
     def artifact(self, file_id: str) -> Path:
         with self.lock:
@@ -190,17 +218,19 @@ class RunManager:
         self._lock = threading.Lock()
         self._active: threading.Thread | None = None
 
-    def start(self, roles: str, tasks: list[str]) -> str:
+    def start(self, roles: str, tasks: list[str], config: dict | None = None) -> str:
         scenario = _scenario(roles, tasks)
         with self._lock:
             if self._active and self._active.is_alive():
                 raise RuntimeError("当前已有任务正在运行。")
-            run = _Run(self.settings, scenario, roles, tasks)
+            settings, public = resolve_config(self.settings, config)
+            run = _Run(settings.data_dir, scenario, roles, tasks, public)
+            settings = replace(settings, data_dir=run.directory, workspaces_dir=run.directory / "workspaces")
             try:
-                llm = make_llm(run.settings)
-            except SystemExit as exc:
-                raise ValueError(str(exc)) from None
-            thread = threading.Thread(target=run.execute, args=(llm,), name=f"web-{run.id}", daemon=True)
+                llm = _WebLLM(make_llm(settings), settings)
+            except (SystemExit, Exception) as exc:
+                raise ValueError(_safe_error(exc, settings)) from None
+            thread = threading.Thread(target=run.execute, args=(llm, settings), name=f"web-{run.id}", daemon=True)
             thread.start()
             self._active = thread
             self._runs[run.id] = run
@@ -216,7 +246,7 @@ class RunManager:
 
     def inputs(self, run_id: str) -> dict:
         run = self._get(run_id)
-        return {"roles": run.roles, "tasks": list(run.tasks)}
+        return {"roles": run.roles, "tasks": list(run.tasks), "config": dict(run.config)}
 
     def snapshot(self, run_id: str) -> dict:
         return self._get(run_id).snapshot()

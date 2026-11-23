@@ -31,6 +31,7 @@ class WebTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         settings = Settings(data_dir=Path(tmp.name) / "data", workspaces_dir=Path(tmp.name) / "workspaces",
+                            hkgai_api_key="test-only-server-key", hkgai_model="test-course-model",
                             request_budget_s=0, closing_check=False, requirements_check=False)
         self.server = create_server(settings, port=0)
         self.addCleanup(self.server.server_close)
@@ -121,3 +122,63 @@ class WebTest(unittest.TestCase):
                                         origin="https://elsewhere.example")
             self.assertEqual(status, 403)
             factory.assert_not_called()
+
+    def test_config_exposes_provider_readiness_and_presets(self):
+        config = self.json("GET", "/api/config")
+        self.assertEqual(config["provider"], "hkgai")
+        self.assertEqual(config["providers"]["hkgai"]["model"], "test-course-model")
+        self.assertIs(config["providers"]["hkgai"]["has_key"], True)
+        self.assertIs(config["providers"]["deepseek"]["has_key"], False)
+        self.assertNotIn("test-only-server-key", json.dumps(config))
+        self.assertEqual(config["presets"]["environment"]["budget"], 0)
+        for preset, expected in [("fast", (270, 14, 0.5)), ("full", (900, 28, 0))]:
+            settings = config["presets"][preset]
+            self.assertEqual((settings["budget"], settings["research"], settings["min_use"]), expected)
+
+    def test_run_uses_its_own_configuration_and_keeps_keys_out_of_responses(self):
+        options = {"provider": "deepseek", "model": "test-run-model", "key_source": "custom",
+                   "api_key": "test-only-run-key", "preset": "custom", "budget": 311, "research": 8, "min_use": 0}
+        tasks = ["Confirm receipt."]
+        model = MockLLM([LLMResponse('{"success":true,"summary":"Received."}')])
+        with patch("mas.web_runner.make_llm", return_value=model) as make_llm:
+            run = self.json("POST", "/api/runs", {"roles": TEAM, "tasks": tasks, "config": options})
+            settings = make_llm.call_args.args[0]
+            self.assertEqual((settings.llm_provider, settings.deepseek_model, settings.deepseek_api_key),
+                             ("deepseek", "test-run-model", "test-only-run-key"))
+            self.assertEqual((settings.request_budget_s, settings.research_max_calls, settings.finish_not_before),
+                             (311, 8, 0))
+            path = f"/api/runs/{run['id']}"
+            done = self.poll(path, lambda s: s["status"] in ("completed", "failed"))
+        self.assertEqual(done["status"], "completed", done["error"])
+        inputs = self.json("GET", path + "/inputs")
+        self.assertEqual((inputs["roles"], inputs["tasks"]), (TEAM, tasks))
+        for field in ("provider", "model", "preset", "budget", "research", "min_use"):
+            self.assertEqual(inputs["config"][field], options[field])
+        defaults = self.json("GET", "/api/config")
+        self.assertEqual(defaults["provider"], "hkgai")
+        self.assertIs(defaults["providers"]["deepseek"]["has_key"], False)
+        for response in (run, done, inputs, defaults):
+            text = json.dumps(response)
+            self.assertNotIn("test-only-run-key", text)
+            self.assertNotIn("test-only-server-key", text)
+
+    def test_full_preset_uses_the_server_credential(self):
+        model = MockLLM([LLMResponse('{"success":true,"summary":"Received."}')])
+        with patch("mas.web_runner.make_llm", return_value=model) as make_llm:
+            config = {"provider": "hkgai", "key_source": "server", "preset": "full"}
+            run = self.json("POST", "/api/runs", {"roles": TEAM, "tasks": ["Confirm receipt."], "config": config})
+            settings = make_llm.call_args.args[0]
+            self.assertEqual((settings.hkgai_api_key, settings.hkgai_model),
+                             ("test-only-server-key", "test-course-model"))
+            self.assertEqual((settings.request_budget_s, settings.research_max_calls, settings.finish_not_before),
+                             (900, 28, 0))
+            done = self.poll(f"/api/runs/{run['id']}", lambda s: s["status"] in ("completed", "failed"))
+        self.assertEqual(done["status"], "completed", done["error"])
+
+    def test_unknown_preset_rejected_before_model_creation(self):
+        with patch("mas.web_runner.make_llm") as make_llm:
+            status, _, _ = self.request("POST", "/api/runs", {
+                "roles": TEAM, "tasks": ["Confirm receipt."], "config": {"preset": "unknown"},
+            })
+            self.assertEqual(status, 400)
+            make_llm.assert_not_called()

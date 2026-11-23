@@ -12,6 +12,7 @@ from urllib.parse import quote, urlsplit
 
 from mas.config import Settings
 from mas.team import ROLE_FILE
+from mas.web_config import config_catalog
 from mas.web_runner import RunManager
 
 
@@ -108,6 +109,8 @@ def create_server(settings: Settings, port: int = 8765) -> ThreadingHTTPServer:
                 self.reply(200, (ASSETS / name).read_bytes(), mime + "; charset=utf-8")
             elif parts == ["api", "examples"]:
                 self.json(200, {"examples": examples()})
+            elif parts == ["api", "config"]:
+                self.json(200, config_catalog(settings))
             elif parts == ["api", "active"]:
                 self.json(200, {"id": manager.active_id()})
             elif parts[:2] == ["api", "runs"] and len(parts) == 3:
@@ -142,7 +145,7 @@ def create_server(settings: Settings, port: int = 8765) -> ThreadingHTTPServer:
                 roles, tasks = data.get("roles"), data.get("tasks")
                 if not isinstance(roles, str) or not isinstance(tasks, list) or not all(isinstance(t, str) for t in tasks):
                     raise ValueError("请输入角色 Markdown 和任务列表。")
-                self.json(201, {"id": manager.start(roles, tasks)})
+                self.json(201, {"id": manager.start(roles, tasks, config=data.get("config"))})
             elif len(parts) == 4 and parts[:2] == ["api", "runs"] and parts[3] == "answer":
                 question, answer = data.get("id"), data.get("answer")
                 if not isinstance(question, str) or not isinstance(answer, str) or not answer.strip():

@@ -16,6 +16,15 @@ DEFAULT_DEEPSEEK_BASE_URL = "https://api.deepseek.com"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"
 
 
+def research_limit_overrides(limit: int) -> dict[str, int]:
+    """When setting an explicit cap, space the research reminders as in evaluation."""
+    overrides = {"research_max_calls": limit}
+    if limit:
+        overrides["research_note_after"] = max(6, round(limit * 0.6))
+        overrides["research_note_every"] = max(2, round(limit * 0.15))
+    return overrides
+
+
 @dataclass
 class Settings:
     # LLM (design §11)

@@ -21,6 +21,111 @@ let pollNumber = 0;
 let questionId = null;
 let renderedResults = "";
 let sendingAnswer = false;
+let configMenu = null;
+
+const limitFields = {budget: "budget", research: "research", min_use: "min-use"};
+
+// Used for drafts as well as POST options. The password is added only at dispatch.
+function publicSettings() {
+  if (!configMenu) return undefined;
+  const options = {
+    provider: el("provider").value, model: el("model-name").value.trim(),
+    key_source: el("key-source").value, preset: el("preset").value,
+  };
+  if (options.preset === "custom") {
+    for (const [key, id] of Object.entries(limitFields)) {
+      options[key] = el(id).value === "" ? null : el(id).valueAsNumber;
+    }
+  }
+  return options;
+}
+
+function updateSettingsSummary() {
+  if (!configMenu) return;
+  const provider = configMenu.providers[el("provider").value];
+  const custom = el("key-source").value === "custom";
+  const presetName = el("preset").selectedOptions[0]?.textContent;
+  const keyStatus = custom ? (busy && runId ? "本次密钥" : el("api-key").value.trim() ? "本次密钥已填" : "待输入密钥")
+    : provider.has_key ? "服务端密钥已配置" : "服务端密钥未配置";
+  el("config-summary").textContent = [provider.name, presetName, keyStatus].join(" · ");
+  el("custom-key-row").hidden = !custom || Boolean(busy && runId);
+}
+
+function applyPreset(values) {
+  const preset = el("preset").value;
+  for (const [key, id] of Object.entries(limitFields)) {
+    const field = el(id);
+    const value = values?.[key] ?? configMenu.presets[preset]?.[key];
+    if (value !== undefined) field.value = value;
+    field.readOnly = preset !== "custom";
+  }
+  updateSettingsSummary();
+}
+
+function applyProvider(saved = {}) {
+  const provider = configMenu.providers[el("provider").value];
+  el("model-name").value = saved.model || provider.model;
+  el("model-name").placeholder = provider.model;
+  el("server-key-option").textContent = provider.has_key ? "服务端 · 已配置" : "服务端 · 未配置";
+  el("key-source").value = saved.key_source || (provider.has_key ? "server" : "custom");
+  el("api-key").value = "";
+  updateSettingsSummary();
+}
+
+function restoreSettings(saved = {}) {
+  if (!configMenu) return;
+  saved ||= {};
+  const defaultProvider = Object.hasOwn(configMenu.providers, configMenu.provider) ? configMenu.provider : "hkgai";
+  el("provider").value = Object.hasOwn(configMenu.providers, saved.provider) ? saved.provider : defaultProvider;
+  el("preset").value = saved.preset === "custom" || Object.hasOwn(configMenu.presets, saved.preset)
+    ? saved.preset : configMenu.preset;
+  applyProvider(saved);
+  applyPreset(el("preset").value === "custom" ? {...configMenu.presets.environment, ...saved} : saved);
+  if (el("key-source").value === "custom" && !busy) el("model-settings").open = true;
+}
+
+async function loadSettings(saved) {
+  const menu = await api("/api/config");
+  el("provider").replaceChildren();
+  for (const [id, provider] of Object.entries(menu.providers)) el("provider").add(new Option(provider.name, id));
+  el("preset").replaceChildren();
+  for (const [id, preset] of Object.entries(menu.presets)) {
+    let label = preset.name;
+    if (id === "environment") {
+      const match = [menu.presets.fast, menu.presets.full].find((item) =>
+        Object.keys(limitFields).every((key) => item[key] === preset[key]));
+      label += match ? " · " + match.name : " · 自定义参数";
+    }
+    el("preset").add(new Option(label, id));
+  }
+  el("preset").add(new Option("自定义", "custom"));
+  configMenu = menu;
+  restoreSettings(saved);
+  el("config-fields").disabled = busy;
+}
+
+function settingsError(id, message) {
+  el("model-settings").open = true;
+  el(id).focus();
+  throw new Error(message);
+}
+
+function runSettings() {
+  const options = publicSettings();
+  options.model ||= configMenu.providers[options.provider].model;
+  if (options.key_source === "custom") {
+    options.api_key = el("api-key").value.trim();
+    if (!options.api_key) settingsError("api-key", "请输入本次运行的 API 密钥。");
+  } else if (!configMenu.providers[options.provider].has_key) {
+    settingsError("key-source", "该服务尚未配置密钥。请选择「本次输入」并填写密钥。");
+  }
+  if (options.preset === "custom") {
+    if (!Number.isFinite(options.budget) || options.budget < 0) settingsError("budget", "每轮时限应为大于或等于 0 的秒数。");
+    if (!Number.isInteger(options.research) || options.research < 0) settingsError("research", "检索次数应为大于或等于 0 的整数。");
+    if (!Number.isFinite(options.min_use) || options.min_use < 0 || options.min_use >= 1) settingsError("min-use", "最早交付比例应大于或等于 0 且小于 1。");
+  }
+  return options;
+}
 
 function node(tag, className, content) {
   const item = document.createElement(tag);
@@ -37,7 +142,7 @@ function notice(id, message) {
 function save() {
   try {
     sessionStorage.setItem(storageKey, JSON.stringify({
-      roles: el("roles").value, tasks, activeTask, example: el("example").value, runId,
+      roles: el("roles").value, tasks, activeTask, example: el("example").value, runId, config: publicSettings(),
     }));
   } catch { /* The page also works with browser storage disabled. */ }
 }
@@ -96,6 +201,8 @@ function setBusy(value) {
     el(id).disabled = value;
   }
   el("roles").readOnly = el("task").readOnly = value;
+  el("config-fields").disabled = value || !configMenu;
+  updateSettingsSummary();
   el("start-label").textContent = value ? "运行中" : "启动运行";
 }
 
@@ -261,6 +368,7 @@ async function resumeActive() {
   tasks = inputs.tasks;
   activeTask = runId === id ? Math.min(activeTask, tasks.length - 1) : 0;
   runId = id;
+  restoreSettings(inputs.config);
   renderTasks();
   save();
   el("events").replaceChildren();
@@ -284,10 +392,18 @@ async function start() {
     el("task").focus();
     return;
   }
-  setBusy(true);
   notice("setup-error", "");
   try {
-    const result = await api("/api/runs", {roles: el("roles").value, tasks});
+    if (!configMenu) {
+      await loadSettings();
+      el("model-settings").open = true;
+      notice("setup-error", "已重新读取配置，请核对模型与运行参数后启动。");
+      return;
+    }
+    const config = runSettings();
+    setBusy(true);
+    const result = await api("/api/runs", {roles: el("roles").value, tasks, config});
+    el("api-key").value = "";
     runId = result.id;
     save();
     showView(false);
@@ -357,13 +473,28 @@ async function init() {
     runId = draft.runId || null;
     renderTasks();
   } else useExample(examples[0]?.id);
+  try { await loadSettings(draft?.config); }
+  catch (error) {
+    el("config-summary").textContent = "配置加载失败";
+    loadError = [loadError, "未能读取模型配置，点击启动运行可重试。" + error.message].filter(Boolean).join(" ");
+  }
   if (loadError) notice("setup-error", loadError);
   try { if (await resumeActive()) return; }
   catch (error) { notice("run-error", "未能恢复当前运行。" + error.message); }
   if (runId) await refresh(runId);
-  else setBusy(false);
+  else {
+    setBusy(false);
+    if (el("key-source").value === "custom") el("model-settings").open = true;
+  }
 }
 
+el("provider").addEventListener("change", () => { applyProvider(); save(); });
+el("key-source").addEventListener("change", () => {
+  el("api-key").value = ""; updateSettingsSummary(); save();
+});
+el("api-key").addEventListener("input", updateSettingsSummary);
+el("preset").addEventListener("change", () => { applyPreset(); save(); });
+for (const id of ["model-name", ...Object.values(limitFields)]) el(id).addEventListener("input", save);
 el("example").addEventListener("change", () => useExample(el("example").value));
 el("roles").addEventListener("input", markEdited);
 el("task").addEventListener("input", () => { tasks[activeTask] = el("task").value; markEdited(); });

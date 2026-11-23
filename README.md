@@ -152,14 +152,18 @@ cp .env.example .env                # then edit .env
 
 ## Running it
 
-**Browser workspace** (requires a configured HKGAI or DeepSeek account). From the project root, run:
+**Browser workspace**. From the project root, run:
 
 ```bash
 python -m mas.web
 ```
 
-Open the [local workspace](http://127.0.0.1:8765/), choose a Mid Test example or import your role
-and task Markdown, edit it, and start the run. The same team works through the tasks in order.
+Open the [local workspace](http://127.0.0.1:8765/) and choose a Mid Test example or import your role
+and task Markdown. Choose HKGAI or DeepSeek, edit the model name, and use the provider's
+configured API key or enter one for this run. Fast mode gives each request 270 seconds and each task
+14 search or fetch calls. The lead can deliver after 50% of the budget. Full mode uses 900 seconds
+and 28 calls and allows delivery at any time. Custom mode lets you set each value.
+Start the run to have the same team work through the tasks in order.
 Follow the live conversation, answer questions and approvals, and download each task's deliverables
 alongside its final response. Run data lives in `data/web-runs/`. Use `--env-file <path>` to
 load an existing workspace's model configuration.

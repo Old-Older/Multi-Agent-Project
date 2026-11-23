@@ -1,4 +1,6 @@
 """Browser runs use the real workers, bus and output collector with a scripted model."""
+import io
+import logging
 import tempfile
 import time
 import unittest
@@ -6,9 +8,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 from mas.config import Settings
-from mas.llm.base import LLMResponse, ToolCall
+from mas.llm.base import LLMError, LLMResponse, ToolCall
 from mas.llm.mock import MockLLM
 from mas.web_runner import RunManager
+from mas.web_config import resolve_config
 
 TEAM = "## Writer (writer)\n\n```text\nWrite a short note.\n```"
 
@@ -83,3 +86,54 @@ class WebRunnerTest(unittest.TestCase):
                 self.manager.start(roles, tasks)
         with self.assertRaisesRegex(ValueError, "HKGAI_API_KEY"):
             self.manager.start(TEAM, ["real task"])
+
+    def test_presets_match_the_documented_run_and_keep_environment_untouched(self):
+        base = Settings(request_budget_s=72, research_max_calls=7, research_note_after=4,
+                        research_note_every=3, finish_not_before=0.2, hkgai_api_key="local-course-key")
+        for preset, expected in [("environment", (72, 7, 0.2, 4, 3)), ("fast", (270, 14, 0.5, 6, 2)),
+                                 ("full", (900, 28, 0, 17, 4))]:
+            settings, public = resolve_config(base, {"preset": preset})
+            self.assertEqual((settings.request_budget_s, settings.research_max_calls, settings.finish_not_before,
+                              settings.research_note_after, settings.research_note_every), expected)
+            self.assertEqual(settings.hkgai_api_key, "local-course-key")
+            self.assertNotIn("local-course-key", str(public))
+        self.assertEqual(base.request_budget_s, 72)
+
+    def test_custom_config_rejects_nonfinite_fractional_and_unexpected_values(self):
+        valid = {"preset": "custom", "budget": 0, "research": 0, "min_use": 0}
+        for bad in ({"budget": True}, {"budget": float("nan")}, {"budget": float("inf")}, {"budget": -1},
+                    {"research": 0.4}, {"research": False}, {"min_use": 1}, {"min_use": -0.1},
+                    {"provider": ["deepseek"]}, {"api_key": "unused"}, {"key_source": "custom"},
+                    {"key_source": "custom", "api_key": "invalid\nkey"}, {"model": "\n"},
+                    {"api_base": "https://invalid.invalid/"}):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                resolve_config(self.manager.settings, {**valid, **bad})
+        settings, _ = resolve_config(self.manager.settings, {**valid, "research": 40})
+        self.assertEqual((settings.research_note_after, settings.research_note_every), (24, 6))
+
+    def test_provider_exception_with_credentials_is_kept_out_of_run_files_and_logs(self):
+        key = "test-ephemeral-provider-key"
+        options = {"key_source": "custom", "api_key": key}
+
+        def failure(messages, tools):
+            raise LLMError("rejected Authorization header " + key)
+
+        recorded = io.StringIO()
+        handler = logging.StreamHandler(recorded)
+        logging.getLogger().addHandler(handler)
+        self.addCleanup(logging.getLogger().removeHandler, handler)
+        with patch("mas.web_runner.make_llm", return_value=MockLLM(responder=failure)):
+            run_id = self.manager.start(TEAM, ["Make a note."], options)
+            result = self.wait(run_id, lambda state: state["status"] == "failed")
+            self.manager.close()
+        self.assertNotIn(key, str(result))
+        self.assertNotIn(key, str(self.manager.inputs(run_id)))
+        self.assertNotIn(key, recorded.getvalue())
+        self.assertEqual(self.manager.settings.hkgai_api_key, "")
+        for path in self.root.rglob("*"):
+            if path.is_file():
+                self.assertNotIn(key.encode(), path.read_bytes())
+        with patch("mas.web_runner.make_llm", side_effect=ValueError("invalid " + key)):
+            with self.assertRaises(ValueError) as caught:
+                self.manager.start(TEAM, ["Make a note."], options)
+        self.assertNotIn(key, str(caught.exception))
