@@ -63,6 +63,7 @@ class WebRunnerTest(unittest.TestCase):
         self.assertEqual(state["status"], "failed")
         self.assertEqual([r["success"] for r in state["results"]], [True, False])
         self.assertEqual([r["title"] for r in state["results"]], ["First", "任务 2"])
+        self.assertEqual([r["default_title"] for r in state["results"]], [False, True])
         self.assertEqual(state["questions"], [])
         file = state["results"][0]["files"][0]
         path = self.manager.artifact(run_id, file["id"])

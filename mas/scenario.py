@@ -35,6 +35,7 @@ class ScenarioTask:
     file: str
     title: str
     prompt: str                       # exactly what the human says to the team
+    default_title: bool = False        # generated when the document has no title
 
 
 @dataclass
@@ -68,7 +69,8 @@ def parse_task_markdown(text: str, filename: str) -> ScenarioTask | None:
     if not prompt:
         return None
     title = _TITLE.search(text)
-    return ScenarioTask(filename, title.group(1) if title else Path(filename).stem, prompt)
+    return ScenarioTask(filename, title.group(1) if title else Path(filename).stem, prompt,
+                        default_title=title is None)
 
 
 def _first_fenced(text: str) -> str:
