@@ -209,6 +209,8 @@ class WorkerAgent(Agent):
         self.memory = memory
         self._reflections: set[asyncio.Task[None]] = set()
         self._reflection_records: dict[str, Experience] = {}
+        self._jobs: dict[str, int] = {}               # tasks being worked on now -> the order this worker took them in
+        self._job_count = 0
 
     async def run(self) -> None:
         """Keep failure reflections owned by this worker and stop them on shutdown."""
@@ -231,6 +233,8 @@ class WorkerAgent(Agent):
         run = _Run(deadline=started + (self.settings.lead_timeout_s if self._leads(task)
                                        else self.settings.subtask_timeout_s))
         terminal = None
+        self._job_count += 1
+        self._jobs[task.id] = self._job_count
         try:
             result = await self._loop(task, run)
         except _TaskTerminated as exc:
@@ -245,6 +249,8 @@ class WorkerAgent(Agent):
             log.exception("Worker %s failed on task %s", self.agent_id, task.id)
             result = TaskResult(task.id, False, "", error=f"{type(exc).__name__}: {exc}",
                                 failure_mode=FailureMode.CRASH)
+        finally:
+            self._jobs.pop(task.id, None)
         # asyncio cancellation deliberately propagates to Agent.run/System.stop.
         terminal = self._terminal_result(task) or terminal
         if terminal is not None:
@@ -371,7 +377,7 @@ class WorkerAgent(Agent):
                     "This is your last step and no tools are available. Reply with the final result JSON now: "
                     "what was done, the files written, and what is missing.")})
             step_specs = [] if time_up or (left == 0 and step > 1) else specs
-            await self.report_status(task, TaskStatus.RUNNING, f"Worker step {step}")
+            await self.report_status(task, TaskStatus.RUNNING, f"{self._job_label(task)}Worker step {step}")
             asked_at = time.perf_counter()
             try:
                 response = await self._active(
@@ -420,6 +426,9 @@ class WorkerAgent(Agent):
                                      "success and string summary, or call a tool to continue."})
                     continue
             format_errors = 0
+            if not time_up:         # before the tools run: the status line says which, not only the step number
+                await self.report_status(task, TaskStatus.RUNNING,
+                                         self._job_label(task) + self._describe_calls(step, response.tool_calls))
             if time_up:
                 # No tools were offered; the model asked for some anyway. Do not run them, ask again.
                 run.count("time_up_retry")
@@ -1200,6 +1209,30 @@ class WorkerAgent(Agent):
             return False
         wanted = path[2:] if path.startswith("./") else path
         return wanted in run.artifacts
+
+    def _job_label(self, task: Task) -> str:
+        """'#2 ' while this worker has several tasks going at once (the lead gave it parallel jobs), so that two lines that both say
+        'Step 3' can be told apart: the number is the order in which the worker took the tasks. Nothing for a task on its own."""
+        number = self._jobs.get(task.id)
+        return f"#{number} " if number is not None and len(self._jobs) > 1 else ""
+
+    @staticmethod
+    def _describe_calls(step: int, calls: list[ToolCall]) -> str:
+        """One line for the status of a step: the tools it is about to use and what each is about (a file, a query, a page, a
+        teammate's goal), at most three. Without it the line says only 'Worker step 15', which tells whoever follows a run
+        nothing. Template text from the arguments, no model call."""
+        def about(call: ToolCall) -> str:
+            args = call.arguments if isinstance(call.arguments, dict) else {}
+            for key in ("path", "url"):
+                if isinstance(args.get(key), str) and args[key].strip():
+                    return f"{call.name} {_clip(args[key].strip(), 80)}"
+            for key in ("query", "goal", "question"):
+                if isinstance(args.get(key), str) and args[key].strip():
+                    return f"{call.name} '{_clip(' '.join(args[key].split()), 60)}'"
+            return call.name
+        shown = [about(call) for call in calls[:3]]
+        more = f" (+{len(calls) - 3} more)" if len(calls) > 3 else ""
+        return _clip(f"Step {step}: " + "; ".join(shown) + more, 160)
 
     def _is_delegation(self, call: ToolCall) -> bool:
         return self.peers is not None and target_of(call.name) is not None and call.name not in self.tools
