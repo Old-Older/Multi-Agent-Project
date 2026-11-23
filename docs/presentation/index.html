@@ -1,0 +1,706 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Multi-Agent Team System</title>
+<style>
+:root {
+  --bg: #F6F5F0; --ink: #14213D; --soft: #4A5568; --teal: #2B7A78; --tealbg: #DCEBE9; --amber: #D98B1F; --amberbg: #FBEBD0;
+  --slate: #E4E7EB; --line: #CBD2D9; --card: #FFFFFF; --navy: #14213D;
+  --font: Inter, "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
+}
+* { box-sizing: border-box; margin: 0; }
+html, body { height: 100%; background: #0F1626; overflow: hidden; font-family: var(--font); color: var(--ink); }
+#wrap { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; }
+#stage { position: relative; width: 1920px; height: 1080px; flex: none; background: var(--bg); transform-origin: center center; overflow: hidden; }
+
+/* top bar and bottom bar */
+#top { position: absolute; left: 0; right: 0; top: 0; height: 64px; display: flex; align-items: center; gap: 28px; padding: 0 96px; background: var(--navy); color: #C9D3E0; font-size: 22px; z-index: 5; }
+#top b { color: #fff; font-weight: 600; letter-spacing: .5px; margin-right: 12px; }
+.part { display: flex; align-items: center; gap: 10px; opacity: .45; }
+.part i { display: block; width: 90px; height: 6px; border-radius: 3px; background: #3A4B6B; overflow: hidden; }
+.part i u { display: block; height: 100%; width: 0; background: #7FD1C9; transition: width .4s; }
+.part.on { opacity: 1; color: #fff; }
+.part.soon { opacity: .28; }
+#count { margin-left: auto; font-variant-numeric: tabular-nums; }
+#bottom { position: absolute; left: 96px; bottom: 26px; display: flex; align-items: center; gap: 22px; font-size: 22px; color: var(--soft); z-index: 5; }
+#timer { font-variant-numeric: tabular-nums; padding: 4px 14px; border-radius: 999px; background: var(--slate); font-weight: 600; }
+#timer.warn { background: var(--amberbg); color: #7A4A06; }
+#timer.over { background: #F6D5CF; color: #8F2D1E; }
+#timer[hidden] { display: none; }
+#tag { position: absolute; right: 96px; bottom: 26px; font-size: 22px; color: #7A8594; z-index: 5; }
+#hint { position: absolute; right: 96px; top: 80px; font-size: 20px; color: #7A8594; z-index: 5; }
+
+/* screens */
+.screen { position: absolute; left: 0; top: 64px; right: 0; bottom: 0; display: none; padding: 40px 96px 0; }
+.screen.active { display: block; }
+.eyebrow { font-size: 24px; font-weight: 600; letter-spacing: 2px; color: var(--teal); }
+h2 { margin-top: 8px; font-size: 56px; line-height: 1.1; font-weight: 700; max-width: 1560px; }
+
+/* reveal by step */
+[data-s] { opacity: 0; transform: translateY(14px); pointer-events: none; transition: opacity .5s var(--d, 0s), transform .5s var(--d, 0s); }
+[data-s].on { opacity: 1; transform: none; pointer-events: auto; }
+[data-s][data-nomove] { transform: none; }
+#stage.instant [data-s], #stage.instant .win, #stage.instant .dim { transition: none !important; }
+
+/* generic pieces */
+.abs { position: absolute; }
+.card { position: absolute; background: var(--card); border: 2px solid var(--line); border-radius: 22px; padding: 22px 26px; }
+.card h3 { font-size: 34px; font-weight: 700; }
+.card p { font-size: 25px; line-height: 1.3; color: var(--soft); margin-top: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.chip { font-size: 23px; font-weight: 600; padding: 5px 14px; border-radius: 10px; background: var(--slate); color: var(--ink); font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 21px; }
+.chip.t { background: var(--tealbg); color: #14504E; }
+.chip.a { background: var(--amberbg); color: #6B3F05; }
+.badge { font-size: 20px; font-weight: 700; letter-spacing: 1px; padding: 3px 12px; border-radius: 999px; background: var(--amber); color: #fff; }
+.badge.t { background: var(--teal); }
+.badge.g { background: #8A94A3; }
+
+/* windows */
+.win { position: absolute; background: var(--card); border: 2px solid var(--line); border-radius: 18px; overflow: hidden; transition: opacity .5s, transform .5s, box-shadow .5s, border-color .5s; }
+.win header { display: flex; align-items: center; gap: 12px; height: 54px; padding: 0 18px; background: var(--slate); font-size: 24px; font-weight: 700; }
+.win header .dot { width: 14px; height: 14px; border-radius: 50%; background: #9AA5B1; }
+.win header .dot.run { background: var(--teal); animation: pulse 1.2s infinite; }
+.win header em { margin-left: auto; font-style: normal; font-size: 20px; color: var(--soft); font-weight: 600; }
+@keyframes pulse { 50% { opacity: .35; } }
+.win.lead { border-color: var(--teal); box-shadow: 0 0 0 6px var(--tealbg); }
+.win.dim { opacity: .45; }
+.cols { display: flex; }
+.col { flex: 1; padding: 12px 18px; min-width: 0; }
+.col + .col { border-left: 2px solid var(--slate); }
+.col small { display: block; font-size: 18px; font-weight: 700; letter-spacing: 1.5px; color: #7A8594; margin-bottom: 6px; }
+.row { display: flex; align-items: center; gap: 10px; font-size: 22px; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .ico { width: 14px; height: 18px; border-radius: 2px; background: var(--teal); flex: none; }
+.row .ico.in { background: var(--amber); }
+.row b { font-weight: 600; }
+.row span.sz { margin-left: auto; color: #7A8594; font-size: 19px; font-variant-numeric: tabular-nums; }
+.now { padding: 8px 18px 10px; font-size: 21px; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; color: #14504E; background: #F1F7F6; border-top: 2px solid var(--slate); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.now + .now { border-top: 1px dashed var(--line); }
+
+/* flyers */
+.flyer { position: absolute; left: 0; top: 0; z-index: 9; padding: 8px 16px; border-radius: 12px; font-size: 22px; font-weight: 700; white-space: nowrap; box-shadow: 0 6px 20px rgba(20,33,61,.25); }
+.flyer.env { background: var(--amber); color: #fff; }
+.flyer.file { background: var(--teal); color: #fff; }
+
+/* notes */
+#notes { position: absolute; left: 96px; right: 96px; bottom: 80px; z-index: 20; background: rgba(20,33,61,.96); color: #F6F5F0; border-radius: 20px; padding: 24px 32px; font-size: 27px; line-height: 1.45; display: none; }
+#notes.on { display: block; }
+#notes small { display: block; font-size: 20px; letter-spacing: 2px; color: #7FD1C9; margin-bottom: 8px; font-weight: 700; }
+
+/* gates */
+.gate { position: absolute; top: 190px; width: 548px; height: 400px; background: var(--card); border: 2px solid var(--line); border-radius: 22px; padding: 22px 26px; }
+.gate .when { font-size: 20px; font-weight: 700; letter-spacing: 1.5px; color: var(--teal); }
+.gate h3 { font-size: 34px; font-weight: 700; margin-top: 4px; }
+.gate .body { margin-top: 16px; display: flex; flex-direction: column; gap: 10px; }
+.gate .cap2 { position: absolute; left: 26px; right: 26px; bottom: 20px; font-size: 23px; color: var(--soft); line-height: 1.3; }
+.line { display: flex; align-items: center; gap: 12px; font-size: 24px; line-height: 1.3; }
+.tag { font-size: 20px; font-weight: 700; padding: 3px 12px; border-radius: 8px; white-space: nowrap; flex: none; }
+.tag.ok { background: var(--tealbg); color: #14504E; }
+.tag.no { background: #F6D5CF; color: #8F2D1E; }
+.tag.hold { background: var(--amberbg); color: #7A4A06; }
+.tag.mut { background: var(--slate); color: var(--soft); }
+.chev { position: absolute; top: 360px; font-size: 54px; color: #9AA5B1; line-height: 1; }
+.bar { position: absolute; left: 96px; top: 700px; width: 1728px; height: 110px; display: flex; border-radius: 18px; overflow: hidden; }
+.bar > div { display: flex; align-items: center; padding: 0 20px; font-size: 24px; font-weight: 700; }
+.mark { position: absolute; top: 676px; width: 6px; height: 158px; background: var(--navy); border-radius: 3px; left: 96px; transition: left 6s linear; }
+.mark.go { left: 1576px; }
+.tick { position: absolute; top: 830px; font-size: 22px; color: var(--soft); width: 260px; line-height: 1.25; }
+
+/* delivery */
+.folder { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 22px; color: var(--soft); }
+
+/* journey */
+.num { position: absolute; width: 46px; height: 46px; border-radius: 50%; background: var(--amber); color: #fff; font-size: 26px; font-weight: 700; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 0 6px var(--amberbg); }
+.jr { position: absolute; left: 940px; width: 884px; height: 124px; background: var(--card); border: 2px solid var(--line); border-radius: 18px; }
+.jr .num { left: 18px; top: 36px; }
+.jr .t { position: absolute; left: 86px; top: 14px; width: 440px; font-size: 26px; font-weight: 700; line-height: 1.15; }
+.jr .d { position: absolute; left: 86px; top: 50px; width: 440px; font-size: 22px; line-height: 1.25; color: var(--soft); }
+.jr .m { position: absolute; right: 22px; top: 14px; width: 310px; text-align: right; }
+.jr .m b { display: block; font-size: 36px; font-weight: 700; color: var(--teal); line-height: 1.1; }
+.jr .m span { display: block; font-size: 21px; color: var(--soft); margin-top: 4px; line-height: 1.2; }
+.sbox { position: absolute; background: var(--card); border: 2px solid var(--line); border-radius: 16px; padding: 12px 18px; font-size: 24px; font-weight: 700; }
+.sbox small { display: block; font-size: 20px; font-weight: 400; color: var(--soft); margin-top: 2px; }
+
+/* results */
+.kpi { position: absolute; left: 96px; width: 520px; height: 200px; background: var(--card); border: 2px solid var(--line); border-radius: 22px; padding: 18px 28px; }
+.kpi .big { font-size: 90px; font-weight: 700; color: var(--teal); line-height: 1; }
+.kpi .lbl { font-size: 26px; color: var(--soft); margin-top: 6px; line-height: 1.25; }
+.vbar { width: 96px; border-radius: 10px 10px 0 0; }
+.vval { font-size: 28px; font-weight: 700; text-align: center; margin-bottom: 6px; }
+
+/* in-class */
+.btn { display: inline-flex; align-items: center; gap: 14px; padding: 26px 48px; border-radius: 22px; background: var(--teal); color: #fff; font-size: 44px; font-weight: 700; text-decoration: none; box-shadow: 0 10px 26px rgba(43,122,120,.35); }
+.btn:hover { background: #226562; }
+.led { width: 22px; height: 22px; border-radius: 50%; background: #9AA5B1; display: inline-block; }
+.led.up { background: #2E9E5B; box-shadow: 0 0 0 6px #D5EEDF; }
+.led.down { background: #C8402F; box-shadow: 0 0 0 6px #F6D5CF; }
+code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26px; background: var(--navy); color: #fff; padding: 14px 22px; border-radius: 12px; display: inline-block; }
+.check { display: flex; align-items: center; gap: 16px; font-size: 29px; padding: 12px 0; border-bottom: 2px solid var(--slate); }
+.check i { width: 30px; height: 30px; border-radius: 8px; border: 3px solid var(--teal); flex: none; }
+
+/* reflection */
+.rcard { position: absolute; top: 200px; width: 548px; height: 770px; background: var(--card); border: 2px solid var(--line); border-radius: 24px; padding: 30px 34px; }
+.rcard h3 { font-size: 44px; font-weight: 700; }
+.rcard .stat { margin-top: 22px; background: var(--bg); border-radius: 18px; padding: 22px 26px; }
+.rcard .stat b { display: block; font-size: 88px; font-weight: 700; line-height: 1; }
+.rcard .stat span { display: block; font-size: 26px; color: var(--soft); margin-top: 8px; line-height: 1.25; }
+.rcard ul { margin: 26px 0 0 0; padding-left: 34px; font-size: 30px; line-height: 1.3; }
+.rcard li { margin-bottom: 20px; }
+
+@media print { html, body { overflow: visible; background: #fff; } #wrap { position: static; } #stage { transform: none !important; } }
+</style>
+</head>
+<body>
+<div id="wrap">
+<div id="stage">
+
+<div id="top">
+  <b>MAS</b>
+  <div class="part" data-part="method"><span>Method</span><i><u></u></i></div>
+  <div class="part soon" data-part="mid"><span>Mid-test</span><i><u></u></i></div>
+  <div class="part soon" data-part="class"><span>In-class</span><i><u></u></i></div>
+  <div class="part soon" data-part="reflect"><span>Reflection</span><i><u></u></i></div>
+  <span id="count"></span>
+</div>
+<div id="hint">→ next step · ← back · N notes · T timer · F full screen</div>
+<div id="bottom"><span id="timer" hidden></span></div>
+<div id="tag">Schematic illustration</div>
+
+<!-- ============ METHOD 1: one member = model + harness ============ -->
+<section class="screen" id="s-harness" data-part="method" data-steps="4"
+  data-notes="[~20 s] Start with one team member. In the middle is the language model: text in, text out, nothing more. ▶1 Everything that lets it act is the harness around it: tools, ▶2 a private workspace with an inbox, ▶3 memory, ▶4 and limits. The harness is everything around the model.">
+  <p class="eyebrow">METHOD · 1 OF 5</p>
+  <h2>A model alone can only talk. The harness lets it act.</h2>
+
+  <svg class="abs" style="left:0;top:0" width="1920" height="1016" viewBox="0 0 1920 1016">
+    <g stroke="#9AA5B1" stroke-width="4" stroke-dasharray="10 10" fill="none">
+      <line data-s="1" data-nomove x1="616" y1="320" x2="960" y2="496"/>
+      <line data-s="2" data-nomove x1="1304" y1="320" x2="960" y2="496"/>
+      <line data-s="3" data-nomove x1="616" y1="690" x2="960" y2="496"/>
+      <line data-s="4" data-nomove x1="1304" y1="690" x2="960" y2="496"/>
+    </g>
+  </svg>
+
+  <div class="abs" style="left:810px;top:346px;width:300px;height:300px;border-radius:50%;background:var(--teal);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;box-shadow:0 0 0 14px var(--tealbg)">
+    <div style="font-size:78px;font-weight:700;letter-spacing:2px">LLM</div>
+    <div style="font-size:26px;margin-top:6px">text in, text out</div>
+  </div>
+  <p class="abs" style="left:660px;top:672px;width:600px;text-align:center;font-size:27px;color:var(--soft)">Alone: it can only answer in words.</p>
+
+  <div class="card" data-s="1" style="left:96px;top:200px;width:520px;height:240px;--d:.15s">
+    <h3>Tools · its hands</h3>
+    <div class="chips"><span class="chip t">read_file</span><span class="chip t">write_file</span><span class="chip t">edit_file</span><span class="chip t">run_python</span><span class="chip t">web_search</span><span class="chip t">fetch_url</span></div>
+  </div>
+  <div class="card" data-s="2" style="left:1304px;top:200px;width:520px;height:240px;--d:.15s">
+    <h3>Private workspace</h3>
+    <div class="chips"><span class="chip a">inbox/</span><span class="chip">brief.md</span><span class="chip">report.md</span></div>
+    <p>Only this member can see it. Files move only through the Router.</p>
+  </div>
+  <div class="card" data-s="3" style="left:96px;top:570px;width:520px;height:240px;--d:.15s">
+    <h3>Memory</h3>
+    <p>Writes down what went wrong, and recalls the lesson on the next task.</p>
+  </div>
+  <div class="card" data-s="4" style="left:1304px;top:570px;width:520px;height:240px;--d:.15s">
+    <h3>Limits</h3>
+    <div class="chips"><span class="chip a">30 steps</span><span class="chip a">270 s budget</span><span class="chip a">14 searches</span><span class="chip a">repeat guard</span></div>
+  </div>
+
+  <div class="abs" data-s="4" style="left:420px;top:850px;width:1080px;height:92px;border-radius:46px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:700;--d:.5s">Harness = everything around the model</div>
+</section>
+
+<!-- ============ METHOD 2: the team comes from a file ============ -->
+<section class="screen" id="s-lead" data-part="method" data-steps="3"
+  data-notes="[~20 s] The team isn&#x27;t hard-coded: each task comes with a role file, so a newsroom, a software team or a fund team is just a different file. ▶1 One member per role, each with its own window. ▶2 When a request arrives, ▶3 one model call picks who coordinates, and that member becomes the lead.">
+  <p class="eyebrow">METHOD · 2 OF 5</p>
+  <h2>The team comes from a file. One member leads each request.</h2>
+
+  <div class="card" style="left:96px;top:200px;width:560px;height:560px;padding:0;overflow:hidden">
+    <div style="height:54px;background:var(--slate);display:flex;align-items:center;padding:0 20px;font-size:22px;font-weight:700;font-family:ui-monospace,Menlo,Consolas,monospace">01_role_initialization.md</div>
+    <div style="padding:20px 24px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:23px;line-height:1.55;color:var(--soft)">
+      <div style="color:var(--ink);font-weight:700">## Chief editor</div><div>Owns the story and the<br>final answer.</div>
+      <div style="color:var(--ink);font-weight:700;margin-top:14px">## Reporter</div><div>Finds and verifies facts.</div>
+      <div style="color:var(--ink);font-weight:700;margin-top:14px">## Fact-checker</div><div>Checks every claim.</div>
+      <div style="color:var(--ink);font-weight:700;margin-top:14px">## Editor</div><div>Tightens the text.</div>
+    </div>
+  </div>
+  <p class="abs" style="left:96px;top:782px;width:560px;font-size:24px;color:var(--soft)">Different task, different file: a developer and a QA, or a fund manager and a risk manager.</p>
+
+  <div class="win" id="m-chief" data-s="1" data-nomove style="left:760px;top:200px;width:512px;height:210px;--d:.1s"><header><span class="dot"></span>chief_editor<em id="leadtag"></em></header><div style="padding:14px 18px;font-size:23px;color:var(--soft)">own workspace · tools · memory</div></div>
+  <div class="win" id="m-rep" data-s="1" data-nomove style="left:1312px;top:200px;width:512px;height:210px;--d:.25s"><header><span class="dot"></span>reporter</header><div style="padding:14px 18px;font-size:23px;color:var(--soft)">own workspace · tools · memory</div></div>
+  <div class="win" id="m-chk" data-s="1" data-nomove style="left:760px;top:450px;width:512px;height:210px;--d:.4s"><header><span class="dot"></span>fact_checker</header><div style="padding:14px 18px;font-size:23px;color:var(--soft)">own workspace · tools · memory</div></div>
+  <div class="win" id="m-edit" data-s="1" data-nomove style="left:1312px;top:450px;width:512px;height:210px;--d:.55s"><header><span class="dot"></span>editor</header><div style="padding:14px 18px;font-size:23px;color:var(--soft)">own workspace · tools · memory</div></div>
+
+  <div class="card" data-s="2" style="left:760px;top:700px;width:1064px;height:130px;background:var(--amberbg);border-color:var(--amber)">
+    <p style="margin:0;font-size:22px;font-weight:700;letter-spacing:1.5px;color:#7A4A06">HUMAN REQUEST</p>
+    <p style="margin:4px 0 0;color:var(--ink);font-size:27px">“Produce a news report on AI on HKUST campuses for students and faculty.”</p>
+  </div>
+  <div class="abs" data-s="3" style="left:760px;top:850px;width:1064px;height:90px;border-radius:45px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:700">One model call: who should coordinate this? → chief_editor leads</div>
+</section>
+
+<!-- ============ METHOD 3: delegate and parallel ============ -->
+<section class="screen" id="s-delegate" data-part="method" data-steps="4"
+  data-notes="[~35 s] This is the heart of the design. ▶1 The lead sends two research jobs in one reply. They go through the Router, our mail room, and arrive together, so the reporter ▶2 works on both in parallel. ▶3 Each job ends with a file. Workspaces are private, so the Router copies the files into the lead&#x27;s inbox. ▶4 Then the lead sends the draft to the editor and the fact-checker at once. Every handover goes through the Router, so limits and bookkeeping live in plain code.">
+  <p class="eyebrow">METHOD · 3 OF 5</p>
+  <h2>Delegation goes through one door, and jobs run in parallel</h2>
+
+  <!-- lead -->
+  <div class="win lead" id="w-lead" style="left:96px;top:190px;width:470px;height:710px">
+    <header><span class="dot run"></span>chief_editor<em><span class="badge t">LEAD</span></em></header>
+    <div class="col" style="padding-top:16px"><small>PLAN</small>
+      <div class="row"><span class="ico in"></span>A · research policy</div>
+      <div class="row"><span class="ico in"></span>B · research tools</div>
+      <div class="row"><span class="ico in"></span>C · edit the draft</div>
+      <div class="row"><span class="ico in"></span>D · check the facts</div>
+    </div>
+    <div class="col" style="border-top:2px solid var(--slate);border-left:0;padding-top:14px"><small>INBOX</small>
+      <div id="l-in" style="min-height:96px">
+        <div class="row" data-s="3" data-nomove style="--d:1.3s"><span class="ico in"></span><b>job1_brief.md</b><span class="sz">4.1 KB</span></div>
+        <div class="row" data-s="3" data-nomove style="--d:1.5s"><span class="ico in"></span><b>job2_brief.md</b><span class="sz">3.6 KB</span></div>
+      </div>
+    </div>
+    <div class="col" style="border-top:2px solid var(--slate);border-left:0;padding-top:14px"><small>FILES</small>
+      <div class="row" data-s="4" data-nomove id="l-draft"><span class="ico"></span><b>report.md</b><span class="sz">9.8 KB</span></div>
+    </div>
+  </div>
+
+  <!-- router -->
+  <div class="abs" id="router" style="left:650px;top:190px;width:230px;height:710px;border-radius:22px;background:var(--navy);color:#fff;text-align:center;padding-top:210px">
+    <div style="font-size:36px;font-weight:700">Router</div>
+    <div style="font-size:23px;color:#C9D3E0;margin-top:10px;line-height:1.4">the mail room<br>plain code<br><br>limits<br>file copies<br>task state</div>
+  </div>
+
+  <!-- workers -->
+  <div class="win" id="w-rep" style="left:960px;top:190px;width:864px;height:294px">
+    <header><span class="dot" id="d-rep"></span>reporter<em id="rep-jobs">idle</em></header>
+    <div class="cols" style="height:130px">
+      <div class="col"><small>INBOX</small>
+        <div class="row" data-s="1" data-nomove style="--d:1.35s"><span class="ico in"></span><b>#1 A · research policy</b></div>
+        <div class="row" data-s="1" data-nomove style="--d:1.35s"><span class="ico in"></span><b>#2 B · research tools</b></div>
+      </div>
+      <div class="col"><small>FILES</small>
+        <div class="row" data-s="2" data-nomove style="--d:.6s"><span class="ico"></span><b>job1_brief.md</b><span class="sz">4.1 KB</span></div>
+        <div class="row" data-s="2" data-nomove style="--d:.9s"><span class="ico"></span><b>job2_brief.md</b><span class="sz">3.6 KB</span></div>
+      </div>
+    </div>
+    <div class="now" data-s="2" data-nomove>#1 web_search 'HKUST generative AI policy teaching'</div>
+    <div class="now" data-s="2" data-nomove>#2 fetch_url cei.hkust.edu.hk/…/generative-ai</div>
+  </div>
+
+  <div class="win" id="w-chk" style="left:960px;top:508px;width:864px;height:184px">
+    <header><span class="dot" id="d-chk"></span>fact_checker<em id="chk-st">idle</em></header>
+    <div class="cols" style="height:76px">
+      <div class="col"><small>INBOX</small><div class="row" data-s="4" data-nomove style="--d:1.35s"><span class="ico in"></span><b>report.md</b></div></div>
+      <div class="col"><small>FILES</small><div class="row" data-s="4" data-nomove style="--d:2.2s"><span class="ico"></span><b>fact_check.md</b><span class="sz">3.2 KB</span></div></div>
+    </div>
+    <div class="now" data-s="4" data-nomove style="--d:1.6s">web_search 'verify: HKUST AI Literacy Hub 2025'</div>
+  </div>
+
+  <div class="win" id="w-edit" style="left:960px;top:716px;width:864px;height:184px">
+    <header><span class="dot" id="d-edit"></span>editor<em id="edit-st">idle</em></header>
+    <div class="cols" style="height:76px">
+      <div class="col"><small>INBOX</small><div class="row" data-s="4" data-nomove style="--d:1.35s"><span class="ico in"></span><b>report.md</b></div></div>
+      <div class="col"><small>FILES</small><div class="row" data-s="4" data-nomove style="--d:2.2s"><span class="ico"></span><b>report_edited.md</b><span class="sz">9.1 KB</span></div></div>
+    </div>
+    <div class="now" data-s="4" data-nomove style="--d:1.6s">edit_file report.md</div>
+  </div>
+</section>
+
+<!-- ============ METHOD 4: gates ============ -->
+<section class="screen" id="s-gates" data-part="method" data-steps="4"
+  data-notes="[~30 s] Done is not the model&#x27;s call. Three checks, all in code. ▶1 Before work goes out, every requirement needs an owner, otherwise the plan is held back once. ▶2 During work, a reviewer says pass or fail, and a file gets at most three rounds. ▶3 Before handing in, the lead reports each requirement as met or not met. ▶4 And underneath, the clock: 270 seconds is a soft budget, with reminders and a short grace period.">
+  <p class="eyebrow">METHOD · 4 OF 5</p>
+  <h2>“Done” is not the model’s call. Code checks it at three points.</h2>
+
+  <div class="gate" data-s="1" style="left:96px">
+    <div class="when">BEFORE WORK GOES OUT</div><h3>Coverage check</h3>
+    <div class="body">
+      <div class="line"><span class="tag ok">owned</span>800-word report</div>
+      <div class="line"><span class="tag ok">owned</span>sources and dates</div>
+      <div class="line"><span class="tag hold">no owner</span>student quotes</div>
+      <div class="line" style="margin-top:6px"><span class="tag hold">HELD BACK ONCE</span>lead re-sends with an owner</div>
+    </div>
+    <div class="cap2">Every requirement needs a task that helps meet it.</div>
+  </div>
+  <div class="chev" data-s="2" data-nomove style="left:646px">›</div>
+  <div class="gate" data-s="2" style="left:686px">
+    <div class="when">WHILE WORKING</div><h3>Review gate</h3>
+    <div class="body">
+      <div class="line"><span class="tag mut">reviewer</span><span class="tag no">FAIL · 3 items</span></div>
+      <div class="line">one revision fixes all items</div>
+      <div class="line"><span class="tag mut">reviewer</span><span class="tag ok">PASS</span></div>
+    </div>
+    <div class="cap2">Nothing goes out unreviewed. At most 3 rounds per file.</div>
+  </div>
+  <div class="chev" data-s="3" data-nomove style="left:1236px">›</div>
+  <div class="gate" data-s="3" style="left:1276px">
+    <div class="when">BEFORE HANDING IN</div><h3>Requirements report</h3>
+    <div class="body">
+      <div class="line"><span class="tag ok">met</span>for students and faculty</div>
+      <div class="line"><span class="tag ok">met</span>sources with dates</div>
+      <div class="line"><span class="tag no">not met</span>1,569 words, wanted 900–1,200</div>
+    </div>
+    <div class="cap2">Not met goes into the reply the human reads.</div>
+  </div>
+
+  <p class="cap abs" data-s="4" style="left:96px;top:640px;font-size:24px;font-weight:700;letter-spacing:1.5px;color:#7A8594">TIME BUDGET · 270 s PER REQUEST</p>
+  <p class="abs" data-s="4" style="left:1424px;top:640px;width:400px;text-align:right;font-size:24px;font-weight:700;color:#7A8594">315 s hard cut-off</p>
+  <div class="bar" data-s="4" data-nomove>
+    <div style="width:740px;background:var(--tealbg);color:#14504E">Build, review</div>
+    <div style="width:301px;background:var(--amberbg);color:#6B3F05">Stop researching</div>
+    <div style="width:439px;background:var(--amber);color:#fff">No new work · wrap up</div>
+    <div style="width:247px;background:var(--navy);color:#fff">Grace</div>
+  </div>
+  <div class="mark" id="mark" data-s="4" data-nomove></div>
+  <div class="tick" data-s="4" data-nomove style="left:96px">0 s</div>
+  <div class="tick" data-s="4" data-nomove style="left:836px">135 s · half-time reminder</div>
+  <div class="tick" data-s="4" data-nomove style="left:1137px;width:300px">190 s · last delegation</div>
+  <div class="tick" data-s="4" data-nomove style="left:1576px;width:220px">270 s · budget ends</div>
+  <div class="abs" data-s="4" style="left:96px;top:880px;width:1728px;height:56px;border-radius:14px;background:var(--amberbg);border:2px solid var(--amber);display:flex;align-items:center;padding:0 24px;font-size:25px;color:#4A3410">A failed review tops the time up to 120 s (twice), so a run can pass 270 s.</div>
+</section>
+
+<!-- ============ METHOD 5: delivery ============ -->
+<section class="screen" id="s-deliver" data-part="method" data-steps="3"
+  data-notes="[~15 s] ▶1 The Router copies only the listed files into one output folder. ▶2 The human gets the reply and the files. ▶3 And the reply says what was not met, here the student quotes and the word count.">
+  <p class="eyebrow">METHOD · 5 OF 5</p>
+  <h2>Files, plus an honest list of what is missing</h2>
+
+  <div class="win lead" id="d-lead" style="left:96px;top:190px;width:520px;height:330px">
+    <header><span class="dot run"></span>chief_editor<em><span class="badge t">LEAD</span></em></header>
+    <div class="col" style="padding-top:16px"><small>THE LEAD LISTS THE DELIVERABLES</small>
+      <div class="row"><span class="ico"></span><b>report.md</b></div>
+      <div class="row"><span class="ico"></span><b>social_pack.md</b></div>
+      <div class="row"><span class="ico"></span><b>editorial_note.md</b></div>
+      <div class="row" style="color:#7A8594"><span class="ico" style="background:#CBD2D9"></span>count.py (helper, not listed)</div>
+    </div>
+  </div>
+  <div class="win" id="d-out" style="left:740px;top:190px;width:440px;height:330px">
+    <header><span class="dot"></span>output/R1/<em>copied by the Router</em></header>
+    <div class="col" style="padding-top:16px"><small>DELIVERED FILES</small>
+      <div class="row" data-s="1" data-nomove style="--d:1.4s"><span class="ico"></span><b>report.md</b><span class="sz">9.8 KB</span></div>
+      <div class="row" data-s="1" data-nomove style="--d:1.5s"><span class="ico"></span><b>social_pack.md</b><span class="sz">2.3 KB</span></div>
+      <div class="row" data-s="1" data-nomove style="--d:1.6s"><span class="ico"></span><b>editorial_note.md</b><span class="sz">1.9 KB</span></div>
+    </div>
+  </div>
+  <div class="win" id="d-human" style="left:1300px;top:190px;width:524px;height:330px">
+    <header><span class="dot"></span>Human</header>
+    <div class="col" style="padding-top:16px"><small>RECEIVES</small>
+      <div class="row" data-s="2" data-nomove style="--d:1.4s"><span class="ico in"></span><b>final reply</b></div>
+      <div class="row" data-s="2" data-nomove style="--d:1.5s"><span class="ico"></span><b>3 files</b></div>
+    </div>
+  </div>
+
+  <div class="card" data-s="2" style="left:96px;top:560px;width:1728px;height:400px;--d:1.4s">
+    <p style="margin:0;font-size:22px;font-weight:700;letter-spacing:1.5px;color:#7A8594">FINAL REPLY TO THE HUMAN</p>
+    <p style="margin:8px 0 0;font-size:28px;color:var(--ink)">Delivered the report, a social pack and a handover note. Sources and dates are in the files.</p>
+    <div data-s="3" style="margin-top:24px;background:var(--amberbg);border:2px solid var(--amber);border-radius:16px;padding:18px 24px">
+      <p style="margin:0;font-size:24px;font-weight:700;letter-spacing:1px;color:#7A4A06">REQUIREMENTS NOT MET OR NOT VERIFIED</p>
+      <div class="line" style="margin-top:12px;font-size:27px"><span class="tag no">not met</span>Student quotes: no verified student quote was obtained.</div>
+      <div class="line" style="margin-top:8px;font-size:27px"><span class="tag no">not met</span>Length 900–1,200 words: counted 1,569 with a script.</div>
+    </div>
+    <div class="abs" data-s="3" style="left:24px;bottom:24px;height:64px;padding:0 32px;border-radius:32px;background:var(--navy);color:#fff;display:flex;align-items:center;font-size:29px;font-weight:700">The system says what it did not manage.</div>
+  </div>
+</section>
+
+<!-- ============ MID-TEST 1: the journey ============ -->
+<section class="screen" id="s-journey" data-part="mid" data-steps="3"
+  data-notes="[~30 s] We ran about sixteen rounds, and each big jump has one design choice behind it. ▶1 Higher step limits and a forced wrap-up made requests finish; parallel research cut the time from 1,500 seconds to 200. ▶2 Requirements and batch review gave six out of six; the fast setup scored higher in half the time. ▶3 File handling and a repeat guard stopped lost files and wasted calls. Single runs, so read them as direction.">
+  <p class="eyebrow">MID-TEST · THE JOURNEY</p>
+  <h2>Each leap in the results maps to one design choice</h2>
+
+  <div class="sbox" style="left:96px;top:190px;width:804px;height:96px">Time budget · 270 s<small>fast configuration: 14 searches per task</small></div>
+  <div class="num" data-s="2" data-nomove style="left:844px;top:166px">4</div>
+
+  <div class="sbox" style="left:96px;top:330px;width:250px;height:300px;border-color:var(--teal)">Lead<small>30–40 steps · wrap-up warning</small></div>
+  <div class="num" data-s="1" data-nomove style="left:300px;top:306px">1</div>
+
+  <div class="abs" style="left:396px;top:330px;width:170px;height:300px;border-radius:16px;background:var(--navy);color:#fff;text-align:center;padding-top:110px;font-size:30px;font-weight:700">Router<div style="font-size:21px;font-weight:400;color:#C9D3E0;margin-top:6px">jobs run together</div></div>
+  <div class="num" data-s="1" data-nomove style="left:520px;top:306px">2</div>
+
+  <div class="sbox" style="left:616px;top:330px;width:284px;height:92px">Member<small>private workspace · files</small></div>
+  <div class="sbox" style="left:616px;top:436px;width:284px;height:92px">Member<small>private workspace · files</small></div>
+  <div class="sbox" style="left:616px;top:542px;width:284px;height:88px">Member<small>private workspace · files</small></div>
+  <div class="num" data-s="3" data-nomove style="left:854px;top:306px">5</div>
+
+  <div class="sbox" style="left:96px;top:674px;width:804px;height:96px">Gates<small>coverage check · review · requirements report</small></div>
+  <div class="num" data-s="2" data-nomove style="left:844px;top:650px">3</div>
+
+  <div class="sbox" style="left:96px;top:814px;width:804px;height:96px">Repeat guard<small>refuses an identical call that keeps giving the same answer</small></div>
+  <div class="num" data-s="3" data-nomove style="left:844px;top:790px">6</div>
+
+  <div class="jr" data-s="1" style="top:190px"><div class="num">1</div><div class="t">Higher step limits, forced wrap-up</div><div class="d">worker 12 → 30 steps, lead 24 → 40; warned with 3 steps left</div><div class="m"><b>0/2 → 2/2</b><span>requests completed</span></div></div>
+  <div class="jr" data-s="1" style="top:320px"><div class="num">2</div><div class="t">Parallel research</div><div class="d">research jobs run at the same time; searches cached</div><div class="m"><b>1558 → ~200 s</b><span>per request (scenario 3)</span></div></div>
+  <div class="jr" data-s="2" style="top:450px"><div class="num">3</div><div class="t">Requirements and batch review</div><div class="d">lead reports each requirement; max 3 review rounds</div><div class="m"><b>2/4 → 6/6</b><span>requests completed</span></div></div>
+  <div class="jr" data-s="2" style="top:580px"><div class="num">4</div><div class="t">Fast configuration</div><div class="d">270 s budget became the default</div><div class="m"><b>7.17 vs 6.17</b><span>mean score; 32 vs 70 min</span></div></div>
+  <div class="jr" data-s="3" style="top:710px"><div class="num">5</div><div class="t">Safe file handling</div><div class="d">cut-off writes continue; code copied back</div><div class="m"><b>5/6 → 6/6</b><span>requests; dashboard 1 → 7 points</span></div></div>
+  <div class="jr" data-s="3" style="top:840px"><div class="num">6</div><div class="t">Repeat guard</div><div class="d">identical calls refused from the third time</div><div class="m"><b>50 → 5</b><span>repeated calls actually run</span></div></div>
+</section>
+
+<!-- ============ MID-TEST 2: final results ============ -->
+<section class="screen" id="s-results" data-part="mid" data-steps="3"
+  data-notes="[~30 s] ▶1 Our final mid-test run: all six requests finished, mean score 7.67 out of ten, about 4.8 minutes per request. ▶2 Teal is this run, grey is the average of earlier runs. ▶3 The newsroom is our weak spot: it misses hard targets like word counts. A coverage check before delegation gave six out of six against five out of six, one run each, so it is a direction, not a proof.">
+  <p class="eyebrow">MID-TEST · FINAL RESULTS</p>
+  <h2>All six requests were completed in the final run</h2>
+
+  <div class="kpi" data-s="1" style="top:190px"><div class="big">6/6</div><div class="lbl">requests completed, 32 of 34 sub-tasks</div></div>
+  <div class="kpi" data-s="1" style="top:410px;--d:.15s"><div class="big">7.67</div><div class="lbl">mean score out of 10, graded by a model</div></div>
+  <div class="kpi" data-s="1" style="top:630px;--d:.3s"><div class="big">287 s</div><div class="lbl">mean time per request, 270 s budget</div></div>
+
+  <div class="card" data-s="2" style="left:680px;top:190px;width:1144px;height:640px">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h3>Mean score by scenario</h3><span class="badge t">coverage check on</span></div>
+    <div style="display:flex;gap:30px;margin-top:10px;font-size:24px;color:var(--soft)">
+      <span><i style="display:inline-block;width:24px;height:24px;border-radius:6px;background:var(--teal);vertical-align:-4px;margin-right:8px"></i>Final run</span>
+      <span><i style="display:inline-block;width:24px;height:24px;border-radius:6px;background:#8A94A3;vertical-align:-4px;margin-right:8px"></i>Earlier: mean of 6 runs, rounds 12 to 17</span>
+    </div>
+    <div style="height:380px;display:flex;align-items:flex-end;justify-content:space-around;border-bottom:3px solid var(--navy);margin-top:18px">
+      <div style="display:flex;align-items:flex-end;gap:14px">
+        <div><div class="vval">9.0</div><div class="vbar" style="height:292px;background:var(--teal)"></div></div>
+        <div><div class="vval">6.7</div><div class="vbar" style="height:216px;background:#8A94A3"></div></div></div>
+      <div style="display:flex;align-items:flex-end;gap:14px">
+        <div><div class="vval">6.0</div><div class="vbar" style="height:195px;background:var(--teal)"></div></div>
+        <div><div class="vval">6.3</div><div class="vbar" style="height:205px;background:#8A94A3"></div></div></div>
+      <div style="display:flex;align-items:flex-end;gap:14px">
+        <div><div class="vval">8.0</div><div class="vbar" style="height:260px;background:var(--teal)"></div></div>
+        <div><div class="vval">7.8</div><div class="vbar" style="height:251px;background:#8A94A3"></div></div></div>
+    </div>
+    <div style="display:flex;justify-content:space-around;margin-top:12px;font-size:26px;color:var(--soft)"><span style="width:300px;text-align:center">Software engineering</span><span style="width:300px;text-align:center">Newsroom</span><span style="width:300px;text-align:center">Securities fund</span></div>
+  </div>
+
+  <div class="abs" data-s="3" style="left:96px;top:846px;width:1728px;height:104px;border-radius:20px;background:var(--amberbg);border:2px solid var(--amber);padding:14px 28px;display:flex;align-items:center;font-size:27px;line-height:1.3;color:#4A3410">The newsroom misses hard targets such as word counts (8 of 12 requests missed a requirement). A coverage check before delegation: 6/6 vs 5/6 side by side, one run each. A direction, not a proof.</div>
+</section>
+
+<!-- ============ IN-CLASS ============ -->
+<section class="screen" id="s-class" data-part="class" data-steps="1"
+  data-notes="[~60 s] Now the in-class test. The team started on this task a few minutes ago, so this is live. The button opens our workspace in a new tab. Point out who the lead is, what it handed out, what each member is doing right now, and the clock. That is the picture from the method screens, happening for real. If it has not finished, show what exists so far, and say the final files appear under Results when it ends. Then come back here for the reflection.">
+  <p class="eyebrow">IN-CLASS TEST · LIVE</p>
+  <h2>The run is in progress: open the workspace</h2>
+
+  <div class="abs" style="left:96px;top:230px;width:820px">
+    <a class="btn" id="open" href="http://127.0.0.1:8765/" target="_blank" rel="noopener">Open workspace ↗</a>
+    <div style="margin-top:34px;display:flex;align-items:center;gap:16px;font-size:30px"><span class="led" id="led"></span><span id="led-text">Checking the server…</span></div>
+    <p style="margin-top:34px;font-size:24px;color:var(--soft)">If the light is red, start the server in a terminal:</p>
+    <div style="margin-top:12px;display:flex;align-items:center;gap:14px;flex-wrap:wrap"><code class="cmd" id="cmd">.venv/bin/python -m mas.web</code><button id="copy" style="font:inherit;font-size:24px;font-weight:700;padding:12px 22px;border-radius:12px;border:2px solid var(--line);background:#fff;cursor:pointer">Copy</button></div>
+    <p style="margin-top:22px;font-size:24px;color:var(--soft)">Opens in a new tab: http://127.0.0.1:8765/</p>
+  </div>
+
+  <div class="card" style="left:1040px;top:230px;width:784px;height:700px">
+    <h3>When the task arrives</h3>
+    <div style="margin-top:10px">
+      <div class="check"><i></i>Custom scenario: paste the role file and the task</div>
+      <div class="check"><i></i>Fast preset, automatic replies</div>
+      <div class="check"><i></i>Start run, then come back to this page</div>
+    </div>
+    <h3 style="margin-top:30px">While it runs, point out</h3>
+    <div style="margin-top:10px;font-size:27px;line-height:1.5;color:var(--ink)">
+      <div>· who the lead is and what it handed out</div>
+      <div>· what each member is doing now</div>
+      <div>· the clock: how long the run has taken</div>
+    </div>
+    <p style="margin-top:22px;font-size:24px;color:#8F2D1E;line-height:1.35">Not finished? Show what exists so far; the final files appear under Results. Do not restart the server during the run.</p>
+  </div>
+</section>
+
+<!-- ============ REFLECTION ============ -->
+<section class="screen" id="s-reflect" data-part="reflect" data-steps="3"
+  data-notes="[~60 s] Three takeaways. ▶1 What worked: agents decide and plain code enforces. Parallel research made a request about eight times faster, and the system reports what it did not manage. ▶2 What did not: review loops never converge, word counts keep overshooting, and the time budget is soft. ▶3 What we learned: measure all scenarios before fixing, because review time looked guilty but was not. Check the requirements when work is handed out. And repeat each experiment several times, since the same task scored 8 once and 1 the next time. Thank you.">
+  <p class="eyebrow">REFLECTION</p>
+  <h2>Check early, measure widely, repeat the experiments</h2>
+
+  <div class="rcard" data-s="1" style="left:96px;border-top:12px solid var(--teal)">
+    <h3 style="color:var(--teal)">What worked</h3>
+    <div class="stat"><b style="color:var(--teal)">≈ 8×</b><span>faster per request once research jobs run in parallel (scenario 3)</span></div>
+    <ul><li>Agents decide; plain code enforces the rules</li><li>Research jobs run in parallel, not one after another</li><li>Unmet requirements are reported to the human, not hidden</li></ul>
+  </div>
+  <div class="rcard" data-s="2" style="left:686px;border-top:12px solid var(--amber)">
+    <h3 style="color:#9A5B07">What did not</h3>
+    <div class="stat"><b style="color:#B86E0B">8 of 12</b><span>newsroom requests missed at least one requirement</span></div>
+    <ul><li>Review loops never converge: every round finds new points and uses up the time</li><li>Word-count targets are exceeded as drafts grow during review</li><li>The 270 s budget is soft: some runs took 350 s</li></ul>
+  </div>
+  <div class="rcard" data-s="3" style="left:1276px;border-top:12px solid var(--navy)">
+    <h3>What we learned</h3>
+    <div class="stat"><b>8 → 1</b><span>same task scored 8 in one run and 1 in another: one run is noise</span></div>
+    <ul><li>Measure all scenarios before fixing: review time was not the newsroom’s problem</li><li>Check the requirements when work is handed out, not only at the end</li><li>Repeat each experiment several times before drawing conclusions</li></ul>
+  </div>
+</section>
+
+<div id="notes"><small>SPEAKER NOTES</small><div id="notes-text"></div></div>
+</div>
+</div>
+
+<script>
+(() => {
+  "use strict";
+  const stage = document.getElementById("stage");
+  const screens = [...document.querySelectorAll(".screen")];
+  const PARTS = { method: 120, mid: 60, class: 60, reflect: 60 };
+  let cur = 0, step = 0, scale = 1, started = 0, timerOn = false, partStart = {}, spent = {};
+
+  function fit() {
+    scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    stage.style.transform = "scale(" + scale + ")";
+  }
+  addEventListener("resize", fit); fit();
+
+  // ----- flights: an envelope or a file travels from one element to another through a third -----
+  function pt(el) {
+    const r = el.getBoundingClientRect(), s = stage.getBoundingClientRect();
+    return { x: (r.left + r.width / 2 - s.left) / scale, y: (r.top + r.height / 2 - s.top) / scale };
+  }
+  function fly(from, via, to, text, kind, delay) {
+    const a = document.querySelector(from), t = document.querySelector(to), v = via && document.querySelector(via);
+    if (!a || !t) return;
+    const p = pt(a), q = pt(t), m = v ? pt(v) : null;
+    const el = document.createElement("div");
+    el.className = "flyer " + kind; el.textContent = text; stage.appendChild(el);
+    const at = (c, o) => ({ transform: "translate(" + c.x + "px," + c.y + "px) translate(-50%,-50%)", opacity: o });
+    const frames = m ? [at(p, 0), at(p, 1), at(m, 1), at(q, 1), at(q, 0)] : [at(p, 0), at(p, 1), at(q, 1), at(q, 0)];
+    el.animate(frames, { duration: 1500, delay: delay || 0, easing: "ease-in-out", fill: "both" }).finished.then(() => el.remove());
+  }
+  const FLIGHTS = {
+    "s-lead": {},
+    "s-deliver": {
+      1: () => {
+        fly("#d-lead", null, "#d-out", "report.md", "file", 0);
+        fly("#d-lead", null, "#d-out", "social_pack.md", "file", 250);
+        fly("#d-lead", null, "#d-out", "editorial_note.md", "file", 500);
+      },
+      2: () => fly("#d-out", null, "#d-human", "reply + 3 files", "env", 0)
+    },
+    "s-delegate": {
+      1: () => {
+        fly("#w-lead", "#router", "#w-rep", "A · research policy", "env", 0);
+        fly("#w-lead", "#router", "#w-rep", "B · research tools", "env", 250);
+      },
+      3: () => {
+        fly("#w-rep", "#router", "#w-lead", "job1_brief.md", "file", 0);
+        fly("#w-rep", "#router", "#w-lead", "job2_brief.md", "file", 250);
+      },
+      4: () => {
+        fly("#w-lead", "#router", "#w-chk", "report.md", "file", 0);
+        fly("#w-lead", "#router", "#w-edit", "report.md", "file", 250);
+      }
+    }
+  };
+
+  // ----- per-screen state that is not just show/hide -----
+  function extras(id, st, animate) {
+    if (id === "s-lead") {
+      const lead = st >= 3;
+      document.getElementById("m-chief").classList.toggle("lead", lead);
+      for (const x of ["m-rep", "m-chk", "m-edit"]) document.getElementById(x).classList.toggle("dim", lead);
+      document.getElementById("leadtag").innerHTML = lead ? '<span class="badge t">LEAD</span>' : "";
+      document.querySelector("#m-chief .dot").classList.toggle("run", lead);
+    }
+    if (id === "s-gates") {
+      const m = document.getElementById("mark");
+      if (st >= 4) { if (!animate) m.style.transition = "none"; m.classList.add("go"); if (!animate) { void m.offsetWidth; m.style.transition = ""; } }
+      else m.classList.remove("go");
+    }
+    if (id === "s-delegate") {
+      const set = (id2, run, text) => { const d = document.getElementById(id2); if (d) d.classList.toggle("run", run); };
+      const d = animate ? 700 : 0;
+      setTimeout(() => {
+        document.getElementById("d-rep").classList.toggle("run", st >= 1 && st < 3);
+        document.getElementById("rep-jobs").textContent = st < 1 ? "idle" : st < 3 ? "2 jobs in parallel" : "idle";
+        document.querySelectorAll("#w-rep .now").forEach(e => { e.style.opacity = st >= 3 ? ".3" : ""; });
+        document.getElementById("d-chk").classList.toggle("run", st >= 4);
+        document.getElementById("chk-st").textContent = st >= 4 ? "working" : "idle";
+        document.getElementById("d-edit").classList.toggle("run", st >= 4);
+        document.getElementById("edit-st").textContent = st >= 4 ? "working" : "idle";
+      }, d);
+    }
+  }
+
+  function render(animate) {
+    const s = screens[cur];
+    if (!animate) stage.classList.add("instant");
+    screens.forEach((x, i) => x.classList.toggle("active", i === cur));
+    s.querySelectorAll("[data-s]").forEach(e => e.classList.toggle("on", Number(e.dataset.s) <= step));
+    extras(s.id, step, animate);
+    if (!animate) { void stage.offsetWidth; stage.classList.remove("instant"); }
+    document.getElementById("notes-text").textContent = s.dataset.notes || "";
+    try { history.replaceState(null, "", "#" + (cur + 1) + "." + step); localStorage.setItem("mas-pres-pos", (cur + 1) + "." + step); } catch (e) { /* no storage: the page just starts over */ }
+    document.getElementById("count").textContent = (cur + 1) + " / " + screens.length + " · step " + step + " / " + s.dataset.steps;
+    document.getElementById("tag").style.display = s.dataset.part === "method" ? "" : "none";   // only the method drawings are schematic
+    progress();
+  }
+
+  function progress() {
+    const part = screens[cur].dataset.part, key = { method: "method", mid: "mid", class: "class", reflect: "reflect" }[part];
+    document.querySelectorAll(".part").forEach(p => {
+      const mine = screens.filter(x => x.dataset.part === p.dataset.part);
+      p.classList.toggle("on", p.dataset.part === part);
+      p.classList.toggle("soon", !mine.length);
+      const done = mine.filter(x => screens.indexOf(x) < cur).length + (p.dataset.part === part ? 0.5 : 0);
+      p.querySelector("u").style.width = mine.length ? Math.min(100, Math.round(done / mine.length * 100)) + "%" : "0";
+    });
+  }
+
+  function next() {
+    const s = screens[cur];
+    if (!started) { started = Date.now(); }
+    if (step < Number(s.dataset.steps)) {
+      step++; render(true);
+      const f = FLIGHTS[s.id] && FLIGHTS[s.id][step]; if (f) f();
+    } else if (cur < screens.length - 1) { cur++; step = 0; render(true); }
+  }
+  function prev() {
+    if (step > 0) { step--; render(false); }
+    else if (cur > 0) { cur--; step = Number(screens[cur].dataset.steps); render(false); }
+  }
+
+  // ----- timer: time spent in each part against its budget -----
+  const timer = document.getElementById("timer");
+  setInterval(() => {
+    const part = screens[cur].dataset.part;
+    const now = Date.now();
+    if (started) { spent[part] = (spent[part] || 0) + 0; }
+    if (!started) return;
+    if (partStart.part !== part) { partStart = { part, at: now, before: spent[part] || 0 }; }
+    const used = partStart.before + (now - partStart.at) / 1000;
+    spent[part] = used;
+    const budget = PARTS[part] || 60;
+    const fmt = (n) => Math.floor(n / 60) + ":" + String(Math.floor(n % 60)).padStart(2, "0");
+    const names = { method: "Method", mid: "Mid-test", class: "In-class", reflect: "Reflection" };
+    timer.textContent = names[part] + " " + fmt(used) + " / " + fmt(budget);
+    timer.className = used > budget ? "over" : used > budget * 0.85 ? "warn" : "";
+    timer.hidden = !timerOn;
+  }, 250);
+
+  addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") { e.preventDefault(); next(); }
+    else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); prev(); }
+    else if (e.key === "n" || e.key === "N") document.getElementById("notes").classList.toggle("on");
+    else if (e.key === "t" || e.key === "T") { timerOn = !timerOn; timer.hidden = !timerOn || !started; }
+    else if (e.key === "f" || e.key === "F") { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); }
+    else if (e.key === "Home") { cur = 0; step = 0; render(false); }
+  });
+  // ----- in-class screen: is the local workspace server up? -----
+  function ping() {
+    const led = document.getElementById("led"), txt = document.getElementById("led-text");
+    fetch("http://127.0.0.1:8765/", { mode: "no-cors", cache: "no-store" })
+      .then(() => { led.className = "led up"; txt.textContent = "Workspace server is running"; })
+      .catch(() => { led.className = "led down"; txt.textContent = "Workspace server is not running"; });
+  }
+  ping(); setInterval(ping, 3000);
+  document.getElementById("copy").addEventListener("click", () => {
+    const text = document.getElementById("cmd").textContent;
+    const done = () => { document.getElementById("copy").textContent = "Copied"; setTimeout(() => document.getElementById("copy").textContent = "Copy", 1500); };
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(done, () => {});
+  });
+  // a link like index.html#4.2 opens screen 4 at step 2 (handy for rehearsing one screen)
+  function fromHash() {
+    let saved = ""; try { saved = "#" + (localStorage.getItem("mas-pres-pos") || ""); } catch (e) { /* ignore */ }
+    const m = /^#(\d+)(?:\.(\d+))?$/.exec(location.hash) || /^#(\d+)(?:\.(\d+))?$/.exec(saved);   // the link wins, else where we were
+    if (!m) return;
+    cur = Math.min(screens.length, Math.max(1, Number(m[1]))) - 1;
+    step = Math.min(Number(screens[cur].dataset.steps), Number(m[2] || 0));
+    render(false);
+  }
+  addEventListener("hashchange", fromHash);
+  fromHash();
+  render(false);
+})();
+</script>
+</body>
+</html>
