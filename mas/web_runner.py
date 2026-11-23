@@ -5,6 +5,7 @@ import asyncio
 import logging
 import re
 import threading
+import time
 import uuid
 from concurrent.futures import Future
 from dataclasses import replace
@@ -116,6 +117,8 @@ class _Run(HumanIO):
         self.lock = threading.Lock()
         self.status = "running"
         self.error = ""
+        self.started = time.time()          # the monitor shows each event as the time elapsed since this
+        self.finished: float | None = None   # and stops the clock here
         self.events: list[dict] = []
         self.results: list[dict] = []
         self.pending: dict[str, tuple[HitlRequest, Future[str]]] = {}
@@ -139,6 +142,7 @@ class _Run(HumanIO):
         with self.lock:
             self.status = status
             self.error = error
+            self.finished = time.time()
 
     async def _execute(self, llm: LLMClient, settings: Settings) -> None:
         with self.lock:
@@ -255,7 +259,8 @@ class _Run(HumanIO):
                           "text": req.question, "options": list(req.options)}
                          for req, future in self.pending.values() if not future.done()]
             return {"id": self.id, "status": self.status, "interaction": self.config["interaction"], "events": list(self.events),
-                    "questions": questions, "results": list(self.results), "error": self.error}
+                    "questions": questions, "results": list(self.results), "error": self.error,
+                    "started": self.started, "finished": self.finished}
 
 
 class RunManager:

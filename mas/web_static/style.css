@@ -94,6 +94,8 @@ textarea::placeholder { color: #68766e; }
 .text-button.muted { color: var(--muted); font-size: .81rem; }
 .monitor { min-height: 586px; display: flex; flex-direction: column; position: sticky; top: 14px; }
 .status { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding: 4px 10px; border: 1px solid #dde3de; background: #f5f7f5; border-radius: 30px; color: #526258; font-size: .81rem; white-space: nowrap; }
+.elapsed { margin-left: auto; color: var(--muted); font-size: .88rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.elapsed:not([hidden]) + .status { margin-left: 0; }
 .status::before { content: ""; width: 6px; height: 6px; background: currentColor; border-radius: 50%; }
 .status[data-state="running"], .status[data-state="completed"] { color: #286147; background: #edf5eb; border-color: #d0e3d2; }
 .status[data-state="waiting"] { color: #885616; background: #fff5df; border-color: #f1dbaa; }
