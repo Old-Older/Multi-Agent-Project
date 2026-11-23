@@ -50,23 +50,25 @@ label, .question h3 { display: block; font-size: .91rem; font-weight: 650; }
 .select-wrap { position: relative; margin-top: 9px; }
 .select-wrap::after { content: ""; position: absolute; width: 6px; height: 6px; border-right: 1.5px solid #596960; border-bottom: 1.5px solid #596960; transform: rotate(45deg); top: 15px; right: 16px; pointer-events: none; }
 select { appearance: none; width: 100%; border: 1px solid #cdd7d1; border-radius: 7px; background: white; color: inherit; padding: 10px 34px 10px 12px; font-size: .92rem; }
-.model-settings { margin-block: 14px 2px; border: 1px solid var(--line); border-radius: 8px; background: #f8faf8; }
-.model-settings summary { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 3px 8px; padding: 11px 30px 11px 12px; cursor: pointer; font-size: .9rem; font-weight: 650; list-style: none; }
-.model-settings summary::-webkit-details-marker { display: none; }
-.model-settings summary::after { content: ""; position: absolute; right: 13px; width: 6px; height: 6px; border-bottom: 1.5px solid currentColor; border-right: 1.5px solid currentColor; transform: rotate(45deg); }
-.model-settings[open] summary::after { transform: rotate(225deg); }
-.model-settings small { color: var(--muted); font-size: .8rem; font-weight: 400; overflow-wrap: anywhere; }
-.model-settings fieldset { margin: 0; padding: 12px; min-width: 0; border: 0; border-top: 1px solid var(--line); }
+.model-settings { margin-bottom: 18px; padding: 14px; border: 1px solid var(--line); border-radius: 8px; background: #f8faf8; }
+.model-settings h3 { font-size: 1rem; }
+#config-summary { margin: 4px 0 14px; color: var(--muted); font-size: .85rem; overflow-wrap: anywhere; }
+.model-settings fieldset { margin: 0; padding: 0; min-width: 0; border: 0; }
 .settings-grid, .limits { display: grid; gap: 12px 9px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .settings-grid .wide { grid-column: 1 / -1; }
-.model-settings label { font-size: .85rem; }
-.model-settings input { display: block; width: 100%; min-width: 0; padding: 8px; border: 1px solid #cdd7d1; border-radius: 6px; background: white; color: inherit; font: inherit; font-size: .9rem; }
-.model-settings input, .model-settings .select-wrap { margin-top: 6px; }
+.model-settings label, .choice-group legend { font-size: .9rem; }
+.choice-group legend { padding: 0; font-weight: 650; }
+.choices { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.choices label { flex: 1 0 auto; display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 36px; padding: 4px 8px; border: 1px solid #cdd7d1; border-radius: 6px; background: white; cursor: pointer; font-weight: 500; }
+.choices label:has(:checked) { background: #e4f1e9; border-color: #568475; color: #194e40; }
+.choices input { margin: 0; accent-color: var(--forest); }
+.model-settings input:not([type="radio"]) { display: block; width: 100%; min-width: 0; padding: 8px; border: 1px solid #cdd7d1; border-radius: 6px; background: white; color: inherit; font: inherit; font-size: .9rem; }
+.model-settings input:not([type="radio"]), .model-settings .select-wrap { margin-top: 6px; }
 .model-settings select { padding-left: 8px; }
 .limits { margin-top: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .limits input:read-only { color: #4f6257; border-color: transparent; background: #eaf0eb; }
 .setting-hint { font-size: .8rem; color: var(--muted); line-height: 1.6; margin-top: 9px; }
-.model-settings input:focus-visible, .model-settings summary:focus-visible { outline: 3px solid #46887a; outline-offset: 2px; }
+.model-settings input:focus-visible { outline: 3px solid #46887a; outline-offset: 2px; }
 .field-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 18px 0 8px; }
 .text-button { border: 0; background: none; padding: 3px 0 3px 6px; font-size: .87rem; color: var(--forest); }
 .text-button:hover:not(:disabled) { text-decoration: underline; }

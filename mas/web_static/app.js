@@ -25,12 +25,21 @@ let configMenu = null;
 
 const limitFields = {budget: "budget", research: "research", min_use: "min-use"};
 
+function choice(group) {
+  return el(group).querySelector("input:checked").value;
+}
+
+function selectChoice(group, value) {
+  const input = [...el(group).querySelectorAll("input")].find((item) => item.value === value);
+  if (input) input.checked = true;
+}
+
 // Used for drafts as well as POST options. The password is added only at dispatch.
 function publicSettings() {
   if (!configMenu) return undefined;
   const options = {
     provider: el("provider").value, model: el("model-name").value.trim(),
-    key_source: el("key-source").value, preset: el("preset").value,
+    key_source: choice("key-source"), preset: choice("preset"),
   };
   if (options.preset === "custom") {
     for (const [key, id] of Object.entries(limitFields)) {
@@ -43,16 +52,24 @@ function publicSettings() {
 function updateSettingsSummary() {
   if (!configMenu) return;
   const provider = configMenu.providers[el("provider").value];
-  const custom = el("key-source").value === "custom";
-  const presetName = el("preset").selectedOptions[0]?.textContent;
+  const custom = choice("key-source") === "custom";
+  const preset = choice("preset");
+  let presetName = configMenu.presets[preset]?.name || "自定义";
+  if (preset === "environment") {
+    const defaults = configMenu.presets.environment;
+    const match = [configMenu.presets.fast, configMenu.presets.full].find((item) =>
+      Object.keys(limitFields).every((key) => item[key] === defaults[key]));
+    presetName = "环境默认 · " + (match?.name || "自定义参数");
+  }
   const keyStatus = custom ? (busy && runId ? "本次密钥" : el("api-key").value.trim() ? "本次密钥已填" : "待输入密钥")
     : provider.has_key ? "服务端密钥已配置" : "服务端密钥未配置";
-  el("config-summary").textContent = [provider.name, presetName, keyStatus].join(" · ");
+  const lockHint = busy && runId ? "。本次运行结束后可更改配置。" : "";
+  el("config-summary").textContent = [provider.name, presetName, keyStatus].join(" · ") + lockHint;
   el("custom-key-row").hidden = !custom || Boolean(busy && runId);
 }
 
 function applyPreset(values) {
-  const preset = el("preset").value;
+  const preset = choice("preset");
   for (const [key, id] of Object.entries(limitFields)) {
     const field = el(id);
     const value = values?.[key] ?? configMenu.presets[preset]?.[key];
@@ -66,8 +83,8 @@ function applyProvider(saved = {}) {
   const provider = configMenu.providers[el("provider").value];
   el("model-name").value = saved.model || provider.model;
   el("model-name").placeholder = provider.model;
-  el("server-key-option").textContent = provider.has_key ? "服务端 · 已配置" : "服务端 · 未配置";
-  el("key-source").value = saved.key_source || (provider.has_key ? "server" : "custom");
+  el("server-key-option").textContent = provider.has_key ? "本机 Key（已配置）" : "本机 Key（未配置）";
+  selectChoice("key-source", saved.key_source || (provider.has_key ? "server" : "custom"));
   el("api-key").value = "";
   updateSettingsSummary();
 }
@@ -77,35 +94,22 @@ function restoreSettings(saved = {}) {
   saved ||= {};
   const defaultProvider = Object.hasOwn(configMenu.providers, configMenu.provider) ? configMenu.provider : "hkgai";
   el("provider").value = Object.hasOwn(configMenu.providers, saved.provider) ? saved.provider : defaultProvider;
-  el("preset").value = saved.preset === "custom" || Object.hasOwn(configMenu.presets, saved.preset)
-    ? saved.preset : configMenu.preset;
+  selectChoice("preset", saved.preset === "custom" || Object.hasOwn(configMenu.presets, saved.preset)
+    ? saved.preset : configMenu.preset);
   applyProvider(saved);
-  applyPreset(el("preset").value === "custom" ? {...configMenu.presets.environment, ...saved} : saved);
-  if (el("key-source").value === "custom" && !busy) el("model-settings").open = true;
+  applyPreset(choice("preset") === "custom" ? {...configMenu.presets.environment, ...saved} : saved);
 }
 
 async function loadSettings(saved) {
   const menu = await api("/api/config");
   el("provider").replaceChildren();
   for (const [id, provider] of Object.entries(menu.providers)) el("provider").add(new Option(provider.name, id));
-  el("preset").replaceChildren();
-  for (const [id, preset] of Object.entries(menu.presets)) {
-    let label = preset.name;
-    if (id === "environment") {
-      const match = [menu.presets.fast, menu.presets.full].find((item) =>
-        Object.keys(limitFields).every((key) => item[key] === preset[key]));
-      label += match ? " · " + match.name : " · 自定义参数";
-    }
-    el("preset").add(new Option(label, id));
-  }
-  el("preset").add(new Option("自定义", "custom"));
   configMenu = menu;
   restoreSettings(saved);
   el("config-fields").disabled = busy;
 }
 
 function settingsError(id, message) {
-  el("model-settings").open = true;
   el(id).focus();
   throw new Error(message);
 }
@@ -117,7 +121,7 @@ function runSettings() {
     options.api_key = el("api-key").value.trim();
     if (!options.api_key) settingsError("api-key", "请输入本次运行的 API 密钥。");
   } else if (!configMenu.providers[options.provider].has_key) {
-    settingsError("key-source", "该服务尚未配置密钥。请选择「本次输入」并填写密钥。");
+    settingsError("custom-key-choice", "该服务尚未配置密钥。请选择「输入本次 Key」并填写密钥。");
   }
   if (options.preset === "custom") {
     if (!Number.isFinite(options.budget) || options.budget < 0) settingsError("budget", "每轮时限应为大于或等于 0 的秒数。");
@@ -396,7 +400,6 @@ async function start() {
   try {
     if (!configMenu) {
       await loadSettings();
-      el("model-settings").open = true;
       notice("setup-error", "已重新读取配置，请核对模型与运行参数后启动。");
       return;
     }
@@ -482,10 +485,7 @@ async function init() {
   try { if (await resumeActive()) return; }
   catch (error) { notice("run-error", "未能恢复当前运行。" + error.message); }
   if (runId) await refresh(runId);
-  else {
-    setBusy(false);
-    if (el("key-source").value === "custom") el("model-settings").open = true;
-  }
+  else setBusy(false);
 }
 
 el("provider").addEventListener("change", () => { applyProvider(); save(); });

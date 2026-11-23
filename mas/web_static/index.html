@@ -25,17 +25,30 @@
       <section class="panel setup" aria-labelledby="config-title">
         <header class="panel-head"><span class="section-icon settings-icon" aria-hidden="true">☷</span><h2 id="config-title">运行配置</h2></header>
         <div class="config-body">
-          <label for="example">场景模板</label>
-          <div class="select-wrap"><select id="example"><option value="">自定义场景</option></select></div>
-          <details class="model-settings" id="model-settings">
-            <summary><span>模型与运行参数</span><small id="config-summary">正在读取配置</small></summary>
-            <fieldset id="config-fields" disabled>
+          <section class="model-settings" aria-labelledby="settings-heading">
+            <h3 id="settings-heading">模型与运行参数</h3>
+            <p id="config-summary">正在读取配置</p>
+            <fieldset id="config-fields" aria-labelledby="settings-heading" disabled>
               <div class="settings-grid">
                 <div><label for="provider">模型服务</label><div class="select-wrap"><select id="provider"></select></div></div>
-                <div><label for="key-source">API 密钥来源</label><div class="select-wrap"><select id="key-source"><option id="server-key-option" value="server">服务端密钥</option><option value="custom">本次输入</option></select></div></div>
+                <div><label for="model-name">模型名称</label><input id="model-name" type="text" spellcheck="false" autocomplete="off"></div>
+                <fieldset class="wide choice-group" id="key-source">
+                  <legend>API Key 来源</legend>
+                  <div class="choices">
+                    <label><input type="radio" name="key-source" value="server" checked><span id="server-key-option">使用本机 Key</span></label>
+                    <label><input id="custom-key-choice" type="radio" name="key-source" value="custom"><span>输入本次 Key</span></label>
+                  </div>
+                </fieldset>
                 <div class="wide" id="custom-key-row" hidden><label for="api-key">本次运行的 API 密钥</label><input id="api-key" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴密钥，仅用于启动本次运行"></div>
-                <div class="wide"><label for="model-name">模型名称</label><input id="model-name" type="text" spellcheck="false" autocomplete="off"></div>
-                <div class="wide"><label for="preset">执行模式</label><div class="select-wrap"><select id="preset"></select></div></div>
+                <fieldset class="wide choice-group" id="preset">
+                  <legend>执行模式</legend>
+                  <div class="choices">
+                    <label><input type="radio" name="preset" value="environment" checked><span>环境默认</span></label>
+                    <label><input type="radio" name="preset" value="fast"><span>快速</span></label>
+                    <label><input type="radio" name="preset" value="full"><span>完整</span></label>
+                    <label><input type="radio" name="preset" value="custom"><span>自定义</span></label>
+                  </div>
+                </fieldset>
               </div>
               <div class="limits">
                 <label for="budget">每轮时限（秒）<input id="budget" type="number" min="0" step="any"></label>
@@ -44,7 +57,9 @@
               </div>
               <p class="setting-hint">时限不含等待人工回复的时间。检索次数合计搜索与网页抓取。比例 0.5 表示用完一半时限后可交付。三项均可设为 0 以关闭对应限制。</p>
             </fieldset>
-          </details>
+          </section>
+          <label for="example">场景模板</label>
+          <div class="select-wrap"><select id="example"><option value="">自定义场景</option></select></div>
           <div class="field-head"><label for="roles">团队角色</label><button id="import-roles" class="text-button" type="button">导入 .md</button></div>
           <textarea id="roles" spellcheck="false" rows="7" placeholder="粘贴 01_role_initialization.md 的内容"></textarea>
           <input id="roles-file" type="file" accept=".md,.markdown,.txt,text/plain,text/markdown" hidden>
