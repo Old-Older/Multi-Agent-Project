@@ -68,7 +68,9 @@ class WebRunnerTest(unittest.TestCase):
         file = state["results"][0]["files"][0]
         path = self.manager.artifact(run_id, file["id"])
         self.assertEqual(path.read_text(), "blue")
-        self.assertTrue(path.is_relative_to(self.root / "web-runs" / run_id / "output"))
+        # Resolve both sides: the temp directory is reached through a symbolic link on macOS (/var -> /private/var) and may be
+        # an 8.3 short name on Windows, so the two spellings of one directory are compared as the same path.
+        self.assertTrue(path.resolve().is_relative_to((self.root / "web-runs" / run_id / "output").resolve()))
         with self.assertRaises(KeyError):
             self.manager.artifact(run_id, "../.env")
         self.assertIn("hitl_response", [event["kind"] for event in state["events"]])
