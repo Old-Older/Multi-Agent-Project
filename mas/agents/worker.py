@@ -6,6 +6,7 @@ this first implementation does not depend on the three-role registry.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import re
@@ -115,6 +116,8 @@ _RESEARCH_TOOLS = ("web_search", "fetch_url")
 # Calls that change nothing. Any other call that works may have changed the workspace, so the same check after it is
 # not a repeat (a test run again after a fix script is new information, even when it fails the same way).
 _READ_ONLY_TOOLS = ("read_file", "list_files")
+_WRITE_TOOLS = ("write_file", "edit_file")
+_TIMING = re.compile(r"\d+(?:\.\d+)?\s?(?:ms|s|sec|seconds)\b|\d{1,2}:\d\d:\d\d")   # what differs between two runs of the same check
 
 # What a teammate's report says when a file did not reach it or it worked on the wrong version.
 _TROUBLE = re.compile(
@@ -157,6 +160,9 @@ class _Run:
     human_qa: list[tuple[str, str]] = field(default_factory=list)      # what the human was asked and answered or added
     req_pushes: int = 0               # how often the lead was sent back to check the requirements
     req_refreshed: bool = False       # the list was extended with what the human said
+    coverage_checked: bool = False    # the lead's first delegation was checked once against the requirements
+    written: dict[str, tuple[str, int, int]] = field(default_factory=dict)   # file this task wrote -> (digest, size, step)
+    recent: list[tuple[str, str]] = field(default_factory=list)              # the latest calls run: (call, its answer)
     time_notes: set[str] = field(default_factory=set)       # the time reminders already given
     time_up_sent: bool = False
     time_up_retries: int = 0
@@ -541,12 +547,28 @@ class WorkerAgent(Agent):
                       "ok": observation.get("ok"), "seconds": round(seconds, 2), "result": short(result, 600)}
             if call.malformed:
                 record["unreadable_arguments"] = len(call.raw_arguments)
-            path = Path(self.settings.data_dir) / "tool_calls.jsonl"
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with path.open("a", encoding="utf-8") as stream:
-                stream.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+            self._append_trace(record)
         except Exception:
             log.debug("Could not record a tool call", exc_info=True)
+
+    def _append_trace(self, record: dict) -> None:
+        path = Path(self.settings.data_dir) / "tool_calls.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+
+    def _trace_gate(self, task: Task, run: _Run, uncovered: list[str], changed: bool, requirements: dict[str, str],
+                    held: str, seconds: float) -> None:
+        """The coverage check's decision, one line: which requirements no task covered, whether the list changed, and the
+        message the lead got (empty when the reply went out). Without it a hold cannot be told apart afterwards: a real gap, or
+        only a list that grew with the human's answer. Never raises."""
+        try:
+            self._append_trace({"time": time.strftime("%H:%M:%S"), "agent": self.agent_id, "root": task.root_id,
+                                "task": task.id, "step": run.steps, "tool": "coverage_gate",
+                                "arguments": {"uncovered": uncovered, "list_changed": changed, "requirements": requirements},
+                                "ok": not held, "seconds": round(seconds, 2), "result": held or "sent as it was"})
+        except Exception:
+            log.debug("Could not record the coverage check", exc_info=True)
 
     async def _run_call(self, task: Task, call: ToolCall, run: _Run) -> dict:
         self._ensure_running(task)
@@ -652,9 +674,70 @@ class WorkerAgent(Agent):
                 run.repeats[repeat] = [run.changes, answer, run.steps, 1]
         elif call.name not in _RESEARCH_TOOLS:
             run.changes += 1
+        if call.name not in _RESEARCH_TOOLS:
+            extra = self._watch_files(call, result, run) + self._cycle_notes(call, args, result, run)
+            if extra:
+                observation["note"] = " ".join(filter(None, [observation.get("note"), *extra]))
         self._ensure_running(task)
         self._track_failures(call.name, result.ok, run, observation)
         return observation
+
+    def _fingerprint(self, path: str) -> tuple[str, int] | None:
+        try:
+            text = self.sandbox.read_text(path)
+        except Exception:
+            return None
+        return hashlib.sha1(text.encode("utf-8", "replace")).hexdigest(), len(text)
+
+    def _watch_files(self, call: ToolCall, result: ToolResult, run: _Run) -> list[str]:
+        """Remember what write_file and edit_file left in a file; after any other call, say which of those files it changed.
+
+        Final run of 2026-11-23: a developer edited the app into its new version, then ran its own copy script twice more,
+        which put the old copy from the inbox back over it. Nothing said so, it reported 'done', and the lead received
+        the old file. A script may change a file on purpose, so this is a note and the call is not refused."""
+        if call.name in _WRITE_TOOLS:
+            if result.ok:
+                for path in result.files_written:
+                    if (mark := self._fingerprint(path)) is not None:
+                        run.written[path] = (*mark, run.steps)
+            return []
+        if call.name in _READ_ONLY_TOOLS or not run.written:
+            return []
+        notes = []
+        for path, (digest, size, step) in list(run.written.items()):
+            now = self._fingerprint(path)
+            if now is None:
+                notes.append(f"{path} is gone after this call (you wrote it at step {step}, {size} characters).")
+                del run.written[path]
+            elif now[0] != digest:
+                notes.append(f"{path} was changed by this call: it had {size} characters when you last wrote it (step {step}) "
+                             f"and now has {now[1]}. If you did not mean that, for example a copy or setup script that "
+                             f"overwrote your edits with an older copy, your work in {path} may be lost: look at the file "
+                             "before you go on, and do not run that script again.")
+                run.written[path] = (*now, step)
+        return notes
+
+    def _cycle_notes(self, call: ToolCall, args: dict, result: ToolResult, run: _Run) -> list[str]:
+        """Two or three different calls that repeat in turn with the same answers. The repeat rule cannot see this: it counts
+        the second call of each round as a change. Final run of 2026-11-23: a lead ran 'test, copy script' twenty times and
+        got the same failure each time. A note only; the calls still run."""
+        limit = self.settings.cycle_limit
+        if limit <= 0:
+            return []
+        name = call.name + json.dumps(args, sort_keys=True, ensure_ascii=False, default=str)
+        run.recent.append((name, f"{result.ok}:{_TIMING.sub('#', result.output or '')[:1500]}"))
+        del run.recent[:-60]
+        for size in (2, 3):
+            if len(run.recent) < size * limit:
+                continue
+            rounds = [run.recent[len(run.recent) - size * (n + 1):len(run.recent) - size * n] for n in range(limit)]
+            if all(r == rounds[0] for r in rounds) and len({entry[0] for entry in rounds[0]}) > 1:
+                names = ", ".join(dict.fromkeys(entry[0].split("{", 1)[0] for entry in rounds[0]))
+                return [f"You are going round in circles: these {size} calls ({names}) have now been made {limit} times in "
+                        "turn and gave the same answers every time. Repeating them will not change the result. Find out why "
+                        "the answer does not change: read the files themselves and compare what they contain with what you "
+                        "expect, ask the teammate who wrote them, or finish and say plainly what is unresolved."]
+        return []
 
     @staticmethod
     def _track_failures(name: str, ok: bool, run: _Run, observation: dict) -> None:
@@ -838,6 +921,78 @@ class WorkerAgent(Agent):
                 f"{listing}\nFix what is not met (have a teammate redo a part if needed), then return the final result JSON "
                 'again with `requirements`: [{"id": "REQ1", "status": "met" | "not_met" | "unverified", "evidence": "..."}] '
                 "for every requirement. What cannot be met is shown to the human, so say so plainly.")
+
+    _COVER_SYSTEM = ("A team lead is about to hand out work. You get the explicit requirements of the request and the tasks "
+                     "(goal and context) it is about to send. List the ids of the requirements that NO task would help meet: "
+                     "something that must be found out, gathered, produced or checked, and that no task asks for. A requirement "
+                     "that is a property of the final deliverable (its length, format, language, audience, structure) is "
+                     "covered, because the lead or a later writing step meets it. A requirement that asks to consult the "
+                     "requester is covered. Be strict about content that has to be obtained from somewhere. Reply with a JSON "
+                     "array of the ids, for example [\"REQ3\"], and nothing else; [] when all are covered.")
+
+    async def _uncovered_requirements(self, task: Task, calls: list[ToolCall], run: _Run) -> list[str]:
+        """One model call: which requirements no task of this delegation reply would help meet. Never raises (an empty
+        list when it cannot be done), except to stop a task that was ended."""
+        items = self._requirements_dict(task)
+        jobs = []
+        for call in calls:
+            args = call.arguments if isinstance(call.arguments, dict) else {}
+            jobs.append(f"- to {target_of(call.name)}: {_clip(str(args.get('goal', '')), 500)} "
+                        f"{_clip(str(args.get('context', '')), 300)}".strip())
+        text = ("Requirements:\n" + "\n".join(f"{k}: {v}" for k, v in items.items())
+                + "\n\nTasks about to be sent:\n" + "\n".join(jobs))
+        asked = time.perf_counter()
+        try:
+            response = await self._active(lambda: self.llm.chat(
+                [{"role": "system", "content": self._COVER_SYSTEM}, {"role": "user", "content": text}], [],
+                temperature=0.0), task, run)
+        except _TaskTerminated:
+            raise
+        except Exception:
+            log.warning("Could not check the coverage of the requirements of %s", task.id, exc_info=True)
+            return []
+        finally:
+            run.llm_s += time.perf_counter() - asked
+            run.llm_calls += 1
+        ids = self._parse_requirement_list(response.text, len(items))
+        return [i.strip().upper() for i in ids if i.strip().upper() in items]
+
+    async def _coverage_gate(self, task: Task, calls: list[ToolCall], run: _Run) -> str:
+        """Before the lead's first reply of delegations goes out, once: every requirement of the request must have a task
+        that helps meet it. What the human answered is added to the list first (it often adds the requirements nobody
+        planned for). A requirement no task covers, or a list that changed, holds the reply back once, with the list."""
+        if (not self.settings.coverage_check or not self.settings.requirements_check or not self._leads(task)
+                or run.coverage_checked or self._consult_gate_pending(task, run)):
+            return ""
+        run.coverage_checked = True
+        started = time.perf_counter()
+        before = self.router.requirements(task.root_id)
+        if run.human_qa and not run.req_refreshed:
+            run.req_refreshed = True
+            found = await self._extract_requirements(task, run, run.human_qa)
+            if found:
+                self.router.set_requirements(task.root_id, found)
+        items = self._requirements_dict(task)
+        if not items:
+            return ""
+        uncovered = await self._uncovered_requirements(task, calls, run)
+        changed = self.router.requirements(task.root_id) != before
+        if not uncovered and not changed:
+            self._trace_gate(task, run, uncovered, changed, items, "", time.perf_counter() - started)
+            return ""
+        run.count("push_coverage")
+        listing = "\n".join(f"  {k}: {v}" for k, v in items.items())
+        said = (f"No task in your reply helps meet {', '.join(uncovered)}. Add a task that gathers or produces it (or put it "
+                "into the brief of one that fits), and name who owns it. " if uncovered else "")
+        held = (f"Not yet: check the work against the requirements before it goes out. {said}"
+                f"{'The list now includes what the human answered. ' if changed else ''}Requirements:\n{listing}\n"
+                "Send your delegations again with every requirement owned by someone; do not drop the tasks you had.")
+        self._trace_gate(task, run, uncovered, changed, items, held, time.perf_counter() - started)
+        return held
+
+    def _consult_gate_pending(self, task: Task, run: _Run) -> bool:
+        """The lead still has to ask the human before anything goes out (the consult gate holds that reply)."""
+        return bool(self._consult_ids(task)) and not self._human_asked(task, run)
 
     _CONSULT = "consult the requester"
 
@@ -1065,6 +1220,9 @@ class WorkerAgent(Agent):
         `max_parallel_per_teammate` at a time; they share its workspace, so each is told to start the names of its
         files with job1_, job2_, ... and they cannot overwrite each other's files). If one of them ends the task
         (cancelled, timed out), the rest are stopped."""
+        held = await self._coverage_gate(task, calls, run)
+        if held:
+            return [{"ok": False, "output": held} for _ in calls]
         by_target: dict[str, list[int]] = {}
         for index, call in enumerate(calls):
             by_target.setdefault(target_of(call.name) or "", []).append(index)

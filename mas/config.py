@@ -54,6 +54,10 @@ class Settings:
     # The same call with the same answer, nothing changed in between: after this many it is refused instead of run
     # again (0: never). One lead spent 37 steps running one word count that answered 974 every time.
     repeat_limit: int = 2
+    # Two or three different calls that repeat in turn, with the same answers each time ("run the test, run the copy script",
+    # ...): after this many rounds every further round is called out (0: never). The repeat rule above cannot see it,
+    # because the second call counts as a change.
+    cycle_limit: int = 3
     max_retries_same_goal: int = 2
 
     # leading a request (design D18): the lead's own budget, delegated work included
@@ -75,6 +79,7 @@ class Settings:
     max_review_extensions: int = 2            # how often that can happen in one request (0: never)
     requirements_check: bool = True           # list what the request explicitly requires; the lead reports each one before it hands in
     max_requirements: int = 12
+    coverage_check: bool = True               # before its first delegations go out, every requirement must have a task that helps meet it
     max_review_rounds: int = 3                # reviews of the same file by the same reviewer in one request (0: no limit)
     lead_summary_max_chars: int = 6000        # the message the human reads is not cut as short as a teammate's report
     review_final: bool = True                 # a lead may not hand in a deliverable no reviewer has seen (needs closing_check)
@@ -151,6 +156,9 @@ class Settings:
         nudges = os.getenv("EARLY_STOP_NUDGES")
         if nudges is not None:
             values["early_stop_nudges"] = nudges.strip().lower() not in ("0", "false", "no", "off", "")
+        coverage = os.getenv("COVERAGE_CHECK")
+        if coverage is not None:
+            values["coverage_check"] = coverage.strip().lower() not in ("0", "false", "no", "off", "")
         budget = os.getenv("REQUEST_BUDGET_S")
         if budget:
             values["request_budget_s"] = float(budget)

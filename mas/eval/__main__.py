@@ -31,6 +31,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                    help="the repeats of a scenario share the agents' memory (to see whether it helps)")
     p.add_argument("--early-stop", choices=("on", "off"), default="on",
                    help="the nudges that help a member stop once it has enough; off, to measure what they change")
+    p.add_argument("--coverage", choices=("on", "off"), default="on",
+                   help="before the lead's first delegations go out, every requirement must have a task that helps meet it; "
+                        "off, to measure what it changes")
     p.add_argument("--time-budget", type=float, default=None, metavar="SECONDS",
                    help="seconds one request may take (the human's waiting time not counted): members stop starting "
                         "new work and hand in what they have as it runs out (default 270; 0: no budget)")
@@ -50,6 +53,8 @@ def settings_overrides(args: argparse.Namespace) -> dict[str, object]:
     overrides: dict[str, object] = {"llm_provider": args.llm} if args.llm else {}
     if args.early_stop == "off":
         overrides["early_stop_nudges"] = False
+    if args.coverage == "off":
+        overrides["coverage_check"] = False
     if args.time_budget is not None:
         overrides["request_budget_s"] = args.time_budget
     if args.research_limit is not None:

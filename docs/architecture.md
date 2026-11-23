@@ -160,6 +160,7 @@ Delegations a member sends together in one reply run in parallel; see [4.5](#45-
 | `max_retries_same_goal` | 2 | retries of the same goal on the same agent in one request |
 | `research_max_calls` | 14 | searches and page fetches one task may make; the next one is refused (0: no limit) |
 | `repeat_limit` | 2 | the same call with the same answer and nothing changed in between: after this many it is no longer run (0: no limit) |
+| `cycle_limit` | 3 | two or three different calls that repeat in turn with the same answers ("run the test, run the copy script"): after this many rounds each further round is called out in a note (0: never) |
 | `max_parallel_per_teammate` | 3 | jobs of one teammate that run at the same time for one requester |
 | `max_review_rounds` | 3 | how often one reviewer is asked to review the same file in one request (0: no limit) |
 | `request_budget_s` | 0 (off) | time budget of one request, see 4.8 |
@@ -193,6 +194,14 @@ shown that answer (`repeat_limit`, 0 to switch it off). "Nothing changed" is jud
 that is not read-only (another script, say), a teammate's reply and an answer from the human all count as a change, so the
 same check run again after a file was changed is not a repeat, even when it fails in exactly the same way. Tools that need
 the human's approval are left out.
+
+**Edits that a script undoes, and two calls that take turns.** Two more notes, both informational (the call still runs). After
+`write_file` or `edit_file`, the worker remembers what the file contained; after any other call that is not read-only (a script,
+say) it says which of those files the call changed or removed, with the sizes before and after, so that a copy script that puts an
+older copy over the member's edits cannot go unnoticed (a developer lost a 47 KB dashboard that way and still reported "done").
+The repeat rule cannot see calls that take turns, because the second one of each round counts as a change; for two or three different
+calls that repeat `cycle_limit` times with the same answers (numbers that are only durations are ignored) the answer says the member
+is going round in circles and what to do instead.
 
 The safety net is not switchable: with 3 steps left the
 member is told so, and its last step has no tools, so it must answer with what it has and say what is missing, instead of
