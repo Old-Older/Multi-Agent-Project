@@ -32,6 +32,15 @@ html, body { height: 100%; background: #0F1626; overflow: hidden; font-family: v
 #tag { position: absolute; right: 96px; bottom: 26px; font-size: 22px; color: #7A8594; z-index: 5; }
 #hint { position: absolute; right: 96px; top: 80px; font-size: 20px; color: #7A8594; z-index: 5; }
 
+#cover-nav { border: 1px solid #71839D; border-radius: 8px; padding: 6px 16px; background: transparent; color: #fff; font: inherit; cursor: pointer; }
+#cover-nav:hover, #cover-nav:focus-visible { background: #3A4B6B; }
+#s-cover { padding-top: 185px; background: linear-gradient(120deg, var(--bg) 65%, #DCEDE9); }
+#s-cover h1 { max-width: 1500px; margin: 28px 0 24px; font-size: 112px; line-height: 1.05; letter-spacing: -4px; }
+.cover-summary { max-width: 1160px; font-size: 42px; line-height: 1.3; color: var(--soft); }
+.cover-authors { margin-top: 55px; color: var(--ink); font-size: 34px; font-weight: 600; }
+#start-presentation { margin-top: 56px; border: 0; border-radius: 12px; padding: 18px 30px; background: var(--navy); color: #fff; font: inherit; font-size: 28px; cursor: pointer; }
+#start-presentation:hover, #start-presentation:focus-visible { background: var(--teal); }
+
 /* screens */
 .screen { position: absolute; left: 0; top: 64px; right: 0; bottom: 0; display: none; padding: 40px 96px 0; }
 .screen.active { display: block; }
@@ -85,7 +94,8 @@ h2 { margin-top: 8px; font-size: 56px; line-height: 1.1; font-weight: 700; max-w
 
 /* notes */
 #notes { position: absolute; left: 96px; right: 96px; bottom: 80px; z-index: 20; background: rgba(20,33,61,.96); color: #F6F5F0; border-radius: 20px; padding: 24px 32px; font-size: 27px; line-height: 1.45; display: none; }
-#notes.on { display: block; }
+#notes.on:has(#notes-text:not(:empty)) { display: block; }
+#notes-text { white-space: pre-line; }
 #notes small { display: block; font-size: 20px; letter-spacing: 2px; color: #7FD1C9; margin-bottom: 8px; font-weight: 700; }
 
 /* gates */
@@ -145,10 +155,20 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
 .rcard .stat { margin-top: 22px; background: var(--bg); border-radius: 18px; padding: 22px 26px; }
 .rcard .stat b { display: block; font-size: 88px; font-weight: 700; line-height: 1; }
 .rcard .stat span { display: block; font-size: 26px; color: var(--soft); margin-top: 8px; line-height: 1.25; }
-.rcard ul { margin: 26px 0 0 0; padding-left: 34px; font-size: 30px; line-height: 1.3; }
+.rcard ul { margin: 26px 0 0 0; padding-left: 34px; font-size: 28px; line-height: 1.3; }
 .rcard li { margin-bottom: 20px; }
 
 @media print { html, body { overflow: visible; background: #fff; } #wrap { position: static; } #stage { transform: none !important; } }
+
+#s-journey > :is(.jr, .num) {
+  opacity: .7;
+  transform: none;
+  filter: grayscale(1);
+  transition: filter .35s, opacity .35s;
+}
+#s-journey > :is(.jr, .num).on { opacity: 1; filter: none; }
+#s-journey > .jr.on { border-color: var(--teal); }
+#stage.instant #s-journey > :is(.jr, .num) { transition: none; }
 </style>
 </head>
 <body>
@@ -157,6 +177,7 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
 
 <div id="top">
   <b>MAS</b>
+  <button id="cover-nav" type="button">Cover</button>
   <div class="part" data-part="method"><span>Method</span><i><u></u></i></div>
   <div class="part soon" data-part="mid"><span>Mid-test</span><i><u></u></i></div>
   <div class="part soon" data-part="class"><span>In-class</span><i><u></u></i></div>
@@ -167,9 +188,17 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
 <div id="bottom"><span id="timer" hidden></span></div>
 <div id="tag">Schematic illustration</div>
 
+<section class="screen" id="s-cover" data-part="cover" data-steps="0">
+  <p class="eyebrow">MAIE5221 NLP · HKUST · FINAL PROJECT</p>
+  <h1>Multi-Agent Team System</h1>
+  <p class="cover-summary">A team of agents that splits work, delegates it and checks its own results</p>
+  <p class="cover-authors">JIAN Yimin · Li Heyang</p>
+  <button id="start-presentation" type="button">Start presentation →</button>
+</section>
+
 <!-- ============ METHOD 1: one member = model + harness ============ -->
 <section class="screen" id="s-harness" data-part="method" data-steps="4"
-  data-notes="[~20 s] Start with one team member. In the middle is the language model: text in, text out, nothing more. ▶1 Everything that lets it act is the harness around it: tools, ▶2 a private workspace with an inbox, ▶3 memory, ▶4 and limits. The harness is everything around the model.">
+  data-notes="[&quot;We built a multi-agent system that takes a request, divides the work across a team, and delivers the resulting files. \n\nNow let’s see its architecture. Each agent has a language model at its core. Around it is what we call the harness.&quot;, &quot;It gives the agent tools,&quot;, &quot;a private workspace with an inbox,&quot;, &quot;memory,&quot;, &quot;and limits on how much work it can do.&quot;]">
   <p class="eyebrow">METHOD · 1 OF 5</p>
   <h2>A model alone can only talk. The harness lets it act.</h2>
 
@@ -211,7 +240,7 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
 
 <!-- ============ METHOD 2: the team comes from a file ============ -->
 <section class="screen" id="s-lead" data-part="method" data-steps="3"
-  data-notes="[~20 s] The team isn&#x27;t hard-coded: each task comes with a role file, so a newsroom, a software team or a fund team is just a different file. ▶1 One member per role, each with its own window. ▶2 When a request arrives, ▶3 one model call picks who coordinates, and that member becomes the lead.">
+  data-notes="[&quot;Then I will show you how it works.&quot;, &quot;The team comes from a role file. Here we’re using a newsroom. We can change the file to set up a different team.&quot;, &quot;When a request comes in, the system needs someone to lead it.&quot;, &quot;One model call picks the lead. Here, it picks the chief editor.&quot;]">
   <p class="eyebrow">METHOD · 2 OF 5</p>
   <h2>The team comes from a file. One member leads each request.</h2>
 
@@ -240,7 +269,7 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
 
 <!-- ============ METHOD 3: delegate and parallel ============ -->
 <section class="screen" id="s-delegate" data-part="method" data-steps="4"
-  data-notes="[~35 s] This is the heart of the design. ▶1 The lead sends two research jobs in one reply. They go through the Router, our mail room, and arrive together, so the reporter ▶2 works on both in parallel. ▶3 Each job ends with a file. Workspaces are private, so the Router copies the files into the lead&#x27;s inbox. ▶4 Then the lead sends the draft to the editor and the fact-checker at once. Every handover goes through the Router, so limits and bookkeeping live in plain code.">
+  data-notes="[&quot;&quot;, &quot;The chief editor sends two research jobs to the reporter through the Router.&quot;, &quot;The reporter works on both jobs in parallel. Each job produces a file.&quot;, &quot;The Router copies both files into the chief editor’s inbox.&quot;, &quot;Once the draft is ready, the chief editor sends it to the editor and the fact-checker at the same time. \n\nThe agents decide what to delegate, and the Router handles the handoffs.&quot;]">
   <p class="eyebrow">METHOD · 3 OF 5</p>
   <h2>Delegation goes through one door, and jobs run in parallel</h2>
 
@@ -308,7 +337,7 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
 
 <!-- ============ METHOD 4: gates ============ -->
 <section class="screen" id="s-gates" data-part="method" data-steps="4"
-  data-notes="[~30 s] Done is not the model&#x27;s call. Three checks, all in code. ▶1 Before work goes out, every requirement needs an owner, otherwise the plan is held back once. ▶2 During work, a reviewer says pass or fail, and a file gets at most three rounds. ▶3 Before handing in, the lead reports each requirement as met or not met. ▶4 And underneath, the clock: 270 seconds is a soft budget, with reminders and a short grace period.">
+  data-notes="[&quot;Next, let’s look at how the system decides when the work is done.&quot;, &quot;First, we use coverage check to make sure every requirement has an owner before working on it.&quot;, &quot;Every file is reviewed before delivery. If it fails, the agent addresses all the feedback in one revision and resubmits it. We allow up to three review rounds per file.&quot;, &quot;At the end, the lead reports which requirements were met.&quot;, &quot;We also have a 270-second soft budget. It tells the team when to stop taking on new work and wrap up.&quot;]">
   <p class="eyebrow">METHOD · 4 OF 5</p>
   <h2>“Done” is not the model’s call. Code checks it at three points.</h2>
 
@@ -361,7 +390,7 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
 
 <!-- ============ METHOD 5: delivery ============ -->
 <section class="screen" id="s-deliver" data-part="method" data-steps="3"
-  data-notes="[~15 s] ▶1 The Router copies only the listed files into one output folder. ▶2 The human gets the reply and the files. ▶3 And the reply says what was not met, here the student quotes and the word count.">
+  data-notes="[&quot;Then let’s see the delivery.&quot;, &quot;The Router copies the listed files into the output folder.&quot;, &quot;The user gets the final reply and the files.&quot;, &quot;The reply also lists any unmet requirements. Here, the team couldn’t verify a student quote, and the report went over the word limit.&quot;]">
   <p class="eyebrow">METHOD · 5 OF 5</p>
   <h2>Files, plus an honest list of what is missing</h2>
 
@@ -403,16 +432,16 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
 </section>
 
 <!-- ============ MID-TEST 1: the journey ============ -->
-<section class="screen" id="s-journey" data-part="mid" data-steps="3"
-  data-notes="[~30 s] We ran about sixteen rounds, and each big jump has one design choice behind it. ▶1 Higher step limits and a forced wrap-up made requests finish; parallel research cut the time from 1,500 seconds to 200. ▶2 Requirements and batch review gave six out of six; the fast setup scored higher in half the time. ▶3 File handling and a repeat guard stopped lost files and wasted calls. Single runs, so read them as direction.">
+<section class="screen" id="s-journey" data-part="mid" data-steps="2"
+  data-notes="[&quot;That’s how the agents work together. Now let’s look at what we learned from the mid-test.\n\nWe made a lot of changes to the system during the mid-test. Two of them stood out.&quot;, &quot;We ran research jobs in parallel and cached search results. After this change, the time per request went from about twenty-six minutes to just over three.&quot;, &quot;We also started tracking each requirement. The lead reports which ones were met, and we allow up to three review rounds. After these changes, we went from completing two out of four requests to completing all six.\n\nWe made a few other changes too, like improving file handling and cutting down on repeated calls. Now let’s look at the final mid-test results.&quot;]">
   <p class="eyebrow">MID-TEST · THE JOURNEY</p>
   <h2>Each leap in the results maps to one design choice</h2>
 
   <div class="sbox" style="left:96px;top:190px;width:804px;height:96px">Time budget · 270 s<small>fast configuration: 14 searches per task</small></div>
-  <div class="num" data-s="2" data-nomove style="left:844px;top:166px">4</div>
+  <div class="num" data-nomove style="left:844px;top:166px">4</div>
 
   <div class="sbox" style="left:96px;top:330px;width:250px;height:300px;border-color:var(--teal)">Lead<small>30–40 steps · wrap-up warning</small></div>
-  <div class="num" data-s="1" data-nomove style="left:300px;top:306px">1</div>
+  <div class="num" data-nomove style="left:300px;top:306px">1</div>
 
   <div class="abs" style="left:396px;top:330px;width:170px;height:300px;border-radius:16px;background:var(--navy);color:#fff;text-align:center;padding-top:110px;font-size:30px;font-weight:700">Router<div style="font-size:21px;font-weight:400;color:#C9D3E0;margin-top:6px">jobs run together</div></div>
   <div class="num" data-s="1" data-nomove style="left:520px;top:306px">2</div>
@@ -420,25 +449,25 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
   <div class="sbox" style="left:616px;top:330px;width:284px;height:92px">Member<small>private workspace · files</small></div>
   <div class="sbox" style="left:616px;top:436px;width:284px;height:92px">Member<small>private workspace · files</small></div>
   <div class="sbox" style="left:616px;top:542px;width:284px;height:88px">Member<small>private workspace · files</small></div>
-  <div class="num" data-s="3" data-nomove style="left:854px;top:306px">5</div>
+  <div class="num" data-nomove style="left:854px;top:306px">5</div>
 
   <div class="sbox" style="left:96px;top:674px;width:804px;height:96px">Gates<small>coverage check · review · requirements report</small></div>
   <div class="num" data-s="2" data-nomove style="left:844px;top:650px">3</div>
 
   <div class="sbox" style="left:96px;top:814px;width:804px;height:96px">Repeat guard<small>refuses an identical call that keeps giving the same answer</small></div>
-  <div class="num" data-s="3" data-nomove style="left:844px;top:790px">6</div>
+  <div class="num" data-nomove style="left:844px;top:790px">6</div>
 
-  <div class="jr" data-s="1" style="top:190px"><div class="num">1</div><div class="t">Higher step limits, forced wrap-up</div><div class="d">worker 12 → 30 steps, lead 24 → 40; warned with 3 steps left</div><div class="m"><b>0/2 → 2/2</b><span>requests completed</span></div></div>
-  <div class="jr" data-s="1" style="top:320px"><div class="num">2</div><div class="t">Parallel research</div><div class="d">research jobs run at the same time; searches cached</div><div class="m"><b>1558 → ~200 s</b><span>per request (scenario 3)</span></div></div>
-  <div class="jr" data-s="2" style="top:450px"><div class="num">3</div><div class="t">Requirements and batch review</div><div class="d">lead reports each requirement; max 3 review rounds</div><div class="m"><b>2/4 → 6/6</b><span>requests completed</span></div></div>
-  <div class="jr" data-s="2" style="top:580px"><div class="num">4</div><div class="t">Fast configuration</div><div class="d">270 s budget became the default</div><div class="m"><b>7.17 vs 6.17</b><span>mean score; 32 vs 70 min</span></div></div>
-  <div class="jr" data-s="3" style="top:710px"><div class="num">5</div><div class="t">Safe file handling</div><div class="d">cut-off writes continue; code copied back</div><div class="m"><b>5/6 → 6/6</b><span>requests; dashboard 1 → 7 points</span></div></div>
-  <div class="jr" data-s="3" style="top:840px"><div class="num">6</div><div class="t">Repeat guard</div><div class="d">identical calls refused from the third time</div><div class="m"><b>50 → 5</b><span>repeated calls actually run</span></div></div>
+  <div class="jr" style="top:190px"><div class="num">1</div><div class="t">Higher step limits, forced wrap-up</div><div class="d">worker 12 → 30 steps, lead 24 → 40; warned with 3 steps left</div><div class="m"><b>0/2 → 2/2</b><span>requests completed</span></div></div>
+  <div class="jr" data-s="1" style="top:320px"><div class="num">2</div><div class="t">Parallel research</div><div class="d">research jobs run at the same time; searches cached</div><div class="m"><b>~26 → ~3.3 min</b><span>per request (scenario 3)</span></div></div>
+  <div class="jr" data-s="2" style="top:450px"><div class="num">3</div><div class="t">Track and report requirements</div><div class="d">Report which requirements were met. Up to 3 review rounds.</div><div class="m"><b>2/4 → 6/6</b><span>requests completed</span></div></div>
+  <div class="jr" style="top:580px"><div class="num">4</div><div class="t">Fast configuration</div><div class="d">270 s budget became the default</div><div class="m"><b>7.17 vs 6.17</b><span>mean score; 32 vs 70 min</span></div></div>
+  <div class="jr" style="top:710px"><div class="num">5</div><div class="t">Safe file handling</div><div class="d">cut-off writes continue; code copied back</div><div class="m"><b>5/6 → 6/6</b><span>requests; dashboard 1 → 7 points</span></div></div>
+  <div class="jr" style="top:840px"><div class="num">6</div><div class="t">Repeat guard</div><div class="d">identical calls refused from the third time</div><div class="m"><b>50 → 5</b><span>repeated calls actually run</span></div></div>
 </section>
 
 <!-- ============ MID-TEST 2: final results ============ -->
 <section class="screen" id="s-results" data-part="mid" data-steps="3"
-  data-notes="[~30 s] ▶1 Our final mid-test run: all six requests finished, mean score 7.67 out of ten, about 4.8 minutes per request. ▶2 Teal is this run, grey is the average of earlier runs. ▶3 The newsroom is our weak spot: it misses hard targets like word counts. A coverage check before delegation gave six out of six against five out of six, one run each, so it is a direction, not a proof.">
+  data-notes="[&quot;&quot;, &quot;In the final run, we completed all six requests. The average score was 7.67 out of 10, and each request took just under five minutes on average.&quot;, &quot;Compared with the earlier runs, software engineering improved the most, from 6.7 to 9. The securities fund scored slightly higher.&quot;, &quot;The newsroom scored slightly lower and still struggled with requirements like word count.&quot;]">
   <p class="eyebrow">MID-TEST · FINAL RESULTS</p>
   <h2>All six requests were completed in the final run</h2>
 
@@ -471,7 +500,7 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
 
 <!-- ============ IN-CLASS ============ -->
 <section class="screen" id="s-class" data-part="class" data-steps="1"
-  data-notes="[~60 s] Now the in-class test. The team started on this task a few minutes ago, so this is live. The button opens our workspace in a new tab. Point out who the lead is, what it handed out, what each member is doing right now, and the clock. That is the picture from the method screens, happening for real. If it has not finished, show what exists so far, and say the final files appear under Results when it ends. Then come back here for the reflection.">
+  data-notes="[&quot;Let’s open the workspace and look at what the team produced.&quot;, &quot;[Open the workspace. Point to the lead and one delegated task.]\n\nToday’s request was to [summarize the task]. The system chose [lead role] as the lead. The lead asked [agent role] to [describe the subtask].\n\nIf the run has finished\n\n[Open Results and show one file or excerpt.]\n\nHere’s [file name]. It covers [specific requirement]. You can see [concrete detail] here. The final reply also reports [one outcome or unmet requirement]. The run took [elapsed time].\n\nIf the run is still in progress\n\n[Show an available file or a completed step.]\n\nSo far, the team has [describe the visible output or completed step]. This helps the lead [explain how it supports the final deliverable]. The team is still working on [remaining task]. We’re at [elapsed time]. The final files will appear under Results when the run finishes.\n\n[Return to the presentation.]&quot;]">
   <p class="eyebrow">IN-CLASS TEST · LIVE</p>
   <h2>The run is in progress: open the workspace</h2>
 
@@ -502,24 +531,24 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
 
 <!-- ============ REFLECTION ============ -->
 <section class="screen" id="s-reflect" data-part="reflect" data-steps="3"
-  data-notes="[~60 s] Three takeaways. ▶1 What worked: agents decide and plain code enforces. Parallel research made a request about eight times faster, and the system reports what it did not manage. ▶2 What did not: review loops never converge, word counts keep overshooting, and the time budget is soft. ▶3 What we learned: measure all scenarios before fixing, because review time looked guilty but was not. Check the requirements when work is handed out. And repeat each experiment several times, since the same task scored 8 once and 1 the next time. Thank you.">
+  data-notes="[&quot;Now that we’ve seen the system in action, let’s wrap up with what worked, what didn’t, and what we learned.&quot;, &quot;So what worked? Running research jobs in parallel made one test request about eight times faster. Letting code decide when work is done, instead of the model, took us from two of four requests completed to six of six. And when a requirement was still missed, the system told the user instead of hiding it.&quot;, &quot;But it did not fix everything. In the newsroom, eight out of twelve requests missed at least one requirement. Each review round found new issues, so time ran out before the fixes landed. The drafts also kept growing during review and went over the word limit. And because the budget is soft, some runs went past 270 seconds.&quot;, &quot;So what did we learn from this? Because drafts outgrew their limits, we now check requirements when we hand out the work, not only at the end. Because review time was not the real problem, we learned to measure all scenarios before fixing one. And because the same task scored an eight in one run and a one in another, we repeat each experiment before drawing conclusions.\n\nThank you.&quot;]">
   <p class="eyebrow">REFLECTION</p>
   <h2>Check early, measure widely, repeat the experiments</h2>
 
   <div class="rcard" data-s="1" style="left:96px;border-top:12px solid var(--teal)">
     <h3 style="color:var(--teal)">What worked</h3>
-    <div class="stat"><b style="color:var(--teal)">≈ 8×</b><span>faster per request once research jobs run in parallel (scenario 3)</span></div>
-    <ul><li>Agents decide; plain code enforces the rules</li><li>Research jobs run in parallel, not one after another</li><li>Unmet requirements are reported to the human, not hidden</li></ul>
+    <div class="stat"><b style="color:var(--teal)">≈ 8×</b><span>faster per request with parallel research: ~26 → ~3.3 min</span></div>
+    <ul><li>Code decides “done”: 2 of 4 → 6 of 6 requests completed</li><li>Repeat guard: repeated calls 50 → 5</li><li>Missed requirements are reported, not hidden</li></ul>
   </div>
   <div class="rcard" data-s="2" style="left:686px;border-top:12px solid var(--amber)">
     <h3 style="color:#9A5B07">What did not</h3>
     <div class="stat"><b style="color:#B86E0B">8 of 12</b><span>newsroom requests missed at least one requirement</span></div>
-    <ul><li>Review loops never converge: every round finds new points and uses up the time</li><li>Word-count targets are exceeded as drafts grow during review</li><li>The 270 s budget is soft: some runs took 350 s</li></ul>
+    <ul><li>Each review round found new points, so time ran out before fixes landed</li><li>Drafts grew during review: 1,569 words vs 900–1,200 allowed</li><li>The 270 s budget is soft: some runs took 350 s</li></ul>
   </div>
   <div class="rcard" data-s="3" style="left:1276px;border-top:12px solid var(--navy)">
     <h3>What we learned</h3>
     <div class="stat"><b>8 → 1</b><span>same task scored 8 in one run and 1 in another: one run is noise</span></div>
-    <ul><li>Measure all scenarios before fixing: review time was not the newsroom’s problem</li><li>Check the requirements when work is handed out, not only at the end</li><li>Repeat each experiment several times before drawing conclusions</li></ul>
+    <ul><li>Drafts outgrew limits, so check requirements when work is handed out</li><li>Review time was not the real problem, so measure all scenarios first</li><li>One run is noise, so repeat each experiment</li></ul>
   </div>
 </section>
 
@@ -532,6 +561,7 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
   "use strict";
   const stage = document.getElementById("stage");
   const screens = [...document.querySelectorAll(".screen")];
+  const notesByScreen = screens.map(screen => JSON.parse(screen.dataset.notes || "[]"));
   const PARTS = { method: 120, mid: 60, class: 60, reflect: 60 };
   let cur = 0, step = 0, scale = 1, started = 0, timerOn = false, partStart = {}, spent = {};
 
@@ -618,9 +648,13 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
     s.querySelectorAll("[data-s]").forEach(e => e.classList.toggle("on", Number(e.dataset.s) <= step));
     extras(s.id, step, animate);
     if (!animate) { void stage.offsetWidth; stage.classList.remove("instant"); }
-    document.getElementById("notes-text").textContent = s.dataset.notes || "";
-    try { history.replaceState(null, "", "#" + (cur + 1) + "." + step); localStorage.setItem("mas-pres-pos", (cur + 1) + "." + step); } catch (e) { /* no storage: the page just starts over */ }
-    document.getElementById("count").textContent = (cur + 1) + " / " + screens.length + " · step " + step + " / " + s.dataset.steps;
+    document.getElementById("notes-text").textContent = notesByScreen[cur][step] || "";
+    const onCover = cur === 0;
+    try { history.replaceState(null, "", onCover ? "#cover" : "#" + cur + "." + step); } catch (e) { /* local browser history may be unavailable */ }
+    document.getElementById("count").textContent = onCover ? "Cover" : cur + " / " + (screens.length - 1) + " · step " + step + " / " + s.dataset.steps;
+    document.getElementById("cover-nav").hidden = onCover;
+    if (onCover) partStart = {};
+    updateTimer();
     document.getElementById("tag").style.display = s.dataset.part === "method" ? "" : "none";   // only the method drawings are schematic
     progress();
   }
@@ -631,14 +665,23 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
       const mine = screens.filter(x => x.dataset.part === p.dataset.part);
       p.classList.toggle("on", p.dataset.part === part);
       p.classList.toggle("soon", !mine.length);
-      const done = mine.filter(x => screens.indexOf(x) < cur).length + (p.dataset.part === part ? 0.5 : 0);
+      const current = screens[cur];
+      const fraction = (step + 1) / (Number(current.dataset.steps) + 1);
+      const done = mine.filter(x => screens.indexOf(x) < cur).length + (p.dataset.part === part ? fraction : 0);
       p.querySelector("u").style.width = mine.length ? Math.min(100, Math.round(done / mine.length * 100)) + "%" : "0";
     });
   }
 
   function next() {
     const s = screens[cur];
-    if (!started) { started = Date.now(); }
+    if (cur === 0) {
+      cur = 1;
+      step = 0;
+      if (!started) started = Date.now();
+      render(true);
+      return;
+    }
+    if (!started) { started = Date.now(); partStart = {}; }
     if (step < Number(s.dataset.steps)) {
       step++; render(true);
       const f = FLIGHTS[s.id] && FLIGHTS[s.id][step]; if (f) f();
@@ -651,29 +694,42 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
 
   // ----- timer: time spent in each part against its budget -----
   const timer = document.getElementById("timer");
-  setInterval(() => {
+  function updateTimer() {
     const part = screens[cur].dataset.part;
+    timer.hidden = !timerOn;
+    if (part === "cover") {
+      timer.textContent = "Timer ready";
+      timer.className = "";
+      return;
+    }
     const now = Date.now();
-    if (started) { spent[part] = (spent[part] || 0) + 0; }
-    if (!started) return;
     if (partStart.part !== part) { partStart = { part, at: now, before: spent[part] || 0 }; }
-    const used = partStart.before + (now - partStart.at) / 1000;
+    const used = partStart.before + (started ? (now - partStart.at) / 1000 : 0);
     spent[part] = used;
     const budget = PARTS[part] || 60;
     const fmt = (n) => Math.floor(n / 60) + ":" + String(Math.floor(n % 60)).padStart(2, "0");
     const names = { method: "Method", mid: "Mid-test", class: "In-class", reflect: "Reflection" };
     timer.textContent = names[part] + " " + fmt(used) + " / " + fmt(budget);
     timer.className = used > budget ? "over" : used > budget * 0.85 ? "warn" : "";
-    timer.hidden = !timerOn;
-  }, 250);
+  }
+  setInterval(updateTimer, 250);
+
+  function goToCover() {
+    cur = 0;
+    step = 0;
+    render(false);
+  }
+  document.getElementById("cover-nav").addEventListener("click", goToCover);
+  document.getElementById("start-presentation").addEventListener("click", next);
 
   addEventListener("keydown", (e) => {
+    if (e.key === " " && e.target instanceof HTMLButtonElement) return;
     if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown") { e.preventDefault(); next(); }
     else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); prev(); }
     else if (e.key === "n" || e.key === "N") document.getElementById("notes").classList.toggle("on");
-    else if (e.key === "t" || e.key === "T") { timerOn = !timerOn; timer.hidden = !timerOn || !started; }
+    else if (e.key === "t" || e.key === "T") { timerOn = !timerOn; updateTimer(); }
     else if (e.key === "f" || e.key === "F") { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); }
-    else if (e.key === "Home") { cur = 0; step = 0; render(false); }
+    else if (e.key === "Home") goToCover();
   });
   // ----- in-class screen: is the local workspace server up? -----
   function ping() {
@@ -690,16 +746,14 @@ code.cmd { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 26p
   });
   // a link like index.html#4.2 opens screen 4 at step 2 (handy for rehearsing one screen)
   function fromHash() {
-    let saved = ""; try { saved = "#" + (localStorage.getItem("mas-pres-pos") || ""); } catch (e) { /* ignore */ }
-    const m = /^#(\d+)(?:\.(\d+))?$/.exec(location.hash) || /^#(\d+)(?:\.(\d+))?$/.exec(saved);   // the link wins, else where we were
-    if (!m) return;
-    cur = Math.min(screens.length, Math.max(1, Number(m[1]))) - 1;
+    const m = /^#(\d+)(?:\.(\d+))?$/.exec(location.hash);
+    if (!m) { goToCover(); return; }
+    cur = Math.min(screens.length - 1, Math.max(1, Number(m[1])));
     step = Math.min(Number(screens[cur].dataset.steps), Number(m[2] || 0));
     render(false);
   }
   addEventListener("hashchange", fromHash);
   fromHash();
-  render(false);
 })();
 </script>
 </body>
